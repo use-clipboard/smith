@@ -298,19 +298,28 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
     popup.document.write(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><base href="${location.origin}/"><title>${title}</title>
 ${styleHtml}
 <style>
-  html, body { margin: 0; padding: 0; background: #fff; }
-  /* Print the facsimile's colours/borders, not just black text. */
+  html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+  /* Force the facsimile's colours/borders to print (not just black text). */
   *, *::before, *::after { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-  .sa-sheets-wrap { zoom: 1 !important; padding: 0 !important; display: block !important; background: #fff; }
-  .sa-sheet { box-shadow: none !important; margin: 0 auto !important; page-break-after: always; break-after: page; }
+  /* This wrapper carries the modal's zoom/scroll/height on the live page — reset
+     it so the sheets lay out at their true A4 size and can paginate. */
+  .sa-sheets-wrap { zoom: 1 !important; transform: none !important; padding: 0 !important; margin: 0 !important; display: block !important; width: auto !important; height: auto !important; max-height: none !important; overflow: visible !important; background: #fff; }
+  .sa-sheet { box-shadow: none !important; margin: 0 auto !important; page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; }
   .sa-sheet:last-child { page-break-after: auto; break-after: auto; }
-  @page { size: A4; margin: 0; }
+  /* The app's own @media print rules (scoped to #sa-filing-preview, which does
+     not exist here) get copied in via the stylesheets — make sure nothing is
+     hidden and no stray margin is applied when this popup prints. */
+  @media print { html, body, .sa-sheets-wrap, .sa-sheet, .sa-sheet * { visibility: visible !important; } }
+  @page { size: A4 portrait; margin: 0; }
 </style></head><body><div class="sa-sheets-wrap">${el.innerHTML}</div></body></html>`);
     popup.document.close();
-    const fire = () => { try { popup.focus(); popup.print(); } catch { /* noop */ } };
+    // Print only AFTER stylesheets have loaded — firing on readyState alone
+    // prints before Tailwind loads, giving an unstyled, un-paginated page.
+    let fired = false;
+    const fire = () => { if (fired) return; fired = true; try { popup.focus(); popup.print(); } catch { /* noop */ } };
     popup.onafterprint = () => { try { popup.close(); } catch { /* user already closed it */ } };
-    if (popup.document.readyState === 'complete') setTimeout(fire, 300);
-    else { popup.addEventListener('load', fire); setTimeout(fire, 1200); }
+    popup.addEventListener('load', () => setTimeout(fire, 500));
+    setTimeout(fire, 4000); // fallback if load never fires (cached/blocked sheet)
   }
 
   // Once the editor lightbox is up, hunt for the clicked box (navigating the
@@ -556,7 +565,7 @@ ${styleHtml}
           </button>
           {/* Visible build tag — lets the user confirm they're on the latest app
               version (not a stale cached copy) before trusting the output. */}
-          <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">PDF v5</span>
+          <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">PDF v6</span>
           <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-semibold text-slate-600 hover:bg-slate-50">
             <X size={14} /> Close
           </button>
