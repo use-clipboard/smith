@@ -9,6 +9,8 @@ interface Props {
   open: boolean;
   onClose: () => void;
   labels: GmailLabel[];
+  /** Called after a rule is applied to existing mail, so the inbox can refresh. */
+  onApplied?: () => void;
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -37,7 +39,7 @@ type Field    = EmailRule['condition_field'];
 type Operator = EmailRule['condition_operator'];
 type Action   = EmailRule['action_type'];
 
-export default function EmailRulesModal({ open, onClose, labels }: Props) {
+export default function EmailRulesModal({ open, onClose, labels, onApplied }: Props) {
   const [rules, setRules]   = useState<EmailRule[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving]   = useState(false);
@@ -51,6 +53,9 @@ export default function EmailRulesModal({ open, onClose, labels }: Props) {
   const [action,    setAction]    = useState<Action>('archive');
   const [labelId,   setLabelId]   = useState('');
   const [showForm,  setShowForm]  = useState(false);
+  // "Also apply to existing matching emails" — a one-time mailbox sweep on save.
+  const [applyExisting, setApplyExisting] = useState(false);
+  const [applyNote, setApplyNote] = useState('');
 
   // User labels only for the label selector
   const userLabels = labels.filter(l => l.type === 'user');
@@ -102,9 +107,30 @@ export default function EmailRulesModal({ open, onClose, labels }: Props) {
       if (!res.ok) throw new Error('Failed');
       const data = await res.json() as { rule: EmailRule };
       setRules(prev => [...prev, data.rule]);
+
+      // Optionally sweep existing mail and apply the action to every match.
+      if (applyExisting) {
+        try {
+          const ar = await fetch(`/api/email/rules/${data.rule.id}/apply`, { method: 'POST' });
+          const aj = await ar.json().catch(() => ({})) as { applied?: number; capped?: boolean; error?: string };
+          if (ar.ok) {
+            const n = aj.applied ?? 0;
+            setApplyNote(n === 0
+              ? 'Rule saved — no existing emails matched.'
+              : `Rule saved and applied to ${n}${aj.capped ? '+' : ''} existing email${n === 1 ? '' : 's'}.`);
+            if (n > 0) onApplied?.();
+          } else {
+            setApplyNote(aj.error ?? 'Rule saved, but applying to existing emails failed.');
+          }
+        } catch {
+          setApplyNote('Rule saved, but applying to existing emails failed.');
+        }
+      }
+
       // Reset form
       setName(''); setValue(''); setLabelId('');
       setField('from'); setOperator('contains'); setAction('archive');
+      setApplyExisting(false);
       setShowForm(false);
     } catch {
       setError('Failed to save rule. Please try again.');
@@ -138,6 +164,15 @@ export default function EmailRulesModal({ open, onClose, labels }: Props) {
 
         {/* Rules list */}
         <div className="flex-1 overflow-y-auto p-5 space-y-3">
+
+          {applyNote && (
+            <div className="rounded-lg border border-[var(--accent)]/30 bg-[var(--accent-light)] px-3 py-2 text-xs text-[var(--text-secondary)] flex items-center justify-between gap-2">
+              <span>{applyNote}</span>
+              <button onClick={() => setApplyNote('')} aria-label="Dismiss" className="text-[var(--text-muted)] hover:text-[var(--text-primary)] shrink-0">
+                <X size={12} />
+              </button>
+            </div>
+          )}
 
           {loading ? (
             <div className="flex justify-center py-8">
@@ -243,6 +278,17 @@ export default function EmailRulesModal({ open, onClose, labels }: Props) {
                 )}
               </div>
 
+              {/* Also apply to existing mail — a one-time sweep on save. */}
+              <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)] cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={applyExisting}
+                  onChange={e => setApplyExisting(e.target.checked)}
+                  className="accent-[var(--accent)] w-3.5 h-3.5"
+                />
+                Also apply to existing matching emails
+              </label>
+
               {error && <p className="text-xs text-red-500">{error}</p>}
 
               <div className="flex justify-end gap-2">
@@ -258,7 +304,7 @@ export default function EmailRulesModal({ open, onClose, labels }: Props) {
                   className="text-sm px-4 py-1.5 rounded-lg bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-50 transition-opacity font-medium flex items-center gap-1.5"
                 >
                   {saving && <Loader2 size={12} className="animate-spin" />}
-                  Save Rule
+                  {saving && applyExisting ? 'Applying…' : 'Save Rule'}
                 </button>
               </div>
             </div>
@@ -268,7 +314,7 @@ export default function EmailRulesModal({ open, onClose, labels }: Props) {
         {/* Footer */}
         <div className="px-5 py-3 border-t border-[var(--border)] shrink-0 flex items-center justify-between bg-[var(--bg-nav-hover)] rounded-b-2xl">
           <p className="text-xs text-[var(--text-muted)]">
-            Rules run on new unread emails when you open Email Triage.
+            Rules run on new unread emails — tick &ldquo;apply to existing&rdquo; to also sweep past mail.
           </p>
           {!showForm && (
             <button

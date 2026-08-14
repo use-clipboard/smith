@@ -2732,6 +2732,7 @@ export default function EmailTriagePage() {
             .catch(() => {});
         }}
         labels={labels}
+        onApplied={() => fetchThreads(activeLabel, undefined, true)}
       />
 
       {showQuickTask && (
