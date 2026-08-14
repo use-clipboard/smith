@@ -999,6 +999,10 @@ export interface Sa100Income {
   /** SA101 Additional information — full box-for-box page. See the Sa101 interface
    *  below. The venture-capital reliefs + life-insurance gains drive the calc. */
   additional?: Sa101;
+  /** SA110 Tax calculation summary — the user-entered boxes (PAYE-coding
+   *  underpayments, payments on account, surplus allowances, adjustments to an
+   *  earlier year). Boxes 1–6 are computed from the return, not stored here. */
+  sa110?: Sa110;
   /** SA102M Ministry of religion (a rarely-used "More" page). */
   minister?: MinisterOfReligion;
   /** SA102 Northern Ireland Legislative Assembly office income (a rarely-used
@@ -1178,6 +1182,31 @@ export interface Sa109Company {
   companyNumber?: string;
   companyName?: string;
   amountInvested?: number;
+}
+
+// SA110 Tax calculation summary — the user-entered boxes only. Boxes 1–6 / 3.1 /
+// 4.1 (the "Self Assessment" totals) are computed from the return, not stored.
+export interface Sa110 {
+  underpaidEarlierYears?: number;     // box 7  — underpaid tax for earlier years in this year's code
+  underpaidThisYearNextCode?: number; // box 8  — underpaid tax for this year in next year's code
+  outstandingDebtInCode?: number;     // box 9  — outstanding debt in tax code
+  claimReducePoa?: boolean;           // box 10 — claiming to reduce payments on account
+  firstPoaClaim?: number;             // box 11 — reduced first payment on account
+  // Payments-on-account calculation helpers (SMITH, not HMRC boxes).
+  automatedPoaCalc?: boolean;
+  manualPoaCalc?: boolean;
+  firstPoaDue?: number;
+  firstPoaPaid?: number;
+  secondPoaDue?: number;
+  secondPoaPaid?: number;
+  otherBalancingPayment?: number;
+  poaInSa302?: boolean;
+  blindSurplusAllowance?: number;     // box 12 — blind person's surplus allowance
+  marriedCoupleSurplus?: number;      // box 13 — married couple's surplus allowance from spouse
+  increaseTaxAdjustment?: number;     // box 14 — increase in tax due (adjustment to earlier year)
+  decreaseTaxAdjustment?: number;     // box 15 — decrease in tax due (adjustment to earlier year)
+  laterYearRepayment?: number;        // box 16 — later-year repayment claimed now
+  otherInformation?: string;          // box 17 — any other information
 }
 
 // Full SA109 supplementary page, box-for-box (Capium layout). Box numbers follow

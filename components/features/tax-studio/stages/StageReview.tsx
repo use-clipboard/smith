@@ -27,7 +27,7 @@ import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
 import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyExpensesTotal, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction, ministerComputed, ministerHasData, assemblyComputed, assemblyHasData, parliamentComputed, parliamentHasData, scottishParliamentComputed, scottishParliamentHasData, welshAssemblyComputed, welshAssemblyHasData, lloydsComputed, lloydsHasData } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, Sa101, Sa101GiltItem, Sa101LifeGainItem, Sa101VoidedIsaItem, Sa101AnnualAllowanceItem, Sa101UnauthPaymentItem, Sa101ForeignLumpItem, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, Sa110, Sa101, Sa101GiltItem, Sa101LifeGainItem, Sa101VoidedIsaItem, Sa101AnnualAllowanceItem, Sa101UnauthPaymentItem, Sa101ForeignLumpItem, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -168,7 +168,7 @@ export function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
 
 // ─── Income editor — tabbed SA-page shell ────────────────────────────────────
 export type SetIncome = (u: (i: Sa100Income) => Sa100Income) => void;
-export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional' | 'minister' | 'niassembly' | 'parliament' | 'scottishparliament' | 'welshassembly' | 'lloyds';
+export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional' | 'minister' | 'niassembly' | 'parliament' | 'scottishparliament' | 'welshassembly' | 'lloyds' | 'taxcalc';
 
 const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'core',        label: 'Main Form', code: 'SA100', icon: PiggyBank },
@@ -192,7 +192,9 @@ const MORE_PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[
   { id: 'welshassembly', label: 'National Assembly for Wales', code: 'SA102', icon: Flag },
   { id: 'lloyds', label: "Lloyd's Underwriters", code: 'SA103L', icon: Umbrella },
 ];
-const ALL_PAGES = [...PAGES, ...MORE_PAGES];
+// Tax Calculation summary (SA110) — sits on its own tab after the "More" overflow.
+const TAXCALC_PAGE = { id: 'taxcalc' as PageId, label: 'Tax Calculation', code: 'SA110', icon: Calculator };
+const ALL_PAGES = [...PAGES, ...MORE_PAGES, TAXCALC_PAGE];
 
 /** The headline figure a page contributes to income — shown in the page header. */
 function pageValue(id: PageId, income: Sa100Income): { value: number; label: string } | null {
@@ -258,7 +260,18 @@ function pageCounts(income: Sa100Income): Record<PageId, number> {
     scottishparliament: income.scottishParliament ? (scotSectionCount(income.scottishParliament, SCOT_TABS[0]) + scotSectionCount(income.scottishParliament, SCOT_TABS[1])) : 0,
     welshassembly: income.welshAssembly ? WELSH_TABS.reduce((acc, t) => acc + welshSectionCount(income.welshAssembly!, t), 0) : 0,
     lloyds: income.lloyds ? LLOYDS_TABS.reduce((acc, t) => acc + lloydsSectionCount(income.lloyds!, t), 0) : 0,
+    taxcalc: income.sa110 ? sa110Count(income.sa110) : 0,
   };
+}
+
+// Count the user-entered SA110 boxes that are filled (the Self Assessment totals
+// are computed, so they never count towards the badge).
+function sa110Count(s: Sa110): number {
+  return [s.underpaidEarlierYears, s.underpaidThisYearNextCode, s.outstandingDebtInCode, s.claimReducePoa,
+    s.firstPoaClaim, s.firstPoaDue, s.firstPoaPaid, s.secondPoaDue, s.secondPoaPaid, s.otherBalancingPayment,
+    s.blindSurplusAllowance, s.marriedCoupleSurplus, s.increaseTaxAdjustment, s.decreaseTaxAdjustment,
+    s.laterYearRepayment, s.otherInformation]
+    .filter(v => (typeof v === 'number' ? v !== 0 : !!v)).length;
 }
 
 /** Per-CoreSection populated-entry counts (breakdown items, or a set scalar = 1).
@@ -443,6 +456,18 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
             </div>
           )}
         </div>
+        {/* Tax Calculation (SA110) — its own tab after More */}
+        {(() => {
+          const on = page === TAXCALC_PAGE.id; const n = counts[TAXCALC_PAGE.id]; const Icon = TAXCALC_PAGE.icon;
+          return (
+            <button onClick={() => setPage(TAXCALC_PAGE.id)}
+              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${on ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)]/30 hover:text-[var(--text-secondary)]'}`}>
+              <Icon size={13} className="shrink-0" />
+              {TAXCALC_PAGE.label}{n > 0 && <span className="font-bold"> ({n})</span>}
+              <span className={`text-[9px] font-bold uppercase tracking-wide ${on ? 'text-[var(--accent)]/70' : 'text-slate-400'}`}>{TAXCALC_PAGE.code}</span>
+            </button>
+          );
+        })()}
       </div>
 
       <div className="p-5">
@@ -476,6 +501,7 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
       {page === 'scottishparliament' && <ScottishParliamentPage ret={ret} income={income} setIncome={setIncome} />}
       {page === 'welshassembly' && <WelshAssemblyPage ret={ret} income={income} setIncome={setIncome} />}
       {page === 'lloyds' && <LloydsPage ret={ret} income={income} setIncome={setIncome} />}
+      {page === 'taxcalc' && <TaxCalcPage ret={ret} income={income} setIncome={setIncome} />}
       </div>
     </StudioCard>
   );
@@ -504,8 +530,101 @@ export function ReturnSectionEditor({ page, ret, setIncome }: { page: PageId; re
     case 'scottishparliament': return <ScottishParliamentPage ret={ret} income={income} setIncome={setIncome} />;
     case 'welshassembly': return <WelshAssemblyPage ret={ret} income={income} setIncome={setIncome} />;
     case 'lloyds': return <LloydsPage ret={ret} income={income} setIncome={setIncome} />;
+    case 'taxcalc': return <TaxCalcPage ret={ret} income={income} setIncome={setIncome} />;
     default: return null;
   }
+}
+
+// ── SA110 Tax calculation summary ────────────────────────────────────────────
+// The "Self Assessment" totals (boxes 1–6) are computed from the return and shown
+// read-only; everything else (PAYE-coding underpayments, payments on account,
+// surplus allowances, adjustments to an earlier year) is user-entered.
+const SA110_TABS = ['Self Assessment', 'Underpaid tax', 'Payments on account', 'Surplus allowance', 'Adjustments to tax due'] as const;
+
+function sa110TabCount(s: Sa110, tab: string): number {
+  const n = (v: unknown) => ((typeof v === 'number' ? v !== 0 : !!v) ? 1 : 0);
+  switch (tab) {
+    case 'Underpaid tax': return n(s.underpaidEarlierYears) + n(s.underpaidThisYearNextCode) + n(s.outstandingDebtInCode);
+    case 'Payments on account': return n(s.claimReducePoa) + n(s.firstPoaClaim) + n(s.firstPoaDue) + n(s.firstPoaPaid) + n(s.secondPoaDue) + n(s.secondPoaPaid) + n(s.otherBalancingPayment);
+    case 'Surplus allowance': return n(s.blindSurplusAllowance) + n(s.marriedCoupleSurplus);
+    case 'Adjustments to tax due': return n(s.increaseTaxAdjustment) + n(s.decreaseTaxAdjustment) + n(s.laterYearRepayment) + n(s.otherInformation);
+  }
+  return 0;
+}
+
+function TaxCalcPage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome }) {
+  const s: Sa110 = income.sa110 ?? {};
+  const set = (u: Partial<Sa110>) => setIncome(i => ({ ...i, sa110: { ...i.sa110, ...u } }));
+  const c = computeSa100Full(income, ret.taxYear);
+  const incomeSide = Math.round(c.totalDue) - c.capitalGainsTax;
+  const box1 = Math.max(0, incomeSide - c.taxDeductedAtSource);
+  const box2 = Math.max(0, c.taxDeductedAtSource - incomeSide);
+  const [tab, setTab] = useState<string>('Self Assessment');
+  const activeTab = (SA110_TABS as readonly string[]).includes(tab) ? tab : SA110_TABS[0];
+  return (
+    <div className="space-y-3">
+      <SectionTabs tabs={SA110_TABS.map(t => ({ label: t, count: sa110TabCount(s, t) }))} active={activeTab} onSelect={setTab} />
+
+      {activeTab === 'Self Assessment' && (
+        <StudioCard className="p-4"><BoxSection title="Self Assessment">
+          <p className="mb-1 text-[11.5px] text-[var(--text-muted)]">These totals are calculated from the rest of the return.</p>
+          <BoxCalc box={1} label="Total tax, Class 2 and Class 4 NICs due before any payments on account" value={box1} />
+          <BoxCalc box={2} label="Total tax, Class 2 and Class 4 NICs overpaid" value={box2} />
+          <BoxCalc box={3} label="Student Loan repayment due" value={c.studentLoan} />
+          <BoxCalc box="3.1" label="Postgraduate Loan repayment due" value={0} />
+          <BoxCalc box={4} label="Class 4 NICs due" value={c.class4Nic} />
+          <BoxCalc box="4.1" label="Class 2 NICs due" value={0} />
+          <BoxCalc box={5} label="Capital Gains Tax due" value={c.capitalGainsTax} />
+          <BoxCalc box={6} label="Pension charges due" value={0} />
+        </BoxSection></StudioCard>
+      )}
+
+      {activeTab === 'Underpaid tax' && (
+        <StudioCard className="p-4"><BoxSection title="Underpaid tax and other debts">
+          <BoxNum box={7} label="Underpaid tax for earlier years included in your tax code for 2025–26" value={s.underpaidEarlierYears ?? 0} onChange={v => set({ underpaidEarlierYears: v })} />
+          <BoxNum box={8} label="Underpaid tax for 2025–26 included in your tax code for 2026–27" value={s.underpaidThisYearNextCode ?? 0} onChange={v => set({ underpaidThisYearNextCode: v })} />
+          <BoxNum box={9} label="Outstanding debt included in your tax code for 2025–26" value={s.outstandingDebtInCode ?? 0} onChange={v => set({ outstandingDebtInCode: v })} />
+        </BoxSection></StudioCard>
+      )}
+
+      {activeTab === 'Payments on account' && (
+        <StudioCard className="space-y-3 p-4">
+          <BoxSection title="Payments on account">
+            <BoxCheck box={10} label="Claiming to reduce your 2026–27 payments on account?" checked={!!s.claimReducePoa} onChange={v => set({ claimReducePoa: v })} />
+            <BoxNum box={11} label="Your first payment on account for 2026–27 (reduced amount)" value={s.firstPoaClaim ?? 0} onChange={v => set({ firstPoaClaim: v })} />
+          </BoxSection>
+          <BoxSection title="Payment on account calculation">
+            <BoxCheck label="Automated Payment on Account Calculation" checked={!!s.automatedPoaCalc} onChange={v => set(v ? { automatedPoaCalc: true, manualPoaCalc: false } : { automatedPoaCalc: false })} />
+            <BoxCheck label="Manual Payment on Account Calculation" checked={!!s.manualPoaCalc} onChange={v => set(v ? { manualPoaCalc: true, automatedPoaCalc: false } : { manualPoaCalc: false })} />
+          </BoxSection>
+          <BoxSection title="Amounts paid towards 2025–26 tax liability">
+            <BoxNum label="First payment on account (31 Jan 2026) — amount due" value={s.firstPoaDue ?? 0} onChange={v => set({ firstPoaDue: v })} />
+            <BoxNum label="First payment on account (31 Jan 2026) — amount paid" value={s.firstPoaPaid ?? 0} onChange={v => set({ firstPoaPaid: v })} />
+            <BoxNum label="Second payment on account (31 Jul 2026) — amount due" value={s.secondPoaDue ?? 0} onChange={v => set({ secondPoaDue: v })} />
+            <BoxNum label="Second payment on account (31 Jul 2026) — amount paid" value={s.secondPoaPaid ?? 0} onChange={v => set({ secondPoaPaid: v })} />
+            <BoxNum label="Other balancing payment made in the year" value={s.otherBalancingPayment ?? 0} onChange={v => set({ otherBalancingPayment: v })} />
+            <BoxCheck label="Show the Payment on Account Calculation in the SA302 Report" checked={!!s.poaInSa302} onChange={v => set({ poaInSa302: v })} />
+          </BoxSection>
+        </StudioCard>
+      )}
+
+      {activeTab === 'Surplus allowance' && (
+        <StudioCard className="p-4"><BoxSection title="Blind person’s &amp; married couple’s surplus allowance">
+          <BoxNum box={12} label="Blind person’s surplus allowance you can have" value={s.blindSurplusAllowance ?? 0} onChange={v => set({ blindSurplusAllowance: v })} />
+          <BoxNum box={13} label="Married couple’s surplus allowance from your spouse or civil partner" value={s.marriedCoupleSurplus ?? 0} onChange={v => set({ marriedCoupleSurplus: v })} />
+        </BoxSection></StudioCard>
+      )}
+
+      {activeTab === 'Adjustments to tax due' && (
+        <StudioCard className="p-4"><BoxSection title="Adjustments to tax due">
+          <BoxNum box={14} label="Increase in tax due because of adjustments to an earlier year" value={s.increaseTaxAdjustment ?? 0} onChange={v => set({ increaseTaxAdjustment: v })} />
+          <BoxNum box={15} label="Decrease in tax due because of adjustments to an earlier year" value={s.decreaseTaxAdjustment ?? 0} onChange={v => set({ decreaseTaxAdjustment: v })} />
+          <BoxNum box={16} label="Any 2026–27 repayment you’re claiming now" value={s.laterYearRepayment ?? 0} onChange={v => set({ laterYearRepayment: v })} />
+          <BoxText box={17} label="Any other information" value={s.otherInformation ?? ''} onChange={v => set({ otherInformation: v })} />
+        </BoxSection></StudioCard>
+      )}
+    </div>
+  );
 }
 
 // Scan documents without leaving Review & Adjust — reuses the Analyse-step

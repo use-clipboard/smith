@@ -12,6 +12,7 @@ const Head = ({ children }: { children: React.ReactNode }) => <h4 className="mb-
 
 export default function TaxCalcSummaryFacsimile({ ret }: { ret: TaxReturn }) {
   const c = computeSa100Full(ret.income, ret.taxYear);
+  const s = ret.income.sa110 ?? {};
   const incomeSide = Math.round(c.totalDue) - c.capitalGainsTax; // income tax + Class 4 NIC + student loan + HICBC
   const box1 = Math.max(0, incomeSide - c.taxDeductedAtSource);
   const box2 = Math.max(0, c.taxDeductedAtSource - incomeSide);
@@ -43,11 +44,11 @@ export default function TaxCalcSummaryFacsimile({ ret }: { ret: TaxReturn }) {
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
-              <Money n={7} label="Underpaid tax for earlier years included in your tax code for 2025–26 – enter the amount shown as ‘amount of underpaid tax for earlier years’ from your P2, ‘PAYE Coding Notice’" value={0} />
+              <Money n={7} label="Underpaid tax for earlier years included in your tax code for 2025–26 – enter the amount shown as ‘amount of underpaid tax for earlier years’ from your P2, ‘PAYE Coding Notice’" value={s.underpaidEarlierYears} />
             </div>
             <div>
-              <Money n={8} label="Underpaid tax for 2025–26 included in your tax code for 2026–27 – enter the amount shown as ‘estimated underpayment for 2025–26’ from your P2, ‘PAYE Coding Notice’" value={0} />
-              <Money n={9} label="Outstanding debt included in your tax code for 2025–26 – enter the amount from your P2, ‘PAYE Coding Notice’" value={0} />
+              <Money n={8} label="Underpaid tax for 2025–26 included in your tax code for 2026–27 – enter the amount shown as ‘estimated underpayment for 2025–26’ from your P2, ‘PAYE Coding Notice’" value={s.underpaidThisYearNextCode} />
+              <Money n={9} label="Outstanding debt included in your tax code for 2025–26 – enter the amount from your P2, ‘PAYE Coding Notice’" value={s.outstandingDebtInCode} />
             </div>
           </div>
         </Panel>
@@ -55,8 +56,8 @@ export default function TaxCalcSummaryFacsimile({ ret }: { ret: TaxReturn }) {
         <Note>Please read the notes in section 12 of the ‘Tax calculation summary notes’ to see if you need to make any payments on account for 2026–27.</Note>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
-            <div><div className="mb-3"><Label n={10}>If you’re claiming to reduce your 2026–27 payments on account, put ‘X’ in the box – enter the reduced amount of your first payment in box 11 and say why you’re making the claim in box 17 on page TC 2 of this form</Label><Tick /></div></div>
-            <div><Money n={11} label="Your first payment on account for 2026–27 – enter the amount (including pence)" value={c.poaApplies ? c.paymentOnAccount : 0} /></div>
+            <div><div className="mb-3"><Label n={10}>If you’re claiming to reduce your 2026–27 payments on account, put ‘X’ in the box – enter the reduced amount of your first payment in box 11 and say why you’re making the claim in box 17 on page TC 2 of this form</Label><Tick on={!!s.claimReducePoa} /></div></div>
+            <div><Money n={11} label="Your first payment on account for 2026–27 – enter the amount (including pence)" value={s.firstPoaClaim ?? (c.poaApplies ? c.paymentOnAccount : 0)} /></div>
           </div>
         </Panel>
       </Page>
@@ -67,8 +68,8 @@ export default function TaxCalcSummaryFacsimile({ ret }: { ret: TaxReturn }) {
         <Note>Enter the amount of any surplus allowance transferred from your spouse or civil partner.</Note>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
-            <div><Money n={12} label="Blind person’s surplus allowance you can have" value={0} /></div>
-            <div><Money n={13} label="If you or your spouse or civil partner were born before 6 April 1935, the amount of married couple’s surplus allowance you can have" value={0} /></div>
+            <div><Money n={12} label="Blind person’s surplus allowance you can have" value={s.blindSurplusAllowance} /></div>
+            <div><Money n={13} label="If you or your spouse or civil partner were born before 6 April 1935, the amount of married couple’s surplus allowance you can have" value={s.marriedCoupleSurplus} /></div>
           </div>
         </Panel>
         <Head>Adjustments to tax due</Head>
@@ -76,17 +77,17 @@ export default function TaxCalcSummaryFacsimile({ ret }: { ret: TaxReturn }) {
         <Note>If you’re carrying back certain losses from 2026–27 to 2025–26, any repayment will be in the form of a credit on your Self Assessment statement of account and set against other amounts to be paid and will not affect the figures in boxes 1 to 6 on page TC 1. If you need help in filling in these boxes, ask us or your tax adviser.</Note>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
-            <div><Money n={14} label="Increase in tax due because of adjustments to an earlier year" value={0} /></div>
+            <div><Money n={14} label="Increase in tax due because of adjustments to an earlier year" value={s.increaseTaxAdjustment} /></div>
             <div>
-              <Money n={15} label="Decrease in tax due because of adjustments to an earlier year" value={0} />
-              <Money n={16} label="Any 2026–27 repayment you’re claiming now" value={0} />
+              <Money n={15} label="Decrease in tax due because of adjustments to an earlier year" value={s.decreaseTaxAdjustment} />
+              <Money n={16} label="Any 2026–27 repayment you’re claiming now" value={s.laterYearRepayment} />
             </div>
           </div>
         </Panel>
         <Head>Any other information</Head>
         <Panel className="flex flex-1 flex-col">
           <Label n={17}>Please give any other information in this space</Label>
-          <div className="min-h-[160px] flex-1 whitespace-pre-wrap px-1.5 py-1 text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }} />
+          <div className="min-h-[160px] flex-1 whitespace-pre-wrap px-1.5 py-1 text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{s.otherInformation}</div>
         </Panel>
       </Page>
     </FormThemeContext.Provider>

@@ -53,13 +53,13 @@ const FORM_NAMES: Record<string, string> = {
   SA107: 'Trusts etc', SA108: 'Capital gains', SA109: 'Residence & FIG', SA110: 'Tax calculation summary',
 };
 
-// Each HMRC form code → the Review & Adjust editor page that edits it. Forms not
-// listed (SA110 tax-calc summary) are derived and have no editable inputs.
+// Each HMRC form code → the Review & Adjust editor page that edits it.
 const FORM_TO_PAGE: Record<string, PageId> = {
   SA100: 'core', SA102: 'employment', SA103F: 'selfemp', SA103S: 'selfemp', SA103L: 'lloyds',
   SA104F: 'partnership', SA104S: 'partnership', SA105: 'property', SA106: 'foreign', SA107: 'trusts',
   SA108: 'cgt', SA109: 'residence', SA101: 'additional', SA102M: 'minister', SA102MLA: 'niassembly',
   SA102MP: 'parliament', SA102MSP: 'scottishparliament', SA102MS: 'welshassembly', SA102WAM: 'welshassembly',
+  SA110: 'taxcalc',
 };
 // Auto-calculated ("blue") boxes per form — never editable (would break the sums).
 // The Review editor already renders these as read-only BoxCalc, so this is belt-
@@ -78,6 +78,8 @@ const COMPUTED_BOXES: Record<string, Set<string>> = {
   SA103L: new Set(['5', '11', '18', '26', '27', '40', '41', '42', '43', '48', '49', '52', '53', '55', '58', '60', '61', '62']),
   SA102M: new Set(['12', '19', '20', '26', '27', '31', '32', '34', '35', '38', '39']),
   SA107: new Set(['22', '23', '24']),
+  // SA110 "Self Assessment" totals are computed from the return, not entered.
+  SA110: new Set(['1', '2', '3', '3.1', '4', '4.1', '5', '6']),
 };
 function isEditableBox(code: string, num: string, page: string): boolean {
   if (!(code in FORM_TO_PAGE)) return false;
