@@ -91,7 +91,7 @@ export function Money({ n, label, value, cells = 8, minus, ghost }: { n?: React.
     <div className={dense ? 'mb-2.5' : 'mb-4'}>
       {(n != null || label != null) && <Label n={n} ghost={ghost}>{label}</Label>}
       <div className="flex items-stretch gap-[3px]" style={{ height: 20 }}>
-        <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={base}>£</span>
+        <span className="fac-boxval flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={base}>£</span>
         {/* HMRC "sign" box: a pre-printed white bar by default; a hand-entered
             style minus only when the figure is actually negative. */}
         {minus && (
@@ -100,11 +100,11 @@ export function Money({ n, label, value, cells = 8, minus, ghost }: { n?: React.
           </span>
         )}
         {arr.map((d, idx) => (
-          <span key={idx} className="flex w-[15px] items-center justify-center bg-white text-[11.5px] font-medium text-black" style={base}>{d}</span>
+          <span key={idx} className="fac-boxval flex w-[15px] items-center justify-center bg-white text-[11.5px] font-medium text-black" style={base}>{d}</span>
         ))}
         <span className="flex w-[6px] items-end justify-center pb-[2px] text-[13px] font-bold text-black">·</span>
-        <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={base}>0</span>
-        <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={base}>0</span>
+        <span className="fac-boxval flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={base}>0</span>
+        <span className="fac-boxval flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={base}>0</span>
       </div>
     </div>
   );
@@ -127,7 +127,7 @@ export function Line({ n, label, value, lines = 1, watermark }: { n?: React.Reac
       {label != null && <Label n={n}>{label}</Label>}
       <div>
         {Array.from({ length: lines }).map((_, k) => (
-          <div key={k} className="flex items-center overflow-hidden whitespace-pre px-1.5 text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, borderTop: k === 0 ? `1px solid ${CELL}` : 'none', background: '#fff', height: 19 }}>
+          <div key={k} className="fac-boxval flex items-center overflow-hidden whitespace-pre px-1.5 text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, borderTop: k === 0 ? `1px solid ${CELL}` : 'none', background: '#fff', height: 19 }}>
             {k === 0 && value ? value : (k === lines - 1 && watermark ? <span className="font-normal text-slate-300">{watermark}</span> : '')}
           </div>
         ))}
@@ -147,7 +147,7 @@ export function Cells({ n, label, groups, value = '', sep }: { n?: React.ReactNo
             {gi > 0 && sep && <span className="mr-1 text-[12px] font-bold text-black">{sep}</span>}
             {Array.from({ length: g }).map((_, k) => {
               const ch = chars[idx++] || '';
-              return <span key={k} className="flex h-[18px] w-[16px] items-center justify-center text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, background: '#fff', boxShadow: CELL_SHADOW }}>{ch}</span>;
+              return <span key={k} className="fac-boxval flex h-[18px] w-[16px] items-center justify-center text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, background: '#fff', boxShadow: CELL_SHADOW }}>{ch}</span>;
             })}
           </div>
         ))}

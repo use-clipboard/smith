@@ -44,6 +44,7 @@ const PAGE_ENTRIES: { label: string; code: string; page: string; kw: string }[] 
   { label: 'Scottish Parliament', code: 'SA102', page: 'scottishparliament', kw: 'scottish parliament msp holyrood member office devolved more' },
   { label: 'National Assembly for Wales', code: 'SA102', page: 'welshassembly', kw: 'senedd national assembly wales welsh ms member office cardiff devolved more' },
   { label: "Lloyd's Underwriters", code: 'SA103L', page: 'lloyds', kw: 'lloyds underwriter underwriting syndicate personal funds insurance name member more' },
+  { label: 'Tax Calculation', code: 'SA110', page: 'taxcalc', kw: 'tax calculation summary sa110 sa302 payments on account underpaid surplus allowance adjustments class 2 class 4 nic student loan' },
 ];
 
 // Notable fields — so a field name or box code jumps to the right place.
@@ -163,6 +164,12 @@ const FIELD_ENTRIES: SearchEntry[] = [
   { label: 'Blind Person’s Allowance', context: 'Main Form · Blind allowance & student loan', page: 'core', section: 'Blind allowance & student loan', keywords: 'blind person allowance registered' },
   { label: 'Student loan', context: 'Main Form · Blind allowance & student loan', page: 'core', section: 'Blind allowance & student loan', keywords: 'student loan plan postgraduate repayment' },
   { label: 'Child Benefit charge (HICBC)', context: 'Main Form · Child benefit', page: 'core', section: 'Child benefit', keywords: 'child benefit hicbc high income charge winter fuel' },
+  // Tax Calculation (SA110) — each sub-section jumps to its own sub-tab.
+  { label: 'Self Assessment (tax due)', context: 'Tax Calculation · SA110 · boxes 1–6', page: 'taxcalc', section: 'Self Assessment', keywords: 'total tax due overpaid student loan class 2 class 4 nic capital gains pension charges box 1 2 3 4 5 6 sa302' },
+  { label: 'Underpaid tax & other debts', context: 'Tax Calculation · SA110 · boxes 7–9', page: 'taxcalc', section: 'Underpaid tax', keywords: 'underpaid tax earlier years outstanding debt paye coding notice p2 box 7 8 9' },
+  { label: 'Payments on account', context: 'Tax Calculation · SA110 · boxes 10–11', page: 'taxcalc', section: 'Payments on account', keywords: 'payments on account poa reduce claim first payment box 10 11 balancing payment' },
+  { label: 'Surplus allowance', context: 'Tax Calculation · SA110 · boxes 12–13', page: 'taxcalc', section: 'Surplus allowance', keywords: 'blind person surplus allowance married couple transferred spouse civil partner box 12 13' },
+  { label: 'Adjustments to tax due', context: 'Tax Calculation · SA110 · boxes 14–17', page: 'taxcalc', section: 'Adjustments to tax due', keywords: 'adjustments increase decrease tax due averaging earlier year repayment other information box 14 15 16 17' },
 ];
 
 /** The full searchable index. */

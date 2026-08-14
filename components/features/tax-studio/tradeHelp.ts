@@ -566,3 +566,39 @@ export const LLU = {
   class2FullYear: 'Were you self-employed, a member of Lloyd’s, or a partner for the full tax year and willing to pay Class 2 NIC for the full year?',
   otherInformation: 'Any other information relevant to your Lloyd’s underwriting result.',
 } as const;
+
+// SA110 Tax calculation summary.
+export const TC = {
+  // Self Assessment (computed from the rest of the return)
+  box1: 'The total tax, Class 2 and Class 4 NICs — and any Student/Postgraduate Loan repayment — due for the year before payments on account. SMITH calculates this from every other section of the return, so it is read-only here.',
+  box2: 'Any amount overpaid for the year (shown instead of box 1 when tax deducted at source exceeds the liability). Calculated by SMITH from the rest of the return.',
+  studentLoan: 'The Student Loan repayment due for the year, worked out from your plan type and income. Calculated by SMITH.',
+  postgradLoan: 'The Postgraduate Loan repayment due for the year. Calculated by SMITH.',
+  class4: 'Class 4 National Insurance due on self-employment and partnership profits above the threshold. Calculated by SMITH.',
+  class2: 'Class 2 National Insurance due for the year. Calculated by SMITH.',
+  cgt: 'Capital Gains Tax due, taken from the Capital gains (SA108) section. Calculated by SMITH.',
+  pensionCharges: 'Pension savings tax charges (annual allowance / lifetime allowance) due for the year. Calculated by SMITH.',
+  // Underpaid tax and other debts (from your PAYE Coding Notice)
+  underpaidEarlierYears: 'The “amount of underpaid tax for earlier years” shown on your P2 PAYE Coding Notice that is being collected through your 2025–26 tax code. Enter it here so it is not double-counted.',
+  underpaidThisYearNextCode: 'The “estimated underpayment for 2025–26” shown on your P2 that will be collected through your 2026–27 tax code.',
+  outstandingDebtInCode: 'Any other outstanding debt (e.g. tax credits, earlier Self Assessment) included in your 2025–26 tax code, from your P2 PAYE Coding Notice.',
+  // Payments on account
+  claimReducePoa: 'Tick only if you are claiming to reduce your 2026–27 payments on account (e.g. because you expect lower income). Enter the reduced first payment in box 11 and explain why in box 17.',
+  firstPoaClaim: 'Your first payment on account for 2026–27. It defaults to the figure SMITH has calculated (half this year’s liability). Only change it if you ticked box 10 to claim a reduced amount.',
+  automatedPoaCalc: 'Let SMITH work out the payments on account automatically from this year’s liability.',
+  manualPoaCalc: 'Enter the payment-on-account figures yourself instead of using SMITH’s automatic calculation.',
+  firstPoaDue: 'The first payment on account that was due by 31 January 2026 towards the 2025–26 liability.',
+  firstPoaPaid: 'The amount you actually paid towards the first payment on account.',
+  secondPoaDue: 'The second payment on account that was due by 31 July 2026 towards the 2025–26 liability.',
+  secondPoaPaid: 'The amount you actually paid towards the second payment on account.',
+  otherBalancingPayment: 'Any other balancing payment made during the year towards the 2025–26 liability.',
+  poaInSa302: 'Tick to show the payment-on-account calculation on the SA302 tax computation report.',
+  // Blind person’s and married couple’s surplus allowance
+  blindSurplus: 'Any Blind Person’s Allowance your spouse or civil partner could not use and has transferred to you.',
+  marriedCoupleSurplus: 'Where you or your spouse/civil partner were born before 6 April 1935, any married couple’s allowance they could not use and have transferred to you.',
+  // Adjustments to tax due
+  increaseTaxAdjustment: 'An increase in your 2025–26 tax calculated by reference to an earlier year — e.g. averaging for farmers/creators, or certain adjustments to earlier years.',
+  decreaseTaxAdjustment: 'A decrease in your 2025–26 tax calculated by reference to an earlier year — e.g. averaging for farmers/creators, or certain adjustments to earlier years.',
+  laterYearRepayment: 'Any 2026–27 repayment you are claiming now — e.g. from carrying back a loss or pension contribution. It is credited on your Self Assessment statement and does not change boxes 1 to 6.',
+  otherInformation: 'Any other information relevant to your tax calculation — including the reason for a claim to reduce payments on account (box 10).',
+} as const;

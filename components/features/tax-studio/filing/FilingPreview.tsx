@@ -308,6 +308,10 @@ ${head}
   html, body { margin: 0; padding: 0; background: #fff; }
   .sa-sheets-wrap { zoom: 1 !important; padding: 0 !important; display: block !important; }
   .sa-sheet { box-shadow: none !important; margin: 0 !important; }
+  /* html2canvas renders flex-centred text a touch low; nudge headings and the
+     boxed figures back up so the capture matches the on-screen preview. */
+  .sa-sheet h2, .sa-sheet h3, .sa-sheet h4, .sa-sheet [data-sa-subhead] { position: relative; top: -1.5px; }
+  .sa-sheet .fac-boxval { padding-bottom: 2px !important; }
 </style></head><body><div class="sa-sheets-wrap">${el.innerHTML}</div></body></html>`);
       doc.close();
 

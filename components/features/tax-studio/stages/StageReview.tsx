@@ -20,7 +20,7 @@ import HelpDot from '../FieldHelp';
 import Tooltip from '@/components/ui/Tooltip';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
 import { partnershipRequiresFull, migratePartnershipToFull, migratePartnershipToShort } from '../partnershipForm';
-import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST, RES, ADD, MIN, NIA, PAR, SCP, WAL, LLU } from '../tradeHelp';
+import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST, RES, ADD, MIN, NIA, PAR, SCP, WAL, LLU, TC } from '../tradeHelp';
 import { searchReview, type SearchEntry } from '../reviewSearch';
 import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
@@ -501,7 +501,7 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
       {page === 'scottishparliament' && <ScottishParliamentPage ret={ret} income={income} setIncome={setIncome} />}
       {page === 'welshassembly' && <WelshAssemblyPage ret={ret} income={income} setIncome={setIncome} />}
       {page === 'lloyds' && <LloydsPage ret={ret} income={income} setIncome={setIncome} />}
-      {page === 'taxcalc' && <TaxCalcPage ret={ret} income={income} setIncome={setIncome} />}
+      {page === 'taxcalc' && <TaxCalcPage ret={ret} income={income} setIncome={setIncome} reveal={reveal} />}
       </div>
     </StudioCard>
   );
@@ -530,7 +530,7 @@ export function ReturnSectionEditor({ page, ret, setIncome }: { page: PageId; re
     case 'scottishparliament': return <ScottishParliamentPage ret={ret} income={income} setIncome={setIncome} />;
     case 'welshassembly': return <WelshAssemblyPage ret={ret} income={income} setIncome={setIncome} />;
     case 'lloyds': return <LloydsPage ret={ret} income={income} setIncome={setIncome} />;
-    case 'taxcalc': return <TaxCalcPage ret={ret} income={income} setIncome={setIncome} />;
+    case 'taxcalc': return <TaxCalcPage ret={ret} income={income} setIncome={setIncome} reveal={null} />;
     default: return null;
   }
 }
@@ -552,7 +552,7 @@ function sa110TabCount(s: Sa110, tab: string): number {
   return 0;
 }
 
-function TaxCalcPage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome }) {
+function TaxCalcPage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome; reveal: Reveal | null }) {
   const s: Sa110 = income.sa110 ?? {};
   const set = (u: Partial<Sa110>) => setIncome(i => ({ ...i, sa110: { ...i.sa110, ...u } }));
   const c = computeSa100Full(income, ret.taxYear);
@@ -562,67 +562,79 @@ function TaxCalcPage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100
   const computedPoa = c.poaApplies ? c.paymentOnAccount : 0; // box 11 default — matches the facsimile
   const [tab, setTab] = useState<string>('Self Assessment');
   const activeTab = (SA110_TABS as readonly string[]).includes(tab) ? tab : SA110_TABS[0];
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [flash, setFlash] = useState(false);
+  // "Jump to" search → switch to the matching sub-tab, then scroll & flash it.
+  useEffect(() => {
+    if (!reveal?.section || !(SA110_TABS as readonly string[]).includes(reveal.section)) return;
+    setTab(reveal.section);
+    setFlash(true);
+    const raf = requestAnimationFrame(() => cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    const t = setTimeout(() => setFlash(false), 1700);
+    return () => { cancelAnimationFrame(raf); clearTimeout(t); };
+  }, [reveal]);
+  const flashCls = flash ? 'rounded-2xl ring-2 ring-[var(--accent)]/40' : '';
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" ref={cardRef}>
       <SectionTabs tabs={SA110_TABS.map(t => ({ label: t, count: sa110TabCount(s, t) }))} active={activeTab} onSelect={setTab} />
 
       {activeTab === 'Self Assessment' && (
-        <StudioCard className="p-4"><BoxSection title="Self Assessment">
+        <StudioCard className={`p-4 ${flashCls}`}><BoxSection title="Self Assessment">
           <p className="mb-1 text-[11.5px] text-[var(--text-muted)]">These totals are calculated from the rest of the return.</p>
-          <BoxCalc box={1} label="Total tax, Class 2 and Class 4 NICs due before any payments on account" value={box1} />
-          <BoxCalc box={2} label="Total tax, Class 2 and Class 4 NICs overpaid" value={box2} />
-          <BoxCalc box={3} label="Student Loan repayment due" value={c.studentLoan} />
-          <BoxCalc box="3.1" label="Postgraduate Loan repayment due" value={0} />
-          <BoxCalc box={4} label="Class 4 NICs due" value={c.class4Nic} />
-          <BoxCalc box="4.1" label="Class 2 NICs due" value={0} />
-          <BoxCalc box={5} label="Capital Gains Tax due" value={c.capitalGainsTax} />
-          <BoxCalc box={6} label="Pension charges due" value={0} />
+          <BoxCalc box={1} label="Total tax, Class 2 and Class 4 NICs due before any payments on account" value={box1} help={TC.box1} />
+          <BoxCalc box={2} label="Total tax, Class 2 and Class 4 NICs overpaid" value={box2} help={TC.box2} />
+          <BoxCalc box={3} label="Student Loan repayment due" value={c.studentLoan} help={TC.studentLoan} />
+          <BoxCalc box="3.1" label="Postgraduate Loan repayment due" value={0} help={TC.postgradLoan} />
+          <BoxCalc box={4} label="Class 4 NICs due" value={c.class4Nic} help={TC.class4} />
+          <BoxCalc box="4.1" label="Class 2 NICs due" value={0} help={TC.class2} />
+          <BoxCalc box={5} label="Capital Gains Tax due" value={c.capitalGainsTax} help={TC.cgt} />
+          <BoxCalc box={6} label="Pension charges due" value={0} help={TC.pensionCharges} />
         </BoxSection></StudioCard>
       )}
 
       {activeTab === 'Underpaid tax' && (
-        <StudioCard className="p-4"><BoxSection title="Underpaid tax and other debts">
-          <BoxNum box={7} label="Underpaid tax for earlier years included in your tax code for 2025–26" value={s.underpaidEarlierYears ?? 0} onChange={v => set({ underpaidEarlierYears: v })} />
-          <BoxNum box={8} label="Underpaid tax for 2025–26 included in your tax code for 2026–27" value={s.underpaidThisYearNextCode ?? 0} onChange={v => set({ underpaidThisYearNextCode: v })} />
-          <BoxNum box={9} label="Outstanding debt included in your tax code for 2025–26" value={s.outstandingDebtInCode ?? 0} onChange={v => set({ outstandingDebtInCode: v })} />
+        <StudioCard className={`p-4 ${flashCls}`}><BoxSection title="Underpaid tax and other debts">
+          <BoxNum box={7} label="Underpaid tax for earlier years included in your tax code for 2025–26" value={s.underpaidEarlierYears ?? 0} onChange={v => set({ underpaidEarlierYears: v })} help={TC.underpaidEarlierYears} />
+          <BoxNum box={8} label="Underpaid tax for 2025–26 included in your tax code for 2026–27" value={s.underpaidThisYearNextCode ?? 0} onChange={v => set({ underpaidThisYearNextCode: v })} help={TC.underpaidThisYearNextCode} />
+          <BoxNum box={9} label="Outstanding debt included in your tax code for 2025–26" value={s.outstandingDebtInCode ?? 0} onChange={v => set({ outstandingDebtInCode: v })} help={TC.outstandingDebtInCode} />
         </BoxSection></StudioCard>
       )}
 
       {activeTab === 'Payments on account' && (
-        <StudioCard className="space-y-3 p-4">
+        <StudioCard className={`space-y-3 p-4 ${flashCls}`}>
           <BoxSection title="Payments on account">
-            <BoxCheck box={10} label="Claiming to reduce your 2026–27 payments on account?" checked={!!s.claimReducePoa} onChange={v => set({ claimReducePoa: v })} />
-            <BoxNum box={11} label="Your first payment on account for 2026–27" value={s.firstPoaClaim ?? computedPoa} onChange={v => set({ firstPoaClaim: v })} />
+            <BoxCheck box={10} label="Claiming to reduce your 2026–27 payments on account?" checked={!!s.claimReducePoa} onChange={v => set({ claimReducePoa: v })} help={TC.claimReducePoa} />
+            <BoxNum box={11} label="Your first payment on account for 2026–27" value={s.firstPoaClaim ?? computedPoa} onChange={v => set({ firstPoaClaim: v })} help={TC.firstPoaClaim} />
             <p className="mt-1 text-[11.5px] text-[var(--text-muted)]">Defaults to the first payment on account SMITH has calculated ({fmtMoney(computedPoa)}). Only change it if you ticked box 10 to claim a reduced amount.</p>
           </BoxSection>
           <BoxSection title="Payment on account calculation">
-            <BoxCheck label="Automated Payment on Account Calculation" checked={!!s.automatedPoaCalc} onChange={v => set(v ? { automatedPoaCalc: true, manualPoaCalc: false } : { automatedPoaCalc: false })} />
-            <BoxCheck label="Manual Payment on Account Calculation" checked={!!s.manualPoaCalc} onChange={v => set(v ? { manualPoaCalc: true, automatedPoaCalc: false } : { manualPoaCalc: false })} />
+            <BoxCheck label="Automated Payment on Account Calculation" checked={!!s.automatedPoaCalc} onChange={v => set(v ? { automatedPoaCalc: true, manualPoaCalc: false } : { automatedPoaCalc: false })} help={TC.automatedPoaCalc} />
+            <BoxCheck label="Manual Payment on Account Calculation" checked={!!s.manualPoaCalc} onChange={v => set(v ? { manualPoaCalc: true, automatedPoaCalc: false } : { manualPoaCalc: false })} help={TC.manualPoaCalc} />
           </BoxSection>
           <BoxSection title="Amounts paid towards 2025–26 tax liability">
-            <BoxNum label="First payment on account (31 Jan 2026) — amount due" value={s.firstPoaDue ?? 0} onChange={v => set({ firstPoaDue: v })} />
-            <BoxNum label="First payment on account (31 Jan 2026) — amount paid" value={s.firstPoaPaid ?? 0} onChange={v => set({ firstPoaPaid: v })} />
-            <BoxNum label="Second payment on account (31 Jul 2026) — amount due" value={s.secondPoaDue ?? 0} onChange={v => set({ secondPoaDue: v })} />
-            <BoxNum label="Second payment on account (31 Jul 2026) — amount paid" value={s.secondPoaPaid ?? 0} onChange={v => set({ secondPoaPaid: v })} />
-            <BoxNum label="Other balancing payment made in the year" value={s.otherBalancingPayment ?? 0} onChange={v => set({ otherBalancingPayment: v })} />
-            <BoxCheck label="Show the Payment on Account Calculation in the SA302 Report" checked={!!s.poaInSa302} onChange={v => set({ poaInSa302: v })} />
+            <BoxNum label="First payment on account (31 Jan 2026) — amount due" value={s.firstPoaDue ?? 0} onChange={v => set({ firstPoaDue: v })} help={TC.firstPoaDue} />
+            <BoxNum label="First payment on account (31 Jan 2026) — amount paid" value={s.firstPoaPaid ?? 0} onChange={v => set({ firstPoaPaid: v })} help={TC.firstPoaPaid} />
+            <BoxNum label="Second payment on account (31 Jul 2026) — amount due" value={s.secondPoaDue ?? 0} onChange={v => set({ secondPoaDue: v })} help={TC.secondPoaDue} />
+            <BoxNum label="Second payment on account (31 Jul 2026) — amount paid" value={s.secondPoaPaid ?? 0} onChange={v => set({ secondPoaPaid: v })} help={TC.secondPoaPaid} />
+            <BoxNum label="Other balancing payment made in the year" value={s.otherBalancingPayment ?? 0} onChange={v => set({ otherBalancingPayment: v })} help={TC.otherBalancingPayment} />
+            <BoxCheck label="Show the Payment on Account Calculation in the SA302 Report" checked={!!s.poaInSa302} onChange={v => set({ poaInSa302: v })} help={TC.poaInSa302} />
           </BoxSection>
         </StudioCard>
       )}
 
       {activeTab === 'Surplus allowance' && (
-        <StudioCard className="p-4"><BoxSection title="Blind person’s &amp; married couple’s surplus allowance">
-          <BoxNum box={12} label="Blind person’s surplus allowance you can have" value={s.blindSurplusAllowance ?? 0} onChange={v => set({ blindSurplusAllowance: v })} />
-          <BoxNum box={13} label="Married couple’s surplus allowance from your spouse or civil partner" value={s.marriedCoupleSurplus ?? 0} onChange={v => set({ marriedCoupleSurplus: v })} />
+        <StudioCard className={`p-4 ${flashCls}`}><BoxSection title="Blind person’s &amp; married couple’s surplus allowance">
+          <BoxNum box={12} label="Blind person’s surplus allowance you can have" value={s.blindSurplusAllowance ?? 0} onChange={v => set({ blindSurplusAllowance: v })} help={TC.blindSurplus} />
+          <BoxNum box={13} label="Married couple’s surplus allowance from your spouse or civil partner" value={s.marriedCoupleSurplus ?? 0} onChange={v => set({ marriedCoupleSurplus: v })} help={TC.marriedCoupleSurplus} />
         </BoxSection></StudioCard>
       )}
 
       {activeTab === 'Adjustments to tax due' && (
-        <StudioCard className="p-4"><BoxSection title="Adjustments to tax due">
-          <BoxNum box={14} label="Increase in tax due because of adjustments to an earlier year" value={s.increaseTaxAdjustment ?? 0} onChange={v => set({ increaseTaxAdjustment: v })} />
-          <BoxNum box={15} label="Decrease in tax due because of adjustments to an earlier year" value={s.decreaseTaxAdjustment ?? 0} onChange={v => set({ decreaseTaxAdjustment: v })} />
-          <BoxNum box={16} label="Any 2026–27 repayment you’re claiming now" value={s.laterYearRepayment ?? 0} onChange={v => set({ laterYearRepayment: v })} />
-          <BoxText box={17} label="Any other information" value={s.otherInformation ?? ''} onChange={v => set({ otherInformation: v })} />
+        <StudioCard className={`p-4 ${flashCls}`}><BoxSection title="Adjustments to tax due">
+          <BoxNum box={14} label="Increase in tax due because of adjustments to an earlier year" value={s.increaseTaxAdjustment ?? 0} onChange={v => set({ increaseTaxAdjustment: v })} help={TC.increaseTaxAdjustment} />
+          <BoxNum box={15} label="Decrease in tax due because of adjustments to an earlier year" value={s.decreaseTaxAdjustment ?? 0} onChange={v => set({ decreaseTaxAdjustment: v })} help={TC.decreaseTaxAdjustment} />
+          <BoxNum box={16} label="Any 2026–27 repayment you’re claiming now" value={s.laterYearRepayment ?? 0} onChange={v => set({ laterYearRepayment: v })} help={TC.laterYearRepayment} />
+          <BoxText box={17} label="Any other information" value={s.otherInformation ?? ''} onChange={v => set({ otherInformation: v })} help={TC.otherInformation} />
         </BoxSection></StudioCard>
       )}
     </div>
