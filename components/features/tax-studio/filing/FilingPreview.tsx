@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Download, FileText, Search, Plus, Minus, ChevronRight, List, Pencil, Check, Loader2 } from 'lucide-react';
+import { X, Printer, FileText, Search, Plus, Minus, ChevronRight, List, Pencil, Check, Loader2 } from 'lucide-react';
 import type { TaxReturn } from '../types';
 import type { PageId } from '../stages/StageReview';
 import { buildFilingForms, type FilingForm, type FilingRow } from './filingModel';
@@ -249,7 +249,6 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
   const [sidebar, setSidebar] = useState(true);
   const [edit, setEdit] = useState<{ page: PageId; box: string; formCode: string; section: string; record: string; topTab?: string; subTab?: string } | null>(null);
   const [focusing, setFocusing] = useState(false);
-  const [downloading, setDownloading] = useState(false);
   const editablePreview = !!renderEditor;
 
   // Click an editable field on a facsimile → open its editor section in a lightbox.
@@ -279,72 +278,39 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
     }
   }
 
-  // Download the whole return as a single A4 PDF. The browser is the only
-  // renderer we have (no puppeteer server-side), so we rasterise each sheet and
-  // assemble the pages with jsPDF — the same pattern the billing module uses.
-  // The live sheets carry the preview's `zoom`, so we clone the markup into an
-  // isolated offscreen iframe forced to zoom 1 (with the page's stylesheets
-  // cloned so Tailwind + the facsimile styles apply) and capture there — one PDF
-  // page per A4 sheet, which keeps the facsimile's own page breaks exactly.
-  async function downloadPdf() {
+  // Save the whole return as a PDF via the browser's own print engine. We open
+  // a fresh popup window with a FLAT DOM (just the A4 sheets + the page's
+  // stylesheets) and call print() there. Why not html2canvas? It rasterises the
+  // page with its own layout engine that positions text by line-height and
+  // mis-places every glyph — the figures never sat right. Why not an in-place
+  // @media print? The Next.js wrapper divs break pagination (blank first page /
+  // one-page printouts) — the bookkeeping reports hit this and moved to a popup
+  // too. The popup renders in the real browser engine, so the PDF matches the
+  // on-screen preview exactly, and paginates naturally. The user picks "Save as
+  // PDF" (or their PDF printer); the document title seeds the filename.
+  function printPreview() {
     const el = sheetsRef.current;
-    if (!el || downloading) return;
-    setDownloading(true);
-    const iframe = document.createElement('iframe');
-    iframe.setAttribute('aria-hidden', 'true');
-    iframe.setAttribute('tabindex', '-1');
-    // Offscreen rather than display:none — a hidden frame has no layout to capture.
-    iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;';
-    document.body.appendChild(iframe);
-    try {
-      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([import('jspdf'), import('html2canvas')]);
-      const doc = iframe.contentDocument;
-      if (!doc) throw new Error('no frame document');
-      const head = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]')).map(n => n.outerHTML).join('\n');
-      doc.open();
-      doc.write(`<!doctype html><html><head><meta charset="utf-8"><base href="${location.origin}/">
-${head}
+    if (!el) { window.print(); return; }
+    const styleHtml = Array.from(document.querySelectorAll('link[rel="stylesheet"], style')).map(n => n.outerHTML).join('\n');
+    const popup = window.open('', '_blank', 'width=900,height=1100');
+    if (!popup) { window.print(); return; } // pop-up blocked — fall back to native print
+    const title = pdfFileName(ret).replace(/\.pdf$/, ''); // browsers use <title> as the Save-as-PDF filename
+    popup.document.write(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><base href="${location.origin}/"><title>${title}</title>
+${styleHtml}
 <style>
   html, body { margin: 0; padding: 0; background: #fff; }
-  .sa-sheets-wrap { zoom: 1 !important; padding: 0 !important; display: block !important; }
-  .sa-sheet { box-shadow: none !important; margin: 0 !important; }
-  /* html2canvas positions text by line-height, not by the browser's flex
-     centring — so every glyph sits low in its box (too much leading below it).
-     Transforms/position offsets are ignored in the full render; reducing
-     line-height is the one lever it honours, and it lifts the text back to
-     where the on-screen preview shows it. Verified against the real render.
-     Applied only to single-line elements (boxed figures, box numbers, section
-     headings) so multi-line labels keep their normal wrapping. */
-  .fac-boxval, [data-boxnum] { line-height: 0.7 !important; }
-  h2, h3, h4, [data-sa-subhead] { line-height: 0.85 !important; }
+  /* Print the facsimile's colours/borders, not just black text. */
+  *, *::before, *::after { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  .sa-sheets-wrap { zoom: 1 !important; padding: 0 !important; display: block !important; background: #fff; }
+  .sa-sheet { box-shadow: none !important; margin: 0 auto !important; page-break-after: always; break-after: page; }
+  .sa-sheet:last-child { page-break-after: auto; break-after: auto; }
+  @page { size: A4; margin: 0; }
 </style></head><body><div class="sa-sheets-wrap">${el.innerHTML}</div></body></html>`);
-      doc.close();
-
-      // Wait for the frame to lay out, fonts to settle and images (logos are data URLs).
-      if (doc.readyState !== 'complete') {
-        await new Promise<void>(resolve => { iframe.addEventListener('load', () => resolve(), { once: true }); setTimeout(resolve, 2000); });
-      }
-      try { await (doc as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready; } catch { /* cosmetic */ }
-      await Promise.all(Array.from(doc.images).map(img => (img.complete ? Promise.resolve() : new Promise<void>(resolve => {
-        img.addEventListener('load', () => resolve(), { once: true });
-        img.addEventListener('error', () => resolve(), { once: true });
-      }))));
-
-      const sheets = Array.from(doc.querySelectorAll<HTMLElement>('.sa-sheet'));
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
-      for (let i = 0; i < sheets.length; i++) {
-        const canvas = await html2canvas(sheets[i], { scale: 2, backgroundColor: '#ffffff', logging: false, useCORS: true });
-        if (i > 0) pdf.addPage();
-        pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 210, 297);
-      }
-      pdf.save(pdfFileName(ret));
-    } catch (err) {
-      console.error('[tax-studio] PDF download failed', err);
-      alert('Sorry — the PDF could not be built. Please try again.');
-    } finally {
-      iframe.remove();
-      setDownloading(false);
-    }
+    popup.document.close();
+    const fire = () => { try { popup.focus(); popup.print(); } catch { /* noop */ } };
+    popup.onafterprint = () => { try { popup.close(); } catch { /* user already closed it */ } };
+    if (popup.document.readyState === 'complete') setTimeout(fire, 300);
+    else { popup.addEventListener('load', fire); setTimeout(fire, 1200); }
   }
 
   // Once the editor lightbox is up, hunt for the clicked box (navigating the
@@ -585,13 +551,12 @@ ${head}
             <button onClick={() => setZoom(1)} className="w-11 text-center text-[11px] font-semibold tabular-nums text-slate-600 hover:text-slate-900" aria-label="Reset zoom">{Math.round(zoom * 100)}%</button>
             <button onClick={() => setZoom(z => Math.min(2, +(z + 0.1).toFixed(2)))} className="rounded p-1 text-slate-600 hover:bg-slate-100" aria-label="Zoom in"><Plus size={14} /></button>
           </div>
-          <button onClick={downloadPdf} disabled={downloading} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-60">
-            {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-            {downloading ? 'Preparing…' : 'Download'}
+          <button onClick={printPreview} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:opacity-90">
+            <Printer size={14} /> Save as PDF
           </button>
           {/* Visible build tag — lets the user confirm they're on the latest app
-              version (not a stale cached copy) before trusting the PDF output. */}
-          <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">PDF v4</span>
+              version (not a stale cached copy) before trusting the output. */}
+          <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">PDF v5</span>
           <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-semibold text-slate-600 hover:bg-slate-50">
             <X size={14} /> Close
           </button>
