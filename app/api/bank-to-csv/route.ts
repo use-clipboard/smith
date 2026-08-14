@@ -6,6 +6,12 @@ import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { uploadDocumentsToDrive, logAiUsage, saveDocumentsToVault } from '@/lib/driveUpload';
 
+// Bank statements can be large and Claude runs at max_tokens: 32000, so a single
+// scan routinely takes 30–90s. Without this the function falls back to Vercel's
+// short default and dies with FUNCTION_INVOCATION_TIMEOUT. Matches the other
+// heavy AI routes (final-accounts/performance = 300).
+export const maxDuration = 300;
+
 const FileSchema = z.object({ name: z.string(), mimeType: z.string(), base64: z.string() });
 
 const RequestSchema = z.object({

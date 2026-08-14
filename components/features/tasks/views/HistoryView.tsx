@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { fetchJson } from '@/lib/fetchJson';
 import { Loader2, CheckCircle2, Trash2, RefreshCw, ChevronDown, ChevronRight, Clock, User as UserIcon, Calendar, Activity, Layers, Download } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Task, TaskStep, TaskTimeEntry } from '@/types';
@@ -53,6 +54,7 @@ export default function HistoryView() {
   const [search, setSearch] = useState('');
   const [tasks, setTasks] = useState<HistoryTask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const auditRef = useRef<ChangesViewHandle>(null);
   const isAudit = filter === 'audit';
@@ -63,17 +65,16 @@ export default function HistoryView() {
       return;
     }
     setLoading(true);
+    setError(null);
     try {
       // Search is applied client-side (over title, client name, client code) so
       // we always pull the full filter set and let the input refine the view.
       const params = new URLSearchParams({ filter });
-      const r = await fetch(`/api/tasks/history?${params}`);
-      if (r.ok) {
-        const d = await r.json() as { tasks: HistoryTask[] };
-        setTasks(d.tasks ?? []);
-      } else {
-        setTasks([]);
-      }
+      const d = await fetchJson<{ tasks?: HistoryTask[] }>(`/api/tasks/history?${params}`);
+      setTasks(d.tasks ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load history.');
+      setTasks([]);
     } finally {
       setLoading(false);
     }
@@ -183,6 +184,10 @@ export default function HistoryView() {
       ) : loading ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-6 w-6 animate-spin text-indigo-400" />
+        </div>
+      ) : error ? (
+        <div className="text-center py-16 text-sm font-medium text-red-600">
+          {error}
         </div>
       ) : visibleTasks.length === 0 ? (
         <div className="text-center py-16 text-sm font-bold text-[var(--text-primary)]">

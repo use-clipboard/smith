@@ -11,6 +11,9 @@ import Tooltip from '@/components/ui/Tooltip';
 import TransactionEditModal from '@/components/features/full-analysis/TransactionEditModal';
 import SaveAnalysisModal from '@/components/features/full-analysis/SaveAnalysisModal';
 import FullAnalysisHistory, { type SeedAnalysis } from '@/components/features/full-analysis/FullAnalysisHistory';
+import CaptureReviewChat from '@/components/features/full-analysis/CaptureReviewChat';
+import { applyCaptureEdit, flaggedKey, type CaptureEdit } from '@/components/features/full-analysis/captureChat';
+import { canAccessCaptureChat } from '@/lib/full-analysis/access';
 import { FileSearch, Download, Undo2, Redo2, AlertTriangle, Pencil, ChevronUp, ChevronDown, ChevronsUpDown, CheckCheck, ChevronRight, ArrowLeft, Sparkles, Check, ArrowRight, UploadCloud, Users, FileOutput, SlidersHorizontal, Zap, Trash2, BookCopy } from 'lucide-react';
 import type { Transaction, FlaggedEntry, TargetSoftware, LedgerAccount, VTTransaction, CapiumTransaction, XeroTransaction, QuickBooksTransaction, FreeAgentTransaction, SageTransaction, GeneralTransaction, SmithTransaction, DocumentScanResult } from '@/types';
 import { fileToBase64, readFileAsText, parseLedgerCsv, findBestMatch } from '@/utils/fileUtils';
@@ -178,12 +181,12 @@ export default function FullAnalysisPage() {
   // "New Analysis" to enter the tool, or "Open" on a past row to reload it.
   const [view, setView] = useState<'history' | 'tool'>('history');
   const [seed, setSeed] = useState<SeedAnalysis | null>(null);
-  const [me, setMe]     = useState<{ userId: string; userRole: 'admin' | 'staff' }>({ userId: '', userRole: 'staff' });
+  const [me, setMe]     = useState<{ userId: string; userRole: 'admin' | 'staff'; email: string }>({ userId: '', userRole: 'staff', email: '' });
 
   useEffect(() => {
     fetch('/api/users/me')
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setMe({ userId: d.userId ?? '', userRole: d.userRole === 'admin' ? 'admin' : 'staff' }); })
+      .then(d => { if (d) setMe({ userId: d.userId ?? '', userRole: d.userRole === 'admin' ? 'admin' : 'staff', email: d.email ?? '' }); })
       .catch(() => {/* ignore */});
   }, []);
 
@@ -195,7 +198,7 @@ export default function FullAnalysisPage() {
       onOpen={s => { setSeed(s); setView('tool'); }}
     />
   ) : (
-    <FullAnalysisTool seed={seed} onBack={() => { setSeed(null); setView('history'); }} />
+    <FullAnalysisTool seed={seed} userEmail={me.email} onBack={() => { setSeed(null); setView('history'); }} />
   );
 }
 
@@ -211,7 +214,7 @@ function BackToHistory({ onBack }: { onBack: () => void }) {
   );
 }
 
-function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack: () => void }) {
+function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | null; userEmail: string; onBack: () => void }) {
   const [appState, setAppState] = useState<AppState>('idle');
   useTabActivitySync('/full-analysis', appState);
   const [error, setError] = useState<string | null>(null);
@@ -369,6 +372,7 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
   const [currentView, setCurrentView] = useState<View>('valid');
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   // ─── Date range ──────────────────────────────────────────────────────────────
   const [dateFrom, setDateFrom] = useState('');
@@ -457,6 +461,45 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
     });
     setHistoryIndex(prev => prev + 1);
   }, [historyIndex]);
+
+  // ─── Ask SMITH review chat (preview pilot) ─────────────────────────────────
+  const captureChatEnabled = canAccessCaptureChat(userEmail);
+  // Show the chat whenever there's anything to review — valid rows OR flagged
+  // items (flagged-only is exactly where the user has the most questions).
+  const captureChatHasRows = processedTransactions.length > 0 || flaggedEntries.length > 0;
+
+  // Chart-of-accounts vocabulary offered to the chat for recodes: the SMITH
+  // book's COA, plus any uploaded ledger CSV, plus the ledgerAccounts state.
+  const chatAccounts = useMemo(() => {
+    const fromBook = bookCoa?.accounts?.map(a => a.name) ?? [];
+    const fromCsv = sharedInputsRef.current?.parsedLedgerAccounts?.map(a => a.name) ?? [];
+    const fromState = ledgerAccounts.map(a => a.name);
+    return Array.from(new Set([...fromBook, ...fromCsv, ...fromState].filter(Boolean)));
+    // appState in deps so the (non-reactive) sharedInputsRef list is picked up
+    // once a scan completes.
+  }, [bookCoa, ledgerAccounts, appState]);
+
+  // Apply one SMITH-proposed edit to the live lists. Returns false if the target
+  // row can't be found (stale reference) so the chat can say so.
+  const handleApplyChatEdit = useCallback((edit: CaptureEdit): boolean => {
+    // Flagged-item edits are handled here (the page owns the flagged list and the
+    // transaction-rebuild helper). Only "unflag" (restore to valid) is supported.
+    if (edit.section === 'flagged') {
+      if (edit.action !== 'unflag') return false;
+      const idx = flaggedEntries.findIndex(e => flaggedKey(e, targetSoftware) === edit.key);
+      if (idx < 0) return false;
+      const entry = flaggedEntries[idx];
+      const tx = entry.transactionData ?? buildMinimalTx(entry, targetSoftware);
+      setFlaggedEntries(prev => prev.filter((_, i) => i !== idx));
+      pushHistory([...processedTransactions, tx]);
+      return true;
+    }
+    const { transactions, flagged, applied } = applyCaptureEdit(processedTransactions, targetSoftware, edit);
+    if (!applied) return false;
+    if (flagged) setFlaggedEntries(prev => [...prev, flagged]);
+    pushHistory(transactions);
+    return true;
+  }, [processedTransactions, flaggedEntries, targetSoftware, pushHistory]);
 
   // ─── Edit handlers ───────────────────────────────────────────────────────────
 
@@ -1223,6 +1266,23 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
           <div className="bg-white/[0.78] backdrop-blur-md rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin">
             <WizardStepper current={4} onStep={n => { if (n < 4) { setAppState('idle'); setWizardStep(n as 1 | 2 | 3 | 4); } }} />
           </div>
+
+          {/* Ask SMITH review chat — preview pilot, gated by email allowlist */}
+          {captureChatEnabled && captureChatHasRows && (
+            <CaptureReviewChat
+              open={chatOpen}
+              onOpenChange={setChatOpen}
+              clientName={clientName}
+              isVatRegistered={isVatRegistered}
+              targetSoftware={targetSoftware}
+              accountLabel={accountLabel}
+              accounts={chatAccounts}
+              transactions={processedTransactions}
+              flagged={flaggedEntries}
+              onApplyEdit={handleApplyChatEdit}
+            />
+          )}
+
           {/* Top action bar */}
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex gap-2">
@@ -1234,6 +1294,14 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${currentView === 'flagged' ? 'bg-amber-500 text-white' : 'btn-secondary'}`}>
                 <AlertTriangle size={13} />Flagged ({flaggedEntries.length})
               </button>
+              {captureChatEnabled && captureChatHasRows && (
+                <button
+                  onClick={() => setChatOpen(o => !o)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-1.5 ${chatOpen ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+                >
+                  <Sparkles size={14} /> Ask SMITH
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => { setHistoryIndex(h => h - 1); setSelectedValid(new Set()); }} disabled={!canUndo} className="btn-secondary px-2.5 py-2"><Undo2 size={14} /></button>

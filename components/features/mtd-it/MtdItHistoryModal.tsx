@@ -1,4 +1,5 @@
 'use client';
+import { fetchJson } from '@/lib/fetchJson';
 
 /**
  * MtdItHistoryModal — firm-wide MTD-IT activity feed: status changes, approval
@@ -74,10 +75,9 @@ export default function MtdItHistoryModal({ onClose }: { onClose: () => void }) 
 
   useEffect(() => {
     let alive = true;
-    fetch('/api/mtd-it/activity')
-      .then(r => r.ok ? r.json() : Promise.reject())
+    fetchJson<{ events?: ActivityEvent[] }>('/api/mtd-it/activity')
       .then(d => { if (alive) setEvents((d.events ?? []) as ActivityEvent[]); })
-      .catch(() => { if (alive) setError('Could not load the activity history.'); });
+      .catch(e => { if (alive) setError(e instanceof Error ? e.message : 'Could not load the activity history.'); });
     return () => { alive = false; };
   }, []);
 

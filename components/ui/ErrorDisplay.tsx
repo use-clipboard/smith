@@ -8,12 +8,14 @@ interface ErrorDisplayProps {
   onRetry: () => void;
 }
 
-const ERROR_CONFIG: Record<string, {
+type ErrorConfig = {
   icon: React.ElementType;
   iconClass: string;
   title: string;
   tips: string[];
-}> = {
+};
+
+const ERROR_CONFIG: Record<string, ErrorConfig> = {
   FILE_UNREADABLE: {
     icon: FileX,
     iconClass: 'text-orange-500',
@@ -74,9 +76,59 @@ const ERROR_CONFIG: Record<string, {
       'Try re-running — occasionally this resolves itself',
     ],
   },
+  TIMEOUT: {
+    icon: Clock,
+    iconClass: 'text-yellow-500',
+    title: 'Processing Timed Out',
+    tips: [
+      'Large statements take longer — split the PDF into smaller parts (e.g. one month per file) and run them separately',
+      'Upload fewer documents at a time',
+      'Wait a moment, then click Try Again',
+      'If it keeps timing out on a small file, contact support',
+    ],
+  },
 };
 
-const DEFAULT_CONFIG = {
+// Raw platform/proxy error strings should never be shown to the user verbatim —
+// e.g. "FUNCTION_INVOCATION_TIMEOUT lhr1::hkb8d-1786710547481-d1e9a2bda16d", a
+// 504 gateway page, or a stray HTML error body. These matchers recognise the
+// common shapes and map them to a friendly code + sentence, so any tool that
+// happens to surface a raw message still shows something readable.
+const PLATFORM_MATCHERS: { test: RegExp; code: string; message: string }[] = [
+  { test: /function_invocation_timeout|gateway ?time-?out|timed? ?out|\b504\b/i, code: 'TIMEOUT',
+    message: 'This took too long to process and the request timed out.' },
+  { test: /\b502\b|\b503\b|bad gateway|service unavailable|overloaded/i, code: 'AI_OVERLOADED',
+    message: 'The service was temporarily unavailable. Your files are fine — please try again.' },
+  { test: /\b413\b|payload too large|entity too large|content too large|too large/i, code: 'FILES_TOO_LARGE',
+    message: 'The upload was too large to process in one request.' },
+  { test: /function_invocation_failed|\b500\b|internal server error/i, code: 'DEFAULT',
+    message: 'Something went wrong while processing your request.' },
+];
+
+// True when a message looks like a raw platform/proxy string rather than one of
+// our own friendly messages: an ALL_CAPS_CODE, a deployment id ("::"), or HTML.
+function looksRaw(error: string): boolean {
+  return /[A-Z]{3,}_[A-Z]{2,}/.test(error) || error.includes('::') || /^\s*<|<!doctype/i.test(error);
+}
+
+// Resolve the incoming (error, code) into a config + the message to display.
+// An explicit known code always wins; otherwise we sniff the text. A raw
+// platform string is replaced with the friendly sentence; a message that
+// already reads cleanly is left as-is.
+function resolveError(error: string, code?: string): { config: ErrorConfig; message: string } {
+  if (code && ERROR_CONFIG[code]) return { config: ERROR_CONFIG[code], message: error };
+  for (const m of PLATFORM_MATCHERS) {
+    if (m.test.test(error)) {
+      return { config: ERROR_CONFIG[m.code] ?? DEFAULT_CONFIG, message: looksRaw(error) ? m.message : error };
+    }
+  }
+  return {
+    config: DEFAULT_CONFIG,
+    message: looksRaw(error) ? 'An unexpected error occurred while processing your request.' : error,
+  };
+}
+
+const DEFAULT_CONFIG: ErrorConfig = {
   icon: AlertTriangle,
   iconClass: 'text-red-500',
   title: 'Processing Failed',
@@ -89,7 +141,7 @@ const DEFAULT_CONFIG = {
 };
 
 export default function ErrorDisplay({ error, code, onRetry }: ErrorDisplayProps) {
-  const config = (code && ERROR_CONFIG[code]) ? ERROR_CONFIG[code] : DEFAULT_CONFIG;
+  const { config, message } = resolveError(error, code);
   const Icon = config.icon;
 
   return (
@@ -105,7 +157,7 @@ export default function ErrorDisplay({ error, code, onRetry }: ErrorDisplayProps
         </div>
         <div>
           <h3 className="text-base font-semibold text-[var(--text-primary)]">{config.title}</h3>
-          <p className="text-sm text-[var(--text-secondary)] mt-0.5">{error}</p>
+          <p className="text-sm text-[var(--text-secondary)] mt-0.5">{message}</p>
         </div>
       </div>
 

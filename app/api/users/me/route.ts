@@ -21,6 +21,7 @@ export async function GET() {
     userId: ctx.userId,
     firmId: ctx.firmId,
     userRole: ctx.userRole,
+    email: ctx.email,
     full_name,
     firm_name,
   });

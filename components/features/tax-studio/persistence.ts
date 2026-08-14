@@ -4,6 +4,7 @@
 // directly. Returns are stored server-side (Supabase, jsonb `data` column).
 
 import type { TaxReturn, ReviewPoint, TaxSuggestion } from './types';
+import { SESSION_EXPIRED_MESSAGE } from '@/lib/fetchJson';
 
 const BASE = '/api/tax-studio/returns';
 
@@ -38,8 +39,10 @@ function toItem(dto: ReturnDto): ReturnListItem {
 async function readJson<T>(r: Response, fallback: string): Promise<T> {
   const ct = r.headers.get('content-type') ?? '';
   if (!ct.includes('application/json')) {
-    if (r.status === 401 || r.status === 403 || !r.ok) {
-      throw new Error('Your session has expired — please refresh the page and sign in again.');
+    // A middleware redirect to /login returns a 200 HTML page, so check the
+    // redirect target too — not just 401/403 — before falling back.
+    if ((r.redirected && /\/login(\?|$)/.test(r.url)) || r.status === 401 || r.status === 403 || !r.ok) {
+      throw new Error(SESSION_EXPIRED_MESSAGE);
     }
     throw new Error(fallback);
   }

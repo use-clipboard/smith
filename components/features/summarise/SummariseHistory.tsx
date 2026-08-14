@@ -1,4 +1,5 @@
 'use client';
+import { fetchJson } from '@/lib/fetchJson';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { usePersistedColumns } from '@/lib/usePersistedColumns';
@@ -184,13 +185,8 @@ export default function SummariseHistory({ currentUserId, isAdmin, onNew, onOpen
     if (dateTo)        params.set('date_to', dateTo);
 
     try {
-      const res = await fetch(`/api/outputs?${params.toString()}`);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? 'Failed to load history');
-      }
-      const data = await res.json();
-      setRows(data.outputs ?? []);
+      const data = await fetchJson<{ outputs?: unknown[] }>(`/api/outputs?${params.toString()}`);
+      setRows((data.outputs ?? []) as typeof rows);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load history');
       setRows([]);

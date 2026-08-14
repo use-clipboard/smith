@@ -1,4 +1,5 @@
 'use client';
+import { fetchJson } from '@/lib/fetchJson';
 
 import { useState, useMemo, useEffect } from 'react';
 import {
@@ -666,9 +667,8 @@ function AuditHistoryModal({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/accounts-studio/audit')
-      .then(r => r.ok ? r.json() : Promise.reject(new Error('Could not load the audit history.')))
-      .then(d => { if (!cancelled) setEntries(d.entries ?? []); })
+    fetchJson<{ entries?: unknown[] }>('/api/accounts-studio/audit')
+      .then(d => { if (!cancelled) setEntries((d.entries ?? []) as typeof entries); })
       .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load the audit history.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
