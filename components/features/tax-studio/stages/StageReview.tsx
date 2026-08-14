@@ -559,6 +559,7 @@ function TaxCalcPage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100
   const incomeSide = Math.round(c.totalDue) - c.capitalGainsTax;
   const box1 = Math.max(0, incomeSide - c.taxDeductedAtSource);
   const box2 = Math.max(0, c.taxDeductedAtSource - incomeSide);
+  const computedPoa = c.poaApplies ? c.paymentOnAccount : 0; // box 11 default — matches the facsimile
   const [tab, setTab] = useState<string>('Self Assessment');
   const activeTab = (SA110_TABS as readonly string[]).includes(tab) ? tab : SA110_TABS[0];
   return (
@@ -591,7 +592,8 @@ function TaxCalcPage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100
         <StudioCard className="space-y-3 p-4">
           <BoxSection title="Payments on account">
             <BoxCheck box={10} label="Claiming to reduce your 2026–27 payments on account?" checked={!!s.claimReducePoa} onChange={v => set({ claimReducePoa: v })} />
-            <BoxNum box={11} label="Your first payment on account for 2026–27 (reduced amount)" value={s.firstPoaClaim ?? 0} onChange={v => set({ firstPoaClaim: v })} />
+            <BoxNum box={11} label="Your first payment on account for 2026–27" value={s.firstPoaClaim ?? computedPoa} onChange={v => set({ firstPoaClaim: v })} />
+            <p className="mt-1 text-[11.5px] text-[var(--text-muted)]">Defaults to the first payment on account SMITH has calculated ({fmtMoney(computedPoa)}). Only change it if you ticked box 10 to claim a reduced amount.</p>
           </BoxSection>
           <BoxSection title="Payment on account calculation">
             <BoxCheck label="Automated Payment on Account Calculation" checked={!!s.automatedPoaCalc} onChange={v => set(v ? { automatedPoaCalc: true, manualPoaCalc: false } : { automatedPoaCalc: false })} />

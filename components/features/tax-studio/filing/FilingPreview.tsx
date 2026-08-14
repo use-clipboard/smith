@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Printer, FileText, Search, Plus, Minus, ChevronRight, List, Pencil, Check, Loader2 } from 'lucide-react';
+import { X, Download, FileText, Search, Plus, Minus, ChevronRight, List, Pencil, Check, Loader2 } from 'lucide-react';
 import type { TaxReturn } from '../types';
 import type { PageId } from '../stages/StageReview';
 import { buildFilingForms, type FilingForm, type FilingRow } from './filingModel';
@@ -223,6 +223,21 @@ function Sheet({ form }: { form: FilingForm }) {
   );
 }
 
+// Build the download filename: "{taxYearEnd}_Personal Tax Return_{name}_{code}.pdf"
+// e.g. 2026_Personal Tax Return_Adam Cole_DM1082.pdf. Strip any character that
+// isn't allowed in a filename so nothing breaks (the tax year's "/", ":" etc.).
+function pdfFileName(ret: TaxReturn): string {
+  const yy = parseInt((ret.taxYear || '').slice(-2), 10);
+  const endYear = Number.isNaN(yy) ? '' : String(2000 + yy); // "2025/26" -> "2026"
+  const raw = `${endYear}_Personal Tax Return_${ret.clientName || 'Client'}_${ret.clientRef || ''}`;
+  const clean = raw
+    .replace(/[\/:*?"<>|]/g, '') // strip only filename-illegal characters (keep spaces)
+    .replace(/\s+/g, ' ')
+    .replace(/[\s_]+$/, '') // no trailing "_" when there's no client code
+    .trim();
+  return `${clean}.pdf`;
+}
+
 export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetup }: { ret: TaxReturn; onClose: () => void; renderEditor?: (page: PageId) => React.ReactNode; onEditInSetup?: (field: string) => void }) {
   const sheetsRef = useRef<HTMLDivElement>(null);
   const lightboxRef = useRef<HTMLDivElement>(null);
@@ -234,6 +249,7 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
   const [sidebar, setSidebar] = useState(true);
   const [edit, setEdit] = useState<{ page: PageId; box: string; formCode: string; section: string; record: string; topTab?: string; subTab?: string } | null>(null);
   const [focusing, setFocusing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const editablePreview = !!renderEditor;
 
   // Click an editable field on a facsimile → open its editor section in a lightbox.
@@ -263,43 +279,63 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
     }
   }
 
-  // Print / Save as PDF. Render just the A4 sheets into an isolated same-origin
-  // iframe (with the page's stylesheets cloned so Tailwind + the facsimile styles
-  // apply) and print that — far more reliable than printing the live modal, whose
-  // positioned ancestors and scroll containers break the browser's page layout.
-  function printPreview() {
+  // Download the whole return as a single A4 PDF. The browser is the only
+  // renderer we have (no puppeteer server-side), so we rasterise each sheet and
+  // assemble the pages with jsPDF — the same pattern the billing module uses.
+  // The live sheets carry the preview's `zoom`, so we clone the markup into an
+  // isolated offscreen iframe forced to zoom 1 (with the page's stylesheets
+  // cloned so Tailwind + the facsimile styles apply) and capture there — one PDF
+  // page per A4 sheet, which keeps the facsimile's own page breaks exactly.
+  async function downloadPdf() {
     const el = sheetsRef.current;
-    if (!el) { window.print(); return; }
+    if (!el || downloading) return;
+    setDownloading(true);
     const iframe = document.createElement('iframe');
     iframe.setAttribute('aria-hidden', 'true');
-    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+    iframe.setAttribute('tabindex', '-1');
+    // Offscreen rather than display:none — a hidden frame has no layout to capture.
+    iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;';
     document.body.appendChild(iframe);
-    const doc = iframe.contentWindow?.document;
-    if (!doc) { iframe.remove(); window.print(); return; }
-    const head = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]')).map(n => n.outerHTML).join('\n');
-    const title = `Tax Return Preview — ${(ret.clientName || '').replace(/[<>]/g, '')}`;
-    doc.open();
-    doc.write(`<!doctype html><html><head><meta charset="utf-8"><base href="${location.origin}/"><title>${title}</title>
+    try {
+      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([import('jspdf'), import('html2canvas')]);
+      const doc = iframe.contentDocument;
+      if (!doc) throw new Error('no frame document');
+      const head = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]')).map(n => n.outerHTML).join('\n');
+      doc.open();
+      doc.write(`<!doctype html><html><head><meta charset="utf-8"><base href="${location.origin}/">
 ${head}
 <style>
-  @page { size: A4; margin: 0; }
-  /* Undo the live modal's print rule (it hides everything but #sa-filing-preview,
-     which doesn't exist in this isolated document). */
-  @media print { html, body, body * { visibility: visible !important; } }
   html, body { margin: 0; padding: 0; background: #fff; }
   .sa-sheets-wrap { zoom: 1 !important; padding: 0 !important; display: block !important; }
-  .sa-sheet { box-shadow: none !important; margin: 0 auto !important; page-break-after: always; }
-  .sa-sheet:last-child { page-break-after: auto; }
+  .sa-sheet { box-shadow: none !important; margin: 0 !important; }
 </style></head><body><div class="sa-sheets-wrap">${el.innerHTML}</div></body></html>`);
-    doc.close();
-    let done = false;
-    const go = () => {
-      if (done) return; done = true;
-      try { iframe.contentWindow?.focus(); iframe.contentWindow?.print(); } catch { /* noop */ }
-      setTimeout(() => iframe.remove(), 60000);
-    };
-    iframe.addEventListener('load', () => setTimeout(go, 400));
-    setTimeout(go, 1200); // fallback if load doesn't fire (already-loaded blank doc)
+      doc.close();
+
+      // Wait for the frame to lay out, fonts to settle and images (logos are data URLs).
+      if (doc.readyState !== 'complete') {
+        await new Promise<void>(resolve => { iframe.addEventListener('load', () => resolve(), { once: true }); setTimeout(resolve, 2000); });
+      }
+      try { await (doc as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready; } catch { /* cosmetic */ }
+      await Promise.all(Array.from(doc.images).map(img => (img.complete ? Promise.resolve() : new Promise<void>(resolve => {
+        img.addEventListener('load', () => resolve(), { once: true });
+        img.addEventListener('error', () => resolve(), { once: true });
+      }))));
+
+      const sheets = Array.from(doc.querySelectorAll<HTMLElement>('.sa-sheet'));
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+      for (let i = 0; i < sheets.length; i++) {
+        const canvas = await html2canvas(sheets[i], { scale: 2, backgroundColor: '#ffffff', logging: false, useCORS: true });
+        if (i > 0) pdf.addPage();
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 210, 297);
+      }
+      pdf.save(pdfFileName(ret));
+    } catch (err) {
+      console.error('[tax-studio] PDF download failed', err);
+      alert('Sorry — the PDF could not be built. Please try again.');
+    } finally {
+      iframe.remove();
+      setDownloading(false);
+    }
   }
 
   // Once the editor lightbox is up, hunt for the clicked box (navigating the
@@ -540,8 +576,9 @@ ${head}
             <button onClick={() => setZoom(1)} className="w-11 text-center text-[11px] font-semibold tabular-nums text-slate-600 hover:text-slate-900" aria-label="Reset zoom">{Math.round(zoom * 100)}%</button>
             <button onClick={() => setZoom(z => Math.min(2, +(z + 0.1).toFixed(2)))} className="rounded p-1 text-slate-600 hover:bg-slate-100" aria-label="Zoom in"><Plus size={14} /></button>
           </div>
-          <button onClick={printPreview} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:opacity-90">
-            <Printer size={14} /> Print / Save as PDF
+          <button onClick={downloadPdf} disabled={downloading} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-60">
+            {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            {downloading ? 'Preparing…' : 'Download'}
           </button>
           <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-semibold text-slate-600 hover:bg-slate-50">
             <X size={14} /> Close
