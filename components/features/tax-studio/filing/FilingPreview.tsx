@@ -563,9 +563,6 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
             {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
             {downloading ? 'Preparing…' : 'Download'}
           </button>
-          {/* Visible build tag — lets the user confirm they're on the latest app
-              version (not a stale cached copy) before trusting the output. */}
-          <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">PDF v8</span>
           <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-semibold text-slate-600 hover:bg-slate-50">
             <X size={14} /> Close
           </button>
