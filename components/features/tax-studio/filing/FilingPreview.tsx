@@ -261,6 +261,45 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
     }
   }
 
+  // Print / Save as PDF. Render just the A4 sheets into an isolated same-origin
+  // iframe (with the page's stylesheets cloned so Tailwind + the facsimile styles
+  // apply) and print that — far more reliable than printing the live modal, whose
+  // positioned ancestors and scroll containers break the browser's page layout.
+  function printPreview() {
+    const el = sheetsRef.current;
+    if (!el) { window.print(); return; }
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentWindow?.document;
+    if (!doc) { iframe.remove(); window.print(); return; }
+    const head = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]')).map(n => n.outerHTML).join('\n');
+    const title = `Tax Return Preview — ${(ret.clientName || '').replace(/[<>]/g, '')}`;
+    doc.open();
+    doc.write(`<!doctype html><html><head><meta charset="utf-8"><base href="${location.origin}/"><title>${title}</title>
+${head}
+<style>
+  @page { size: A4; margin: 0; }
+  /* Undo the live modal's print rule (it hides everything but #sa-filing-preview,
+     which doesn't exist in this isolated document). */
+  @media print { html, body, body * { visibility: visible !important; } }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  .sa-sheets-wrap { zoom: 1 !important; padding: 0 !important; display: block !important; }
+  .sa-sheet { box-shadow: none !important; margin: 0 auto !important; page-break-after: always; }
+  .sa-sheet:last-child { page-break-after: auto; }
+</style></head><body><div class="sa-sheets-wrap">${el.innerHTML}</div></body></html>`);
+    doc.close();
+    let done = false;
+    const go = () => {
+      if (done) return; done = true;
+      try { iframe.contentWindow?.focus(); iframe.contentWindow?.print(); } catch { /* noop */ }
+      setTimeout(() => iframe.remove(), 60000);
+    };
+    iframe.addEventListener('load', () => setTimeout(go, 400));
+    setTimeout(go, 1200); // fallback if load doesn't fire (already-loaded blank doc)
+  }
+
   // Once the editor lightbox is up, hunt for the clicked box (navigating the
   // editor's own tabs if needed), then scroll to it, highlight and focus it.
   useEffect(() => {
@@ -488,7 +527,7 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
           </button>
           <FileText size={16} className="ml-1 text-[var(--accent)]" />
           <div>
-            <p className="text-[13px] font-bold text-slate-900">Filing preview — {ret.clientName}</p>
+            <p className="text-[13px] font-bold text-slate-900">Tax Return Preview — {ret.clientName}</p>
             <p className="text-[11px] text-slate-500">SA100 {ret.taxYear} · {totalForms} form{totalForms === 1 ? '' : 's'} · supplementary pages shown only where there are entries</p>
           </div>
         </div>
@@ -499,7 +538,7 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
             <button onClick={() => setZoom(1)} className="w-11 text-center text-[11px] font-semibold tabular-nums text-slate-600 hover:text-slate-900" aria-label="Reset zoom">{Math.round(zoom * 100)}%</button>
             <button onClick={() => setZoom(z => Math.min(2, +(z + 0.1).toFixed(2)))} className="rounded p-1 text-slate-600 hover:bg-slate-100" aria-label="Zoom in"><Plus size={14} /></button>
           </div>
-          <button onClick={() => window.print()} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:opacity-90">
+          <button onClick={printPreview} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:opacity-90">
             <Printer size={14} /> Print / Save as PDF
           </button>
           <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-semibold text-slate-600 hover:bg-slate-50">

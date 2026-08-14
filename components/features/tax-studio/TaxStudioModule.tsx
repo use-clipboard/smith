@@ -16,9 +16,11 @@ import { ReturnHeader } from './widgets';
 import SandboxView from './sandbox/SandboxView';
 import StageSetup from './stages/StageSetup';
 import StageAnalyse from './stages/StageAnalyse';
-import StageReview, { ReviewSearch, type PageId, type Reveal } from './stages/StageReview';
+import StageReview, { ReviewSearch, ReturnSectionEditor, type PageId, type Reveal } from './stages/StageReview';
 import StageApproval from './stages/StageApproval';
 import StageSubmit from './stages/StageSubmit';
+import FilingPreview from './filing/FilingPreview';
+import { FileText } from 'lucide-react';
 import { STAGES, ALL_STAGES, deriveStatus } from './data';
 import { listReturns, createReturn, saveReturn, deleteReturn, type ReturnListItem } from './persistence';
 import type { TaxReturn, StageId } from './types';
@@ -43,6 +45,9 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
     setReviewPage(e.page as PageId);
     setReviewReveal(r => ({ page: e.page as PageId, section: e.section, nonce: (r?.nonce ?? 0) + 1 }));
   };
+  // Tax Return Preview lives here (not in StageReview) so its trigger can sit in
+  // the working-controls row alongside undo/redo and the search.
+  const [previewOpen, setPreviewOpen] = useState(false);
   // Personal-detail (SA100 TR1) boxes live in the Setup stage, not the Review
   // editor — clicking one in the filing preview jumps back to Setup and focuses
   // the matching field.
@@ -241,19 +246,29 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
             </div>
             <div className="flex items-center gap-2">
               {stage === 'review' && <ReviewSearch onGo={goToReview} />}
+              {stage === 'review' && (
+                <button onClick={() => setPreviewOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90">
+                  <FileText size={14} /> Tax Return Preview
+                </button>
+              )}
               <WorkspaceControls
                 canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo}
                 saveState={saveState} assistantOpen={assistantOpen} onToggleAssistant={() => setAssistantOpen(v => !v)}
               />
             </div>
           </div>
+          {previewOpen && ret && (
+            <FilingPreview ret={ret} onClose={() => setPreviewOpen(false)}
+              renderEditor={p => <ReturnSectionEditor page={p} ret={ret} setIncome={u => patch(r => ({ ...r, income: u(r.income) }))} />}
+              onEditInSetup={goToSetup} />
+          )}
 
           {/* Stage + assistant */}
           <div className="flex gap-4">
             <div className="min-w-0 flex-1">
               {stage === 'setup' && <StageSetup ret={ret} patch={patch} advance={() => advanceFrom('setup')} reveal={setupReveal} />}
               {stage === 'analyse' && <StageAnalyse ret={ret} patch={patch} advance={() => advanceFrom('analyse')} />}
-              {stage === 'review' && <StageReview ret={ret} patch={patch} advance={() => advanceFrom('review')} page={reviewPage} setPage={setReviewPage} reveal={reviewReveal} onEditInSetup={goToSetup} />}
+              {stage === 'review' && <StageReview ret={ret} patch={patch} advance={() => advanceFrom('review')} page={reviewPage} setPage={setReviewPage} reveal={reviewReveal} />}
               {stage === 'approval' && <StageApproval ret={ret} patch={patch} advance={() => advanceFrom('approval')} />}
               {stage === 'submit' && <StageSubmit ret={ret} patch={patch} />}
             </div>

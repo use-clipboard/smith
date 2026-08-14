@@ -21,7 +21,6 @@ import Tooltip from '@/components/ui/Tooltip';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
 import { partnershipRequiresFull, migratePartnershipToFull, migratePartnershipToShort } from '../partnershipForm';
 import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST, RES, ADD, MIN, NIA, PAR, SCP, WAL, LLU } from '../tradeHelp';
-import FilingPreview from '../filing/FilingPreview';
 import { searchReview, type SearchEntry } from '../reviewSearch';
 import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
@@ -59,12 +58,11 @@ function advisoryReviewPoints(income: Sa100Income): ReviewPoint[] {
   return out;
 }
 
-export default function StageReview({ ret, patch, advance, page, setPage, reveal, onEditInSetup }: { ret: TaxReturn; patch: Patch; advance: () => void; page: PageId; setPage: (p: PageId) => void; reveal: Reveal | null; onEditInSetup?: (field: string) => void }) {
+export default function StageReview({ ret, patch, advance, page, setPage, reveal }: { ret: TaxReturn; patch: Patch; advance: () => void; page: PageId; setPage: (p: PageId) => void; reveal: Reveal | null }) {
   const openPoints = ret.reviewPoints.filter(p => !p.resolved && p.severity !== 'info').length;
   const advisories = advisoryReviewPoints(ret.income);
   const allPoints = [...ret.reviewPoints, ...advisories];
   const counts = pageCounts(ret.income);
-  const [previewOpen, setPreviewOpen] = useState(false);
 
   function setIncome(u: (i: Sa100Income) => Sa100Income) {
     patch(r => ({ ...r, income: u(r.income) }));
@@ -72,16 +70,6 @@ export default function StageReview({ ret, patch, advance, page, setPage, reveal
 
   return (
     <div className="space-y-4">
-      {/* Filing preview — box-for-box copy of the SA100 + populated supplementary pages */}
-      <div className="flex justify-end">
-        <button onClick={() => setPreviewOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/5 px-3 py-1.5 text-[12px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/10">
-          <FileText size={14} /> Filing preview
-        </button>
-      </div>
-      {previewOpen && <FilingPreview ret={ret} onClose={() => setPreviewOpen(false)}
-        renderEditor={page => <ReturnSectionEditor page={page} ret={ret} setIncome={setIncome} />}
-        onEditInSetup={onEditInSetup} />}
-
       {/* Section tabs + panel */}
       <SectionPanel ret={ret} patch={patch} page={page} setPage={setPage} counts={counts} income={ret.income} setIncome={setIncome} reveal={reveal} />
 
