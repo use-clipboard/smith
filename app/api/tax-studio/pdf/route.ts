@@ -63,6 +63,9 @@ export async function POST(req: NextRequest) {
   .sa-sheets-wrap { zoom: 1 !important; transform: none !important; padding: 0 !important; margin: 0 !important; width: auto !important; height: auto !important; max-height: none !important; overflow: visible !important; display: block !important; background: #fff; }
   .sa-sheet { box-shadow: none !important; margin: 0 auto !important; page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; }
   .sa-sheet:last-child { page-break-after: auto; break-after: auto; }
+  /* The app's own print rules (e.g. #sa-filing-preview's "body * {visibility:hidden}")
+     get copied in via the stylesheet text — make sure the sheets stay visible. */
+  .sa-sheets-wrap, .sa-sheet, .sa-sheet * { visibility: visible !important; }
   @page { size: A4; margin: 0; }
 </style></head><body><div class="sa-sheets-wrap">${body.html}</div></body></html>`;
 
@@ -71,11 +74,15 @@ export async function POST(req: NextRequest) {
     browser = await launchBrowser();
     const page = await browser.newPage();
     await page.setContent(doc, { waitUntil: 'load', timeout: 30000 });
+    // Render as SCREEN media: page.pdf() defaults to print media, which would
+    // activate the app's copied @media print rules (visibility:hidden, stray
+    // @page margins) and blank the pages. Screen media = the on-screen preview.
+    // Pagination still works via the .sa-sheet page-break rules.
+    await page.emulateMediaType('screen');
     try { await page.evaluateHandle('document.fonts.ready'); } catch { /* fonts are cosmetic */ }
     const pdf = await page.pdf({
       format: 'A4',
       printBackground: true,
-      preferCSSPageSize: true,
       margin: { top: '0', right: '0', bottom: '0', left: '0' },
     });
     await browser.close();
