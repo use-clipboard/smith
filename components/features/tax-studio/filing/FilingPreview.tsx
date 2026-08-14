@@ -308,10 +308,12 @@ ${head}
   html, body { margin: 0; padding: 0; background: #fff; }
   .sa-sheets-wrap { zoom: 1 !important; padding: 0 !important; display: block !important; }
   .sa-sheet { box-shadow: none !important; margin: 0 !important; }
-  /* html2canvas renders flex-centred text a touch low; nudge headings and the
-     boxed figures back up so the capture matches the on-screen preview. */
+  /* html2canvas only approximates flexbox, so it renders flex-centred text a
+     touch low. position:relative/top is honoured reliably (padding on a flex
+     cell is not — it was ignored), so nudge headings and the wrapped boxed
+     figures up instead. */
   .sa-sheet h2, .sa-sheet h3, .sa-sheet h4, .sa-sheet [data-sa-subhead] { position: relative; top: -3px; }
-  .sa-sheet .fac-boxval { padding-bottom: 4px !important; }
+  .sa-sheet .fac-boxval { position: relative; top: -3px; display: inline-block; }
 </style></head><body><div class="sa-sheets-wrap">${el.innerHTML}</div></body></html>`);
       doc.close();
 
