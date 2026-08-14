@@ -308,12 +308,15 @@ ${head}
   html, body { margin: 0; padding: 0; background: #fff; }
   .sa-sheets-wrap { zoom: 1 !important; padding: 0 !important; display: block !important; }
   .sa-sheet { box-shadow: none !important; margin: 0 !important; }
-  /* html2canvas renders text a touch low and only approximates flexbox: it
-     honours transforms on normal block boxes (headings, the box ROWS) but
-     ignores them on flex items (the individual value cells/spans). So lift the
-     whole box row — that carries the figures up with it. */
-  h2, h3, h4, [data-sa-subhead] { transform: translateY(-7px); }
-  .fac-boxrow { transform: translateY(-7px); }
+  /* html2canvas positions text by line-height, not by the browser's flex
+     centring — so every glyph sits low in its box (too much leading below it).
+     Transforms/position offsets are ignored in the full render; reducing
+     line-height is the one lever it honours, and it lifts the text back to
+     where the on-screen preview shows it. Verified against the real render.
+     Applied only to single-line elements (boxed figures, box numbers, section
+     headings) so multi-line labels keep their normal wrapping. */
+  .fac-boxval, [data-boxnum] { line-height: 0.7 !important; }
+  h2, h3, h4, [data-sa-subhead] { line-height: 0.85 !important; }
 </style></head><body><div class="sa-sheets-wrap">${el.innerHTML}</div></body></html>`);
       doc.close();
 
@@ -588,7 +591,7 @@ ${head}
           </button>
           {/* Visible build tag — lets the user confirm they're on the latest app
               version (not a stale cached copy) before trusting the PDF output. */}
-          <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">PDF v3</span>
+          <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">PDF v4</span>
           <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-semibold text-slate-600 hover:bg-slate-50">
             <X size={14} /> Close
           </button>
