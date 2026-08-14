@@ -39,6 +39,9 @@ interface TaskLink {
   tasks: { id: string; title: string; status: string } | null;
 }
 
+/** When (and to whom) a message was replied to / forwarded — from thread detail. */
+type MsgMark = { date: string; to?: { name: string; email: string }[] };
+
 interface Props {
   thread: EmailThreadType;
   /** When set (non-threaded view), only this message ID is shown in the panel. */
@@ -69,6 +72,9 @@ interface Props {
   existingReactions?: string[];
   /** Called when a reaction is successfully sent */
   onReacted?: (emoji: string) => void;
+  /** Per-message reply/forward marks (from thread detail), keyed by RFC Message-ID. */
+  replied?: ({ messageId: string } & MsgMark)[];
+  forwarded?: ({ messageId: string } & MsgMark)[];
 }
 
 const QUICK_EMOJIS = ['👍', '👎', '❤️', '😂', '😮', '😢', '😡', '🎉', '🙏', '👀', '✅', '🔥'];
@@ -374,7 +380,7 @@ function escapeHtml(s: string): string {
 }
 
 function MessageCard({
-  message, defaultOpen, nonThreaded, onReply, onReplyAll, onForward, onReact,
+  message, defaultOpen, nonThreaded, onReply, onReplyAll, onForward, onReact, replyMark, forwardMark,
 }: {
   message: EmailMessage;
   defaultOpen: boolean;
@@ -384,6 +390,8 @@ function MessageCard({
   onReplyAll: (m: EmailMessage) => void;
   onForward: (m: EmailMessage) => void;
   onReact: (messageId: string, emoji: string) => void;
+  replyMark?: MsgMark;
+  forwardMark?: MsgMark;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [emojiPickerTopOpen, setEmojiPickerTopOpen] = useState(false);
@@ -391,6 +399,19 @@ function MessageCard({
   const initials = (message.from.name || message.from.email)[0]?.toUpperCase() ?? '?';
 
   const replyBtnClass = 'text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent-light)] text-[var(--accent)] hover:bg-[var(--accent)]/15 transition-colors font-medium';
+
+  // Gmail-style "you replied / forwarded" strip for THIS message.
+  const fmtTo = (to?: { name: string; email: string }[]) => (to ?? []).map(r => r.name || r.email).filter(Boolean).join(', ');
+  const indicator = (replyMark || forwardMark) ? (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-1.5 text-[11px] font-medium text-[var(--text-secondary)] bg-[var(--accent-light)]/50 border-b border-[var(--border)]">
+      {replyMark && (
+        <span className="inline-flex items-center gap-1"><Reply size={11} className="text-[var(--accent)]" /> You replied{replyMark.date ? ` on ${formatDate(replyMark.date)}` : ''}</span>
+      )}
+      {forwardMark && (
+        <span className="inline-flex items-center gap-1"><Forward size={11} className="text-[var(--accent)]" /> You forwarded{fmtTo(forwardMark.to) ? ` to ${fmtTo(forwardMark.to)}` : ''}{forwardMark.date ? ` on ${formatDate(forwardMark.date)}` : ''}</span>
+      )}
+    </div>
+  ) : null;
 
   // ── Non-threaded (single-message) flat view ─────────────────────────────────
   if (nonThreaded) {
@@ -425,6 +446,8 @@ function MessageCard({
             </p>
           )}
         </div>
+
+        {indicator}
 
         {/* Body */}
         <div className="px-5 py-5 bg-white dark:bg-[var(--bg-card-solid)]">
@@ -465,6 +488,8 @@ function MessageCard({
           {open ? <ChevronUp size={14} className="text-[var(--text-muted)]" /> : <ChevronDown size={14} className="text-[var(--text-muted)]" />}
         </div>
       </button>
+
+      {indicator}
 
       {open && (
         <div className="border-t border-[var(--border)]">
@@ -572,13 +597,16 @@ export default function EmailThread({
   thread, targetMessageId, allocations, taskLinks, googleEmail, tasksModuleActive, labels,
   onAllocate, onCreateTask, creatingTask, onReply, onReplyAll, onForward, onAIDraftReply, onDelete, onArchive, onStar, onMove,
   onRestore, onMarkUnread, onRemoveAllocation, onRemoveTaskLink,
-  isPinned, onPin, existingReactions, onReacted,
+  isPinned, onPin, existingReactions, onReacted, replied, forwarded,
 }: Props) {
   // Defensive: a thread can briefly arrive without its messages populated
   // (e.g. selected from the list before the full thread has loaded). Normalise
   // to an array so reads never throw — downstream `lastMessage` usages are all
   // guarded, so an empty thread simply renders its header.
   const messages = thread.messages ?? [];
+  // Per-message reply/forward marks, keyed by RFC Message-ID (from thread detail).
+  const replyMarks = new Map((replied ?? []).map(r => [r.messageId, r] as const));
+  const forwardMarks = new Map((forwarded ?? []).map(f => [f.messageId, f] as const));
   const [deleting, setDeleting]       = useState(false);
   const [archiving, setArchiving]     = useState(false);
   const [starring, setStarring]       = useState(false);
@@ -1036,6 +1064,8 @@ export default function EmailThread({
               onReplyAll={onReplyAll}
               onForward={onForward}
               onReact={handleReact}
+              replyMark={replyMarks.get(msg.messageId)}
+              forwardMark={forwardMarks.get(msg.messageId)}
             />
           );
         })}

@@ -61,7 +61,7 @@ export async function GET(req: NextRequest, _ctx: { params: { id: string } }) {
           userId: 'me',
           id,
           format: 'metadata',
-          metadataHeaders: ['Date', 'Subject'],
+          metadataHeaders: ['Date', 'Subject', 'To'],
         }).catch(() => null),
       ),
     );
@@ -73,7 +73,10 @@ export async function GET(req: NextRequest, _ctx: { params: { id: string } }) {
     const latest = dated.reduce((acc, m) =>
       (new Date(m.date).getTime() || 0) > (new Date(acc.date).getTime() || 0) ? m : acc,
     );
-    return NextResponse.json({ externalForwardedAt: latest.date });
+    return NextResponse.json({
+      externalForwardedAt: latest.date,
+      to: latest.to.map(a => ({ name: a.name ?? '', email: a.email ?? '' })),
+    });
   } catch (err) {
     console.error('Email forward-detection error:', err);
     // Non-fatal — the chip just won't show.

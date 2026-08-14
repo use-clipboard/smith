@@ -34,6 +34,13 @@ interface TaskLink {
   tasks: { id: string; title: string; status: string } | null;
 }
 
+/** A recipient of a reply/forward — name optional, email always present. */
+export interface ReplyRecipient { name: string; email: string }
+
+/** When (and to whom) a message was replied to or forwarded. Kept per RFC
+ * Message-ID. `to` is who our SENT reply/forward went to. */
+export interface ReplyMark { date: string; to?: ReplyRecipient[] }
+
 interface ThreadDetail {
   threadId: string;
   messages: EmailThreadType['messages'];
@@ -45,10 +52,11 @@ interface ThreadDetail {
    * thread (e.g. threading was broken on forward). null when no match. */
   externalForwardedAt?: string | null;
   /** Per-email replied/forwarded status, keyed by stable RFC Message-ID. A
-   * message appears here only when one of our SENT messages descends from it
-   * in the reply chain — so it's per-email, not per-thread. */
-  replied?: { messageId: string; date: string }[];
-  forwarded?: { messageId: string; date: string }[];
+   * message appears here only when one of our SENT messages directly answers it
+   * (its In-Reply-To) — so it's per-email, not per-thread. Includes when it
+   * happened and who it went to. */
+  replied?: ({ messageId: string } & ReplyMark)[];
+  forwarded?: ({ messageId: string } & ReplyMark)[];
 }
 
 const POLL_INTERVAL_MS = 60_000;
@@ -107,6 +115,18 @@ export default function EmailTriagePage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  // Debounced search: the input updates searchQuery on every keystroke (so typing
+  // stays responsive), but the Gmail fetch only runs 350ms after typing stops.
+  // Firing per-keystroke let out-of-order responses clobber each other, so results
+  // lagged a keystroke behind — the "have to type it twice" bug.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+  // Monotonic id per thread fetch — a stale (out-of-order) response is ignored so
+  // the latest search/label request always wins.
+  const fetchSeqRef = useRef(0);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [taskLinkedOnly, setTaskLinkedOnly] = useState(false);
   const [allocatedOnly, setAllocatedOnly] = useState(false);
@@ -463,7 +483,10 @@ export default function EmailTriagePage() {
   // locally as [rfcMessageId, isoDate][] so chips survive refresh; re-populated
   // from the server (per-message reply-chain analysis) whenever a thread opens.
   // New localStorage keys ('-msgids') — the old thread-keyed caches are ignored.
-  const parseMsgIdMap = (key: string): Map<string, string> => {
+  // Values are ReplyMark ({ date, to }). Tolerant of the legacy string-date
+  // format. The '-v2' key deliberately drops the old caches, whose values were
+  // poisoned by the previous reply-chain bug (a reply marked every ancestor).
+  const parseMsgIdMap = (key: string): Map<string, ReplyMark> => {
     if (typeof window === 'undefined') return new Map();
     try {
       const stored = localStorage.getItem(key);
@@ -472,13 +495,21 @@ export default function EmailTriagePage() {
       if (!Array.isArray(parsed)) return new Map();
       return new Map(
         parsed
-          .map(entry => (Array.isArray(entry) ? [entry[0] as string, (entry[1] as string) ?? ''] as const : ['', ''] as const))
+          .map(entry => {
+            if (!Array.isArray(entry)) return ['', { date: '' }] as const;
+            const id = entry[0] as string;
+            const v = entry[1] as unknown;
+            const mark: ReplyMark = typeof v === 'string'
+              ? { date: v }
+              : { date: (v as ReplyMark)?.date ?? '', to: (v as ReplyMark)?.to };
+            return [id, mark] as const;
+          })
           .filter(([id]) => id),
       );
     } catch { return new Map(); }
   };
-  const [forwardedMsgIds, setForwardedMsgIds] = useState<Map<string, string>>(() => parseMsgIdMap('email-forwarded-msgids'));
-  const [repliedMsgIds, setRepliedMsgIds] = useState<Map<string, string>>(() => parseMsgIdMap('email-replied-msgids'));
+  const [forwardedMsgIds, setForwardedMsgIds] = useState<Map<string, ReplyMark>>(() => parseMsgIdMap('email-forwarded-msgids-v2'));
+  const [repliedMsgIds, setRepliedMsgIds] = useState<Map<string, ReplyMark>>(() => parseMsgIdMap('email-replied-msgids-v2'));
 
   // Email rules
   const [emailRules, setEmailRules] = useState<EmailRule[]>([]);
@@ -874,10 +905,16 @@ export default function EmailTriagePage() {
     const val = rule.condition_value.toLowerCase();
     let target = '';
     switch (rule.condition_field) {
-      case 'from':      target = (thread.from?.email ?? '' + ' ' + (thread.from?.name ?? '')).toLowerCase(); break;
-      case 'to':        target = ''; break; // threads don't expose To at list level
-      case 'subject':   target = (thread.subject ?? '').toLowerCase(); break;
-      case 'has_words':  target = (thread.snippet ?? '').toLowerCase(); break;
+      // NB the parentheses: `a ?? '' + ' ' + b` binds as `a ?? ('' + ' ' + b)`,
+      // which dropped the name whenever an email was present — hence the wrap.
+      case 'from':     target = `${thread.from?.email ?? ''} ${thread.from?.name ?? ''}`.toLowerCase(); break;
+      // Recipients live on the thread's messages (best-effort — populated when
+      // the list carries message metadata).
+      case 'to':       target = (thread.messages ?? []).flatMap(m => m.to ?? []).map(a => `${a.email ?? ''} ${a.name ?? ''}`).join(' ').toLowerCase(); break;
+      case 'subject':  target = (thread.subject ?? '').toLowerCase(); break;
+      // "Has the words" scans subject + snippet + sender, like Gmail — not just
+      // the snippet (which missed most subject-line matches).
+      case 'has_words': target = `${thread.subject ?? ''} ${thread.snippet ?? ''} ${thread.from?.name ?? ''} ${thread.from?.email ?? ''}`.toLowerCase(); break;
     }
     switch (rule.condition_operator) {
       case 'contains':    return target.includes(val);
@@ -936,6 +973,15 @@ export default function EmailTriagePage() {
     }
   }
 
+  // Re-apply rules to the currently-loaded unread inbox whenever the user's rules
+  // change (created / toggled / first loaded). Without this a new rule only took
+  // effect on the NEXT inbox fetch, so it looked like nothing happened.
+  useEffect(() => {
+    if (!connected || activeLabel !== 'INBOX') return;
+    applyRulesToThreads(threads.filter(t => !t.isRead));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emailRules]);
+
   // `isBackgroundRefresh` = a poll / visibility / post-send refresh rather than a
   // fresh load triggered by a label/filter/search change. On a background refresh
   // we MERGE the fresh page-1 results into the existing list instead of replacing
@@ -944,11 +990,12 @@ export default function EmailTriagePage() {
   const fetchThreads = useCallback(async (label: string, pageToken?: string, isBackgroundRefresh = false) => {
     if (pageToken) setLoadingMore(true);
     else setLoadingThreads(true);
+    const mySeq = ++fetchSeqRef.current;
     try {
       // Build the Gmail query: combine free-text search and/or unread filter.
       // When using a query we must also preserve the label scope, otherwise Gmail
       // searches everywhere (including archived mail).
-      const hasTextSearch = !!searchQuery.trim();
+      const hasTextSearch = !!debouncedSearch;
       // A free-text search always runs as a global Gmail query (`q`) and takes
       // precedence over the DB-backed category/allocation/client filters. Those
       // filters can't be expressed as a Gmail search, so previously an active
@@ -957,7 +1004,7 @@ export default function EmailTriagePage() {
       // "Associate" found nothing even though Gmail had matches.
       const hasDbFilter = !hasTextSearch && (taskLinkedOnly || allocatedOnly || !!clientFilter || (!!categoryFilter && categoryFilter !== 'untriaged'));
 
-      let q = searchQuery;
+      let q = debouncedSearch;
       let needsScope = false;
       if (unreadOnly) { q = q ? `${q} is:unread` : 'is:unread'; needsScope = true; }
       // Sender + time. On the Gmail (non-DB) path they go into the query so they
@@ -1012,6 +1059,8 @@ export default function EmailTriagePage() {
       const url = `${base}${untriagedParam}${pageToken ? `&pageToken=${pageToken}` : ''}`;
       const res = await fetch(url);
       const data = await res.json() as { threads?: EmailThreadType[]; nextPageToken?: string | null; error?: string };
+      // Ignore a response a newer fetch has already superseded (out-of-order race).
+      if (mySeq !== fetchSeqRef.current) return;
       if (!res.ok) {
         // 429 = Gmail rate limit — back off quietly; the next poll retries.
         // Don't surface it as an error banner to the user.
@@ -1063,7 +1112,7 @@ export default function EmailTriagePage() {
       setLoadingThreads(false);
       setLoadingMore(false);
     }
-  }, [searchQuery, unreadOnly, taskLinkedOnly, allocatedOnly, clientFilter, categoryFilter, senderFilter, timeFilter]);
+  }, [debouncedSearch, unreadOnly, taskLinkedOnly, allocatedOnly, clientFilter, categoryFilter, senderFilter, timeFilter]);
 
   // Fetch threads when label, search, or any active filter changes
   useEffect(() => {
@@ -1072,11 +1121,11 @@ export default function EmailTriagePage() {
     setThreadDetail(null);
     setFetchError(null);
     fetchThreads(activeLabel);
-  }, [connected, activeLabel, searchQuery, unreadOnly, taskLinkedOnly, allocatedOnly, clientFilter, categoryFilter, senderFilter, timeFilter, fetchThreads]);
+  }, [connected, activeLabel, debouncedSearch, unreadOnly, taskLinkedOnly, allocatedOnly, clientFilter, categoryFilter, senderFilter, timeFilter, fetchThreads]);
 
   // Start polling (skip during active search to avoid disrupting results)
   useEffect(() => {
-    if (!connected || searchQuery) return;
+    if (!connected || debouncedSearch) return;
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     // Only poll Gmail for the visible tab — background tabs shouldn't keep
     // burning the user's Gmail API quota (a key cause of rate-limit 5xx).
@@ -1091,7 +1140,7 @@ export default function EmailTriagePage() {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [connected, activeLabel, searchQuery, fetchThreads]);
+  }, [connected, activeLabel, debouncedSearch, fetchThreads]);
 
   // Load thread detail
   async function openThread(thread: EmailThreadType) {
@@ -1227,16 +1276,16 @@ export default function EmailTriagePage() {
       if ((data.replied ?? []).length > 0) {
         setRepliedMsgIds(prev => {
           const next = new Map(prev);
-          for (const r of data.replied ?? []) if (r.messageId) next.set(r.messageId, r.date || '');
-          try { localStorage.setItem('email-replied-msgids', JSON.stringify([...next])); } catch { /* ignore */ }
+          for (const r of data.replied ?? []) if (r.messageId) next.set(r.messageId, { date: r.date || '', to: r.to });
+          try { localStorage.setItem('email-replied-msgids-v2', JSON.stringify([...next])); } catch { /* ignore */ }
           return next;
         });
       }
       if ((data.forwarded ?? []).length > 0) {
         setForwardedMsgIds(prev => {
           const next = new Map(prev);
-          for (const f of data.forwarded ?? []) if (f.messageId) next.set(f.messageId, f.date || '');
-          try { localStorage.setItem('email-forwarded-msgids', JSON.stringify([...next])); } catch { /* ignore */ }
+          for (const f of data.forwarded ?? []) if (f.messageId) next.set(f.messageId, { date: f.date || '', to: f.to });
+          try { localStorage.setItem('email-forwarded-msgids-v2', JSON.stringify([...next])); } catch { /* ignore */ }
           return next;
         });
       }
@@ -1249,14 +1298,14 @@ export default function EmailTriagePage() {
       if (viewedRfc && !forwardedSet.has(viewedRfc) && !forwardedMsgIds.has(viewedRfc)) {
         fetch(`/api/email/thread/${detailId}/forwarded?subject=${encodeURIComponent(thread.subject || '')}`)
           .then(r => (r.ok ? r.json() : null))
-          .then((d: { externalForwardedAt?: string | null } | null) => {
+          .then((d: { externalForwardedAt?: string | null; to?: ReplyRecipient[] } | null) => {
             const date = d?.externalForwardedAt;
             if (!date) return;
             setForwardedMsgIds(prev => {
-              if (prev.get(viewedRfc) === date) return prev;
+              if (prev.get(viewedRfc)?.date === date) return prev;
               const next = new Map(prev);
-              next.set(viewedRfc, date);
-              try { localStorage.setItem('email-forwarded-msgids', JSON.stringify([...next])); } catch { /* ignore */ }
+              next.set(viewedRfc, { date, to: d?.to });
+              try { localStorage.setItem('email-forwarded-msgids-v2', JSON.stringify([...next])); } catch { /* ignore */ }
               return next;
             });
             setThreadMeta(prev => ({
@@ -1610,8 +1659,8 @@ export default function EmailTriagePage() {
     const sentAt = new Date().toISOString();
     setForwardedMsgIds(prev => {
       const next = new Map(prev);
-      next.set(rfc, sentAt);
-      try { localStorage.setItem('email-forwarded-msgids', JSON.stringify([...next])); } catch { /* ignore */ }
+      next.set(rfc, { date: sentAt });   // recipient fills in on next thread open
+      try { localStorage.setItem('email-forwarded-msgids-v2', JSON.stringify([...next])); } catch { /* ignore */ }
       return next;
     });
   }
@@ -1639,8 +1688,8 @@ export default function EmailTriagePage() {
     const sentAt = new Date().toISOString();
     setRepliedMsgIds(prev => {
       const next = new Map(prev);
-      next.set(rfc, sentAt);
-      try { localStorage.setItem('email-replied-msgids', JSON.stringify([...next])); } catch { /* ignore */ }
+      next.set(rfc, { date: sentAt });   // recipient fills in on next thread open
+      try { localStorage.setItem('email-replied-msgids-v2', JSON.stringify([...next])); } catch { /* ignore */ }
       return next;
     });
   }
@@ -2559,6 +2608,8 @@ export default function EmailTriagePage() {
             targetMessageId={activeThread.gmailThreadId ? activeThread.id : undefined}
             allocations={threadDetail.allocations}
             taskLinks={threadDetail.taskLinks}
+            replied={threadDetail.replied}
+            forwarded={threadDetail.forwarded}
             googleEmail={threadDetail.googleEmail || googleEmail}
             tasksModuleActive={tasksModuleActive}
             labels={labels}

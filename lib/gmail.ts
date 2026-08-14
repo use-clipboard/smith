@@ -148,6 +148,10 @@ export interface EmailMessage {
   isRead: boolean;
   /** RFC 2822 Message-ID header (`<...>`), '' when not loaded (metadata fetches). */
   messageId: string;
+  /** The single Message-ID this message directly answers (In-Reply-To header),
+   *  '' for a top-level message. Use this — NOT `references` — to attribute a
+   *  reply/forward to the one message it responds to. */
+  inReplyTo: string;
   /** Message-IDs this message replies to / descends from (In-Reply-To + References).
    *  Used to reconstruct the true reply chain — Gmail's visual threading can merge
    *  unrelated same-subject emails, but these headers reflect actual replies. */
@@ -303,6 +307,11 @@ export function parseGmailMessage(
   const dateRaw = getHeader(headers, 'date');
 
   const messageId = (getHeader(headers, 'message-id').match(/<[^>]+>/)?.[0]) ?? '';
+  // The immediate parent (In-Reply-To), kept SEPARATE from the full ancestor
+  // chain. Reply/forward attribution must use this, not `references` — a reply's
+  // References header lists every ancestor, so attributing by References marks
+  // the whole thread as replied, not just the one message answered.
+  const inReplyTo = (getHeader(headers, 'in-reply-to').match(/<[^>]+>/)?.[0]) ?? '';
   const references = `${getHeader(headers, 'in-reply-to')} ${getHeader(headers, 'references')}`
     .match(/<[^>]+>/g) ?? [];
 
@@ -331,6 +340,7 @@ export function parseGmailMessage(
     body,
     isRead: !labelIds.includes('UNREAD'),
     messageId,
+    inReplyTo,
     references: Array.from(new Set(references.map(r => r.trim()))),
     attachments,
     hasAttachments,

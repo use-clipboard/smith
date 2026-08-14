@@ -31,6 +31,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     .update({ ...parsed.data })
     .eq('id', params.id)
     .eq('firm_id', ctx.firmId)
+    .eq('created_by', ctx.userId)   // a user can only edit their own rules
     .select()
     .single();
 
@@ -52,7 +53,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     .from('email_rules')
     .delete()
     .eq('id', params.id)
-    .eq('firm_id', ctx.firmId);
+    .eq('firm_id', ctx.firmId)
+    .eq('created_by', ctx.userId);   // a user can only delete their own rules
 
   if (error) return NextResponse.json({ error: 'Failed to delete rule' }, { status: 500 });
   return NextResponse.json({ success: true });

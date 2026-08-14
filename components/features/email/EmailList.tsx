@@ -47,11 +47,11 @@ interface Props {
   loadingMore: boolean;
   pinnedIds?: Set<string>;
   onPin?: (threadId: string, pin: boolean) => void;
-  /** Map of RFC Message-ID -> ISO date an individual email was forwarded/replied
-   *  to. Keyed per email (not per thread) so a reply on one message in a
-   *  conversation doesn't mark its siblings as replied. */
-  forwardedMsgIds?: Map<string, string>;
-  repliedMsgIds?: Map<string, string>;
+  /** Map of RFC Message-ID -> { date, to } for an individual email that was
+   *  forwarded/replied to. Keyed per email (not per thread) so a reply on one
+   *  message in a conversation doesn't mark its siblings as replied. */
+  forwardedMsgIds?: Map<string, { date: string; to?: { name: string; email: string }[] }>;
+  repliedMsgIds?: Map<string, { date: string; to?: { name: string; email: string }[] }>;
   onBulkDelete?: (ids: string[]) => void;
   onBulkMarkRead?: (ids: string[]) => void;
   /** Forward each selected thread as its own email (one Send call per thread,
@@ -553,8 +553,16 @@ export default function EmailList({
                 );
                 return latest.date || undefined;
               }
-              const repliedAt   = isReplied   ? (pickLatestSent(s => !FORWARD_PREFIX.test(s)) || repliedMsgIds?.get(rowRfcId)   || undefined) : undefined;
-              const forwardedAt = isForwarded ? (pickLatestSent(s =>  FORWARD_PREFIX.test(s)) || forwardedMsgIds?.get(rowRfcId) || undefined) : undefined;
+              // Pull the mark from whichever of this row's messages actually
+              // carries it (grouped view has several), else the first.
+              const repliedMark   = repliedMsgIds?.get(rowRfcIds.find(id => repliedMsgIds?.has(id)) || rowRfcId);
+              const forwardedMark = forwardedMsgIds?.get(rowRfcIds.find(id => forwardedMsgIds?.has(id)) || rowRfcId);
+              const fmtRecipients = (to?: { name: string; email: string }[]) =>
+                (to ?? []).map(r => r.name || r.email).filter(Boolean).join(', ');
+              const repliedTo   = fmtRecipients(repliedMark?.to);
+              const forwardedTo = fmtRecipients(forwardedMark?.to);
+              const repliedAt   = isReplied   ? (pickLatestSent(s => !FORWARD_PREFIX.test(s)) || repliedMark?.date   || undefined) : undefined;
+              const forwardedAt = isForwarded ? (pickLatestSent(s =>  FORWARD_PREFIX.test(s)) || forwardedMark?.date || undefined) : undefined;
 
               // User-created Gmail labels applied to this thread → little tag chips.
               const threadUserLabels = (userLabels ?? []).filter(l => thread.labelIds.includes(l.id));
@@ -724,14 +732,18 @@ export default function EmailList({
                           );
                         })}
                         {isReplied && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--text-muted)]">
-                            <Reply size={9} /> Replied{repliedAt && ` · ${formatDate(repliedAt)}`}
-                          </span>
+                          <Tooltip label={`Replied${repliedTo ? ` to ${repliedTo}` : ''}${repliedAt ? ` on ${formatDate(repliedAt)}` : ''}`} side="top">
+                            <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--text-muted)]">
+                              <Reply size={9} /> Replied{repliedAt && ` · ${formatDate(repliedAt)}`}
+                            </span>
+                          </Tooltip>
                         )}
                         {isForwarded && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--text-muted)]">
-                            <Forward size={9} /> Forwarded{forwardedAt && ` · ${formatDate(forwardedAt)}`}
-                          </span>
+                          <Tooltip label={`Forwarded${forwardedTo ? ` to ${forwardedTo}` : ''}${forwardedAt ? ` on ${formatDate(forwardedAt)}` : ''}`} side="top">
+                            <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--text-muted)]">
+                              <Forward size={9} /> Forwarded{forwardedAt && ` · ${formatDate(forwardedAt)}`}
+                            </span>
+                          </Tooltip>
                         )}
                         {meta?.reactions && meta.reactions.length > 0 && (
                           <Tooltip label="You reacted" side="top">

@@ -22,10 +22,13 @@ export async function GET() {
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
 
   const supabase = createClient();
+  // Rules are PER-USER, not firm-wide: a user only ever sees and runs their own
+  // rules against their own mailbox. Scoped by created_by (+ firm_id for safety).
   const { data, error } = await supabase
     .from('email_rules')
     .select('*')
     .eq('firm_id', ctx.firmId)
+    .eq('created_by', ctx.userId)
     .order('created_at', { ascending: true });
 
   if (error) {
