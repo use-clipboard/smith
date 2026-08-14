@@ -90,7 +90,7 @@ export function Money({ n, label, value, cells = 8, minus, ghost }: { n?: React.
   return (
     <div className={dense ? 'mb-2.5' : 'mb-4'}>
       {(n != null || label != null) && <Label n={n} ghost={ghost}>{label}</Label>}
-      <div className="flex items-stretch gap-[3px]" style={{ height: 20 }}>
+      <div className="fac-boxrow flex items-stretch gap-[3px]" style={{ height: 20 }}>
         <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={base}><span className="fac-boxval">£</span></span>
         {/* HMRC "sign" box: a pre-printed white bar by default; a hand-entered
             style minus only when the figure is actually negative. */}
@@ -127,7 +127,7 @@ export function Line({ n, label, value, lines = 1, watermark }: { n?: React.Reac
       {label != null && <Label n={n}>{label}</Label>}
       <div>
         {Array.from({ length: lines }).map((_, k) => (
-          <div key={k} className="flex items-center overflow-hidden whitespace-pre px-1.5 text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, borderTop: k === 0 ? `1px solid ${CELL}` : 'none', background: '#fff', height: 19 }}>
+          <div key={k} className="fac-boxrow flex items-center overflow-hidden whitespace-pre px-1.5 text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, borderTop: k === 0 ? `1px solid ${CELL}` : 'none', background: '#fff', height: 19 }}>
             {k === 0 && value ? <span className="fac-boxval">{value}</span> : (k === lines - 1 && watermark ? <span className="font-normal text-slate-300">{watermark}</span> : '')}
           </div>
         ))}
@@ -141,7 +141,7 @@ export function Cells({ n, label, groups, value = '', sep }: { n?: React.ReactNo
   return (
     <div className={useDense() ? 'mb-2' : 'mb-2.5'}>
       {label != null && <Label n={n}>{label}</Label>}
-      <div className="flex items-center" style={{ gap: sep ? 6 : 10 }}>
+      <div className="fac-boxrow flex items-center" style={{ gap: sep ? 6 : 10 }}>
         {groups.map((g, gi) => (
           <div key={gi} className="flex items-center gap-[3px]">
             {gi > 0 && sep && <span className="mr-1 text-[12px] font-bold text-black">{sep}</span>}

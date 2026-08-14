@@ -308,12 +308,12 @@ ${head}
   html, body { margin: 0; padding: 0; background: #fff; }
   .sa-sheets-wrap { zoom: 1 !important; padding: 0 !important; display: block !important; }
   .sa-sheet { box-shadow: none !important; margin: 0 !important; }
-  /* html2canvas only approximates flexbox, so it renders flex-centred text a
-     touch low. transform: translateY is the lever it honours most reliably
-     (padding on a flex cell and position:relative offsets were both ignored),
-     so nudge headings and the wrapped boxed figures up with a transform. */
+  /* html2canvas renders text a touch low and only approximates flexbox: it
+     honours transforms on normal block boxes (headings, the box ROWS) but
+     ignores them on flex items (the individual value cells/spans). So lift the
+     whole box row — that carries the figures up with it. */
   h2, h3, h4, [data-sa-subhead] { transform: translateY(-4px); }
-  .fac-boxval { display: inline-block; transform: translateY(-4px); }
+  .fac-boxrow { transform: translateY(-4px); }
 </style></head><body><div class="sa-sheets-wrap">${el.innerHTML}</div></body></html>`);
       doc.close();
 
