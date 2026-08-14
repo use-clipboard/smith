@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Printer, FileText, Search, Plus, Minus, ChevronRight, List, Pencil, Check, Loader2 } from 'lucide-react';
+import { X, Download, FileText, Search, Plus, Minus, ChevronRight, List, Pencil, Check, Loader2 } from 'lucide-react';
 import type { TaxReturn } from '../types';
 import type { PageId } from '../stages/StageReview';
 import { buildFilingForms, type FilingForm, type FilingRow } from './filingModel';
@@ -249,6 +249,7 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
   const [sidebar, setSidebar] = useState(true);
   const [edit, setEdit] = useState<{ page: PageId; box: string; formCode: string; section: string; record: string; topTab?: string; subTab?: string } | null>(null);
   const [focusing, setFocusing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const editablePreview = !!renderEditor;
 
   // Click an editable field on a facsimile → open its editor section in a lightbox.
@@ -278,48 +279,46 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
     }
   }
 
-  // Save the whole return as a PDF via the browser's own print engine. We open
-  // a fresh popup window with a FLAT DOM (just the A4 sheets + the page's
-  // stylesheets) and call print() there. Why not html2canvas? It rasterises the
-  // page with its own layout engine that positions text by line-height and
-  // mis-places every glyph — the figures never sat right. Why not an in-place
-  // @media print? The Next.js wrapper divs break pagination (blank first page /
-  // one-page printouts) — the bookkeeping reports hit this and moved to a popup
-  // too. The popup renders in the real browser engine, so the PDF matches the
-  // on-screen preview exactly, and paginates naturally. The user picks "Save as
-  // PDF" (or their PDF printer); the document title seeds the filename.
-  function printPreview() {
+  // Download the whole return as a PDF. We send the exact sheets HTML + the
+  // page's stylesheet text to a server route that rasterises it with a real
+  // headless-Chrome engine (see app/api/tax-studio/pdf/route.ts). That renders
+  // identically to the on-screen preview — correct text position, colours and
+  // full-bleed A4 — as a true one-click download, avoiding html2canvas's
+  // text mis-placement and the browser print dialog's user-dependent settings.
+  async function downloadPdf() {
     const el = sheetsRef.current;
-    if (!el) { window.print(); return; }
-    const styleHtml = Array.from(document.querySelectorAll('link[rel="stylesheet"], style')).map(n => n.outerHTML).join('\n');
-    const popup = window.open('', '_blank', 'width=900,height=1100');
-    if (!popup) { window.print(); return; } // pop-up blocked — fall back to native print
-    const title = pdfFileName(ret).replace(/\.pdf$/, ''); // browsers use <title> as the Save-as-PDF filename
-    popup.document.write(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><base href="${location.origin}/"><title>${title}</title>
-${styleHtml}
-<style>
-  html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
-  /* Force the facsimile's colours/borders to print (not just black text). */
-  *, *::before, *::after { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-  /* This wrapper carries the modal's zoom/scroll/height on the live page — reset
-     it so the sheets lay out at their true A4 size and can paginate. */
-  .sa-sheets-wrap { zoom: 1 !important; transform: none !important; padding: 0 !important; margin: 0 !important; display: block !important; width: auto !important; height: auto !important; max-height: none !important; overflow: visible !important; background: #fff; }
-  .sa-sheet { box-shadow: none !important; margin: 0 auto !important; page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; }
-  .sa-sheet:last-child { page-break-after: auto; break-after: auto; }
-  /* The app's own @media print rules (scoped to #sa-filing-preview, which does
-     not exist here) get copied in via the stylesheets — make sure nothing is
-     hidden and no stray margin is applied when this popup prints. */
-  @media print { html, body, .sa-sheets-wrap, .sa-sheet, .sa-sheet * { visibility: visible !important; } }
-  @page { size: A4 portrait; margin: 0; }
-</style></head><body><div class="sa-sheets-wrap">${el.innerHTML}</div></body></html>`);
-    popup.document.close();
-    // Print only AFTER stylesheets have loaded — firing on readyState alone
-    // prints before Tailwind loads, giving an unstyled, un-paginated page.
-    let fired = false;
-    const fire = () => { if (fired) return; fired = true; try { popup.focus(); popup.print(); } catch { /* noop */ } };
-    popup.onafterprint = () => { try { popup.close(); } catch { /* user already closed it */ } };
-    popup.addEventListener('load', () => setTimeout(fire, 500));
-    setTimeout(fire, 4000); // fallback if load never fires (cached/blocked sheet)
+    if (!el || downloading) return;
+    setDownloading(true);
+    try {
+      // Same-origin stylesheet text (Tailwind + globals + inline <style>). Inline
+      // element styles already travel with the HTML. Cross-origin sheets throw on
+      // cssRules — skip them (the app's own CSS is same-origin).
+      let css = '';
+      for (const ss of Array.from(document.styleSheets)) {
+        try { css += Array.from(ss.cssRules).map(r => r.cssText).join('\n') + '\n'; }
+        catch { /* cross-origin sheet — not readable, skip */ }
+      }
+      const res = await fetch('/api/tax-studio/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: el.innerHTML, css, title: pdfFileName(ret).replace(/\.pdf$/, '') }),
+      });
+      if (!res.ok) throw new Error(`pdf route returned ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = pdfFileName(ret);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      console.error('[tax-studio] PDF download failed', err);
+      alert('Sorry — the PDF could not be generated. Please try again.');
+    } finally {
+      setDownloading(false);
+    }
   }
 
   // Once the editor lightbox is up, hunt for the clicked box (navigating the
@@ -560,12 +559,13 @@ ${styleHtml}
             <button onClick={() => setZoom(1)} className="w-11 text-center text-[11px] font-semibold tabular-nums text-slate-600 hover:text-slate-900" aria-label="Reset zoom">{Math.round(zoom * 100)}%</button>
             <button onClick={() => setZoom(z => Math.min(2, +(z + 0.1).toFixed(2)))} className="rounded p-1 text-slate-600 hover:bg-slate-100" aria-label="Zoom in"><Plus size={14} /></button>
           </div>
-          <button onClick={printPreview} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:opacity-90">
-            <Printer size={14} /> Save as PDF
+          <button onClick={downloadPdf} disabled={downloading} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-60">
+            {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            {downloading ? 'Preparing…' : 'Download'}
           </button>
           {/* Visible build tag — lets the user confirm they're on the latest app
               version (not a stale cached copy) before trusting the output. */}
-          <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">PDF v6</span>
+          <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">PDF v7</span>
           <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-semibold text-slate-600 hover:bg-slate-50">
             <X size={14} /> Close
           </button>

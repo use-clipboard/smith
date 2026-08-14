@@ -3,6 +3,17 @@ const nextConfig = {
   // tiptap-pagination-plus ships ESM-syntax JS without "type":"module", so let
   // Next transpile it through its own loaders to avoid bundler resolution issues.
   transpilePackages: ['tiptap-pagination-plus'],
+  // Headless-Chrome PDF rendering (Tax Studio "Download"): these must stay
+  // external (required at runtime from node_modules) so webpack doesn't bundle
+  // the chromium binary and Next's output tracing ships it with the function.
+  experimental: {
+    serverComponentsExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
+    // Make sure the compressed chromium binary is traced into the PDF route's
+    // serverless function (Next's tracer can miss the .br pack otherwise).
+    outputFileTracingIncludes: {
+      '/api/tax-studio/pdf': ['./node_modules/@sparticuz/chromium/**'],
+    },
+  },
   eslint: {
     ignoreDuringBuilds: true,
   },
