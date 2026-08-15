@@ -747,6 +747,17 @@ export default function EmailTriagePage() {
           map[tid] = { category: v.category as EmailCategory, source: v.setBy === 'user' ? 'user' : 'ai', updatedAt: v.updatedAt };
         }
         setCategoryOverrides(prev => ({ ...map, ...prev }));
+        // Re-anchor the untriaged baseline to the now-complete categorised set.
+        // The server `base` (from /api/email/unread) already excludes every
+        // categorised email, so this bulk initial load must NOT be treated as
+        // in-session triage — otherwise base − (categorised − categorisedAtBase)
+        // over-subtracts and collapses the count to 0 whenever the baseline was
+        // snapshotted (by a parallel /api/email/unread call) before this map
+        // finished loading. Only re-anchor if a baseline already exists; if the
+        // baseline lands later it will snapshot against the (now full) map itself.
+        const merged = { ...map, ...categoryOverridesRef.current };
+        const fullCategorised = Object.values(merged).filter(v => v.category !== 'untriaged').length;
+        setUntriagedServer(s => (s ? { ...s, categorisedAtBase: fullCategorised } : s));
       })
       .catch(() => {});
   }, [connected]);

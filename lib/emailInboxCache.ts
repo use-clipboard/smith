@@ -93,6 +93,12 @@ async function fullRebuild(svc: ServiceClient, gmail: Gmail, userId: string): Pr
     if (batch.length < CHUNK) break;
   }
   const freshIds = new Set(rows.map(r => r.message_id));
+
+  // Guard: an empty inbox listing when the cache was populated is almost always
+  // a transient Gmail glitch, not a genuinely emptied inbox. Never let that wipe
+  // a populated cache — it would zero the untriaged count. Leave it untouched.
+  if (rows.length === 0 && existingIds.size > 0) return startHistoryId;
+
   const staleIds = [...existingIds].filter(id => !freshIds.has(id));
 
   // Upsert the fresh listing first (cache is never empty), THEN remove stale ids.
