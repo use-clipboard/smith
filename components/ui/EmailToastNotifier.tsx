@@ -58,6 +58,9 @@ export default function EmailToastNotifier() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const seenIdsRef = useRef<Set<string>>(new Set());
   const initialisedRef = useRef(false);
+  // High-water mark of the newest email arrival time we've seen. Only emails
+  // that arrive AFTER this notify — see the filter below.
+  const latestDateRef = useRef(0);
 
   const dismiss = useCallback((key: string) => {
     setToasts(prev => prev.filter(t => t.key !== key));
@@ -108,15 +111,22 @@ export default function EmailToastNotifier() {
         const emails = data.emails ?? [];
         if (cancelled) return;
 
-        // First poll establishes baseline — never notify on initial set
+        // First poll establishes the baseline — never notify on the initial set,
+        // and record the newest arrival time as the high-water mark.
         if (!initialisedRef.current) {
           emails.forEach(e => seenIdsRef.current.add(e.id));
+          latestDateRef.current = emails.reduce((m, e) => Math.max(m, e.internalDate), 0);
           initialisedRef.current = true;
           return;
         }
 
-        const fresh = emails.filter(e => !seenIdsRef.current.has(e.id));
-        fresh.forEach(e => seenIdsRef.current.add(e.id));
+        // Only TRUE new arrivals notify — an email whose arrival time is newer
+        // than anything we've seen. This excludes old unread emails that merely
+        // bubbled into the "10 most recent unread" window because you read newer
+        // ones above them (reading the top pulls older unread mail up into it).
+        const fresh = emails.filter(e => !seenIdsRef.current.has(e.id) && e.internalDate > latestDateRef.current);
+        emails.forEach(e => seenIdsRef.current.add(e.id));
+        latestDateRef.current = emails.reduce((m, e) => Math.max(m, e.internalDate), latestDateRef.current);
         if (fresh.length === 0) return;
 
         if (!notificationsEnabled()) return;
