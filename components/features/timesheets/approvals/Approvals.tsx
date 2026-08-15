@@ -13,7 +13,7 @@ import { useOpenProfile } from '@/components/features/team/useOpenProfile';
 import AdjustEntryModal, { type AdjustPatch } from './AdjustEntryModal';
 
 export default function Approvals() {
-  const { weekStatuses, staff, entries, reviewWeek, refreshWeeks, isAdmin, userId, defaultRatePence } = useTimesheets();
+  const { weekStatuses, staff, entries, reviewWeek, refreshWeeks, userId, defaultRatePence } = useTimesheets();
   const openProfile = useOpenProfile();
   const [rejecting, setRejecting] = useState<string | null>(null); // `${userId}__${weekStart}`
   const [note, setNote] = useState('');
@@ -55,9 +55,9 @@ export default function Approvals() {
 
   const staffById = useMemo(() => new Map(staff.map(s => [s.id, s])), [staff]);
 
-  // Admins see everything (incl. weeks with no manager — the fallback);
-  // managers see only weeks routed to them.
-  const mine = (w: { managerId: string | null }) => isAdmin || w.managerId === userId;
+  // Only the manager a week was routed to sees it here — no admin-sees-all. A
+  // week with no manager is auto-approved and never appears for approval.
+  const mine = (w: { managerId: string | null }) => w.managerId === userId;
 
   const rows = useMemo(() => {
     return Object.values(weekStatuses)
@@ -65,7 +65,7 @@ export default function Approvals() {
       .map(w => ({ ...w, staff: staffById.get(w.userId) }))
       .sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStatuses, staffById, isAdmin, userId]);
+  }, [weekStatuses, staffById, userId]);
 
   // The normal entries feed is RLS-scoped to the current user, so a submitter's
   // hours aren't in `entries`. Fetch each pending week's entries (permission-
@@ -97,7 +97,7 @@ export default function Approvals() {
       .sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1))
       .slice(0, 8);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStatuses, isAdmin, userId]);
+  }, [weekStatuses, userId]);
 
   function doReject(userId: string, weekStart: string) {
     reviewWeek(userId, weekStart, 'reject', note.trim() || undefined);
@@ -160,7 +160,7 @@ export default function Approvals() {
       <GlassCard>
         <SectionHeader
           title="Timesheet approvals"
-          subtitle={isAdmin ? 'Weeks submitted by the team — including any without a manager set.' : 'Weeks submitted by the people who report to you.'}
+          subtitle="Weeks submitted by the people who report to you."
           right={
             <div className="flex items-center gap-2">
               <button

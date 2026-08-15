@@ -4,9 +4,9 @@ import { createServiceClient } from '@/lib/supabase-server';
 
 // GET /api/timesheets/approvals-count
 // Number of submitted weeks awaiting THIS user's approval — drives the
-// Timesheets sidebar badge. A manager sees their reports' submitted weeks;
-// admins also pick up any submitted week with no manager set (the fallback
-// approver, matching the submit-notify logic).
+// Timesheets sidebar badge. Only weeks routed to this user as the submitter's
+// manager count; there is no admin fallback (a week with no manager is
+// auto-approved, so it never awaits anyone).
 export async function GET() {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ count: 0 });
@@ -21,18 +21,7 @@ export async function GET() {
       .eq('status', 'submitted')
       .eq('manager_id', ctx.userId);
 
-    let unmanaged = 0;
-    if (ctx.userRole === 'admin') {
-      const { count } = await service
-        .from('timesheet_week_status')
-        .select('user_id', { count: 'exact', head: true })
-        .eq('firm_id', ctx.firmId)
-        .eq('status', 'submitted')
-        .is('manager_id', null);
-      unmanaged = count ?? 0;
-    }
-
-    return NextResponse.json({ count: (mine ?? 0) + unmanaged });
+    return NextResponse.json({ count: mine ?? 0 });
   } catch {
     // Table/column missing pre-migration → badge just hides.
     return NextResponse.json({ count: 0 });

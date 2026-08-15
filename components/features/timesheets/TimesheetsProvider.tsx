@@ -639,8 +639,22 @@ export default function TimesheetsProvider({
   };
 
   const submitWeek = useCallback((weekStart: string) => {
-    setWeekStatuses(prev => ({ ...prev, [weekKey(userId, weekStart)]: { userId, weekStart, status: 'submitted', note: null, reviewedBy: null, managerId: prev[weekKey(userId, weekStart)]?.managerId ?? null } }));
-    postWeek({ weekStart, action: 'submit' });
+    const key = weekKey(userId, weekStart);
+    setWeekStatuses(prev => ({ ...prev, [key]: { userId, weekStart, status: 'submitted', note: null, reviewedBy: null, managerId: prev[key]?.managerId ?? null } }));
+    // A user with no manager is auto-approved server-side — reflect that instead
+    // of leaving the optimistic "submitted" (otherwise it looks stuck awaiting
+    // an approval that will never come).
+    fetch('/api/timesheets/weeks', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ weekStart, action: 'submit' }),
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (d?.status === 'approved') {
+          setWeekStatuses(prev => ({ ...prev, [key]: { userId, weekStart, status: 'approved', note: null, reviewedBy: null, managerId: prev[key]?.managerId ?? null } }));
+        }
+      })
+      .catch(() => { /* keep optimistic */ });
   }, [userId]);
 
   const withdrawWeek = useCallback((weekStart: string) => {

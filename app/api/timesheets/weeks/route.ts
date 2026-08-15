@@ -32,64 +32,49 @@ async function managerOf(service: any, userId: string): Promise<string | null> {
   }
 }
 
-// Notify whoever needs to approve a submitted week: the manager if set,
-// otherwise all firm admins (the fallback). Best-effort — never blocks submit.
+// Notify the ONE approver a submitted week is routed to: the submitter's manager.
+// No manager → the week is auto-approved (see the submit action), so this is
+// never called with a null manager. No admin fallback — only the manager is
+// notified. Best-effort — never blocks submit.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function notifyApprovers(service: any, firmId: string, submitterId: string, managerId: string | null, weekStart: string) {
   try {
+    if (!managerId || managerId === submitterId) return; // no manager → nobody to notify
     const { data: submitter } = await service.from('users').select('full_name, email').eq('id', submitterId).single();
     const name = submitter?.full_name || submitter?.email || 'A team member';
 
-    let recipients: string[] = [];
-    if (managerId && managerId !== submitterId) {
-      recipients = [managerId];
-    } else {
-      const { data: admins } = await service.from('users').select('id').eq('firm_id', firmId).eq('role', 'admin');
-      recipients = (admins ?? []).map((a: { id: string }) => a.id).filter((id: string) => id !== submitterId);
-    }
-
     const [y, m, d] = weekStart.split('-');
-    for (const rid of recipients) {
-      void createNotification({
-        userId: rid,
-        firmId,
-        type: 'timesheet_approval',
-        title: `Timesheet submitted: ${name}`,
-        body: `Week of ${d}-${m}-${y} is awaiting your approval.`,
-        data: { link: '/timesheets' },
-      });
-    }
+    void createNotification({
+      userId: managerId,
+      firmId,
+      type: 'timesheet_approval',
+      title: `Timesheet submitted: ${name}`,
+      body: `Week of ${d}-${m}-${y} is awaiting your approval.`,
+      data: { link: '/timesheets' },
+    });
   } catch { /* non-critical */ }
 }
 
 // Notify the approver that a week they'd already approved has been reopened
-// (the owner edited it, so it needs approving again). Falls back to admins if we
-// can't tell who approved it. Best-effort — never blocks the reopen.
+// (the owner edited it, so it needs approving again). Only the actual approver
+// is notified — no admin fallback. An auto-approved (manager-less) week has no
+// approver, so nobody is notified. Best-effort — never blocks the reopen.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function notifyReopen(service: any, firmId: string, submitterId: string, approverId: string | null, weekStart: string) {
   try {
+    if (!approverId || approverId === submitterId) return; // nobody specific approved it → nobody to notify
     const { data: submitter } = await service.from('users').select('full_name, email').eq('id', submitterId).single();
     const name = submitter?.full_name || submitter?.email || 'A team member';
 
-    let recipients: string[] = [];
-    if (approverId && approverId !== submitterId) {
-      recipients = [approverId];
-    } else {
-      const { data: admins } = await service.from('users').select('id').eq('firm_id', firmId).eq('role', 'admin');
-      recipients = (admins ?? []).map((a: { id: string }) => a.id).filter((id: string) => id !== submitterId);
-    }
-
     const [y, m, d] = weekStart.split('-');
-    for (const rid of recipients) {
-      void createNotification({
-        userId: rid,
-        firmId,
-        type: 'timesheet_approval',
-        title: `Timesheet reopened: ${name}`,
-        body: `The approved week of ${d}-${m}-${y} was reopened and will need approving again.`,
-        data: { link: '/timesheets' },
-      });
-    }
+    void createNotification({
+      userId: approverId,
+      firmId,
+      type: 'timesheet_approval',
+      title: `Timesheet reopened: ${name}`,
+      body: `The approved week of ${d}-${m}-${y} was reopened and will need approving again.`,
+      data: { link: '/timesheets' },
+    });
   } catch { /* non-critical */ }
 }
 
@@ -148,20 +133,18 @@ export async function POST(req: NextRequest) {
   const targetUser = parsed.data.userId ?? ctx.userId;
   const service = createServiceClient();
 
-  // Permission: self may submit/withdraw own weeks; the submitter's manager OR
-  // an admin may review. (No manager set → only admins, the fallback.)
+  // Permission: self may submit/withdraw own weeks; ONLY the manager the week was
+  // routed to may approve/reject — no admin override. A week with no manager is
+  // auto-approved at submit time, so it never reaches a manual review here.
   const isReview = action === 'approve' || action === 'reject';
   if (isReview) {
-    if (ctx.userRole !== 'admin') {
-      // The manager the week was routed to (snapshot), falling back to the
-      // user's current manager if the row/column predates the snapshot.
-      let rowManager: string | null = null;
-      const { data: existing } = await service
-        .from('timesheet_week_status').select('manager_id')
-        .eq('user_id', targetUser).eq('week_start', weekStart).maybeSingle();
-      rowManager = (existing?.manager_id as string | null) ?? await managerOf(service, targetUser);
-      if (rowManager !== ctx.userId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    // The manager the week was routed to (snapshot), falling back to the user's
+    // current manager if the row/column predates the snapshot.
+    const { data: existing } = await service
+      .from('timesheet_week_status').select('manager_id')
+      .eq('user_id', targetUser).eq('week_start', weekStart).maybeSingle();
+    const rowManager = (existing?.manager_id as string | null) ?? await managerOf(service, targetUser);
+    if (!rowManager || rowManager !== ctx.userId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   } else if (targetUser !== ctx.userId) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
@@ -201,11 +184,18 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === 'submit') {
-    const managerId = await managerOf(service, targetUser);
+    const rawManager = await managerOf(service, targetUser);
+    // A user who is (somehow) their own manager counts as having no manager.
+    const managerId = rawManager && rawManager !== targetUser ? rawManager : null;
+
+    // No manager → nobody needs to approve this: auto-approve it and notify no
+    // one. With a manager → route it to them for approval.
+    const now = new Date().toISOString();
+    const autoApprove = !managerId;
     const row: Record<string, unknown> = {
       firm_id: ctx.firmId, user_id: targetUser, week_start: weekStart,
-      status: 'submitted', note: null, submitted_at: new Date().toISOString(),
-      reviewed_by: null, reviewed_at: null, manager_id: managerId,
+      status: autoApprove ? 'approved' : 'submitted', note: null, submitted_at: now,
+      reviewed_by: null, reviewed_at: autoApprove ? now : null, manager_id: managerId,
     };
     let { error } = await service.from('timesheet_week_status').upsert(row, { onConflict: 'user_id,week_start' });
     // Retry without manager_id if that column isn't migrated yet.
@@ -215,7 +205,9 @@ export async function POST(req: NextRequest) {
     }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    // Route a notification to the approver(s): the manager if set, else admins.
+    if (autoApprove) return NextResponse.json({ ok: true, status: 'approved', autoApproved: true });
+
+    // Route a notification to the one approver — the submitter's manager.
     void notifyApprovers(service, ctx.firmId, targetUser, managerId, weekStart);
     return NextResponse.json({ ok: true, status: 'submitted' });
   }
