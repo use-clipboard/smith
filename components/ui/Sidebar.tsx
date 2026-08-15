@@ -15,6 +15,7 @@ import Tooltip from './Tooltip';
 import { useTabContext, Tab } from './TabContext';
 import { useModules } from './ModulesProvider';
 import { useEmailCount } from './EmailCountProvider';
+import { BADGE_REFRESH_EVENT } from '@/lib/notificationTarget';
 import { useTaskCountsOrZero } from './TasksCountProvider';
 import { useFavourites } from './FavouritesProvider';
 import { createClient } from '@/lib/supabase';
@@ -43,6 +44,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   const [todayEventCount, setTodayEventCount] = useState(0);
   const [hrBadgeCount, setHrBadgeCount] = useState(0);
   const [mtdItUnreadCount, setMtdItUnreadCount] = useState(0);
+  const [timesheetBadgeCount, setTimesheetBadgeCount] = useState(0);
   const pathname = usePathname();
   const router = useRouter();
   const { openTab, openInNewTab, setActiveTabId, tabs, activeTabId } = useTabContext();
@@ -113,8 +115,27 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
         .catch(() => {});
     }
     fetchHr();
+    // Realtime: refetch the instant a notification changes (via the provider) or
+    // an approval is actioned in-tool; the 2-min poll is just a fallback.
     const id = setInterval(fetchHr, 2 * 60 * 1000);
-    return () => clearInterval(id);
+    window.addEventListener(BADGE_REFRESH_EVENT, fetchHr);
+    return () => { clearInterval(id); window.removeEventListener(BADGE_REFRESH_EVENT, fetchHr); };
+  }, [isModuleActive]);
+
+  // Timesheets badge = weeks awaiting this user's approval. Same realtime model
+  // as HR: refetch on a badge-refresh (notification change / in-tool action).
+  useEffect(() => {
+    if (!isModuleActive('timesheets')) return;
+    function fetchTs() {
+      fetch('/api/timesheets/approvals-count')
+        .then(r => r.ok ? r.json() : { count: 0 })
+        .then(d => setTimesheetBadgeCount(d.count ?? 0))
+        .catch(() => {});
+    }
+    fetchTs();
+    const id = setInterval(fetchTs, 2 * 60 * 1000);
+    window.addEventListener(BADGE_REFRESH_EVENT, fetchTs);
+    return () => { clearInterval(id); window.removeEventListener(BADGE_REFRESH_EVENT, fetchTs); };
   }, [isModuleActive]);
 
   // Fetch count of today's remaining events for the calendar badge
@@ -252,6 +273,10 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
     const mtdItBadge = isMtdIt && mtdItUnreadCount > 0;
     const mtdItLabel = String(mtdItUnreadCount);
 
+    const isTimesheets = item.moduleId === 'timesheets';
+    const tsBadge      = isTimesheets && timesheetBadgeCount > 0;
+    const tsLabel      = String(timesheetBadgeCount);
+
     if (collapsed) {
       const collapsedLabel =
         item.comingSoon ? `${item.label} · Coming soon`
@@ -260,6 +285,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
         : taskBadge  ? `${item.label} · ${myTaskCount} active task${myTaskCount !== 1 ? 's' : ''} assigned to you`
         : hrBadge    ? `${item.label} · ${hrBadgeCount} item${hrBadgeCount !== 1 ? 's' : ''} needing attention`
         : mtdItBadge ? `${item.label} · ${mtdItUnreadCount} new client response${mtdItUnreadCount !== 1 ? 's' : ''}`
+        : tsBadge    ? `${item.label} · ${timesheetBadgeCount} timesheet${timesheetBadgeCount !== 1 ? 's' : ''} to approve`
         : item.label;
       return (
         <div key={item.href} className="relative">
@@ -284,6 +310,13 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
                              text-[9px] font-bold flex items-center justify-center pointer-events-none
                              ${isActive ? 'bg-[var(--accent)] text-white' : 'bg-white text-[var(--accent)] shadow-sm'}`}>
               {emailLabel}
+            </span>
+          )}
+          {tsBadge && (
+            <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full
+                             text-[9px] font-bold flex items-center justify-center pointer-events-none
+                             ${isActive ? 'bg-[var(--accent)] text-white' : 'bg-white text-[var(--accent)] shadow-sm'}`}>
+              {tsLabel}
             </span>
           )}
           {taskBadge && (
@@ -386,6 +419,13 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
                            flex items-center justify-center mr-2
                            ${isActive ? 'bg-[var(--accent)] text-white' : 'bg-white text-[var(--accent)] shadow-sm'}`}>
             {emailLabel}
+          </span>
+        )}
+        {tsBadge && (
+          <span className={`shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold
+                           flex items-center justify-center mr-2
+                           ${isActive ? 'bg-[var(--accent)] text-white' : 'bg-white text-[var(--accent)] shadow-sm'}`}>
+            {tsLabel}
           </span>
         )}
 

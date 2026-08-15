@@ -9,6 +9,11 @@ export const NAVIGATE_TAB_EVENT = 'smith:navigate-tab';
 /** Deep-link handoff so the Tasks tool opens a specific task after navigation. */
 export const OPEN_TASK_EVENT = 'smith:open-task';
 export const OPEN_TASK_KEY = 'smith:open-task-id';
+/** Broadcast to tell notification-count badges/markers (HR, timesheets, …) to
+ *  refetch — fired when the realtime notifications list changes, and directly by
+ *  in-tool actions (approve/reject) so a badge updates the instant it's dealt
+ *  with, in both the tool and the sidebar. */
+export const BADGE_REFRESH_EVENT = 'smith:badge-refresh';
 
 export interface NotificationTarget {
   /** Route/tab to open, or null when there's nowhere meaningful to go. */

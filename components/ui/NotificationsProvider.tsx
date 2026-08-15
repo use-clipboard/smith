@@ -75,6 +75,14 @@ export default function NotificationsProvider({ userId, children }: { userId: st
     return () => { void supabase.removeChannel(channel); };
   }, [userId, supabase, refresh]);
 
+  // Whenever the (realtime-driven) notification list changes, nudge the
+  // count badges that derive from it — the HR sidebar/tool badge and the
+  // timesheets approvals marker — so they update live instead of on a 2-min poll.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new Event('smith:badge-refresh'));
+  }, [notifications]);
+
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const markAllRead = useCallback(async () => {

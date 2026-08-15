@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { BADGE_REFRESH_EVENT } from '@/lib/notificationTarget';
 import { useSearchParams } from 'next/navigation';
 import {
   HeartHandshake, Calendar as CalIcon, Inbox, Network, Plus, Loader2,
@@ -196,8 +197,11 @@ export default function HrClient() {
 
   useEffect(() => {
     refreshBadges();
+    // Realtime: a notification change (via the provider) or an in-tool approval
+    // fires this event; the 2-min poll is just a fallback.
     const id = setInterval(refreshBadges, 2 * 60 * 1000);
-    return () => clearInterval(id);
+    window.addEventListener(BADGE_REFRESH_EVENT, refreshBadges);
+    return () => { clearInterval(id); window.removeEventListener(BADGE_REFRESH_EVENT, refreshBadges); };
   }, [refreshBadges]);
 
   // Mark relevant notifications as read when the user opens the sub-tab that surfaces them
@@ -692,6 +696,7 @@ function ApprovalsTab({ userId }: { userId: string }) {
       });
       if (!res.ok) throw new Error((await res.json()).error ?? 'Approve failed');
       await load();
+      window.dispatchEvent(new Event(BADGE_REFRESH_EVENT)); // drop the badge (tool + sidebar) now
     } catch (e) { alert(e instanceof Error ? e.message : 'Approve failed'); }
     finally { setBusyId(null); }
   }
@@ -707,6 +712,7 @@ function ApprovalsTab({ userId }: { userId: string }) {
       });
       if (!res.ok) throw new Error((await res.json()).error ?? 'Reject failed');
       await load();
+      window.dispatchEvent(new Event(BADGE_REFRESH_EVENT)); // drop the badge (tool + sidebar) now
     } catch (e) { alert(e instanceof Error ? e.message : 'Reject failed'); }
     finally { setBusyId(null); }
   }

@@ -8,6 +8,7 @@ import { MAX_TIMERS } from '@/lib/timesheets/types';
 import { DEPARTMENTS, DEFAULT_ACTIVITIES } from '@/lib/timesheets/defaults';
 import { toIsoDate, startOfWeek, fmtDuration } from '@/lib/timesheets/format';
 import { nextTimerColor, TIMER_COLORS } from '@/lib/timesheets/palette';
+import { BADGE_REFRESH_EVENT } from '@/lib/notificationTarget';
 
 const UNDO_MS = 8000; // window to undo a just-logged timer
 const DEFAULT_CAPACITY_HOURS = 37.5;
@@ -609,11 +610,17 @@ export default function TimesheetsProvider({
   useEffect(() => {
     if (!ready) return;
     const onVisible = () => { if (document.visibilityState === 'visible') void loadWeeks(); };
+    // Realtime: a timesheet approval/submission notification (or any in-tool
+    // action) fires badge-refresh → re-pull week statuses so the Approvals marker
+    // updates live instead of only on focus.
+    const onBadge = () => void loadWeeks();
     window.addEventListener('focus', onVisible);
     document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener(BADGE_REFRESH_EVENT, onBadge);
     return () => {
       window.removeEventListener('focus', onVisible);
       document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener(BADGE_REFRESH_EVENT, onBadge);
     };
   }, [ready, loadWeeks]);
 
