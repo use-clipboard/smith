@@ -180,18 +180,31 @@ export async function renderApprovalPdf(opts: {
     const accent = tone === 'income' ? COLOR.income : COLOR.expense;
     const soft   = tone === 'income' ? COLOR.incomeSoft : COLOR.expenseSoft;
     const headerH = 22, rowH = 18, totalH = 22;
+    const bottomLimit = pageH - 50;
     const rowsToDraw = section.lines.length > 0 ? section.lines : [{ category: '(no entries)', amount: 0 }];
-    const tableH = headerH + rowsToDraw.length * rowH + totalH;
-    yIn = ensureSpace(yIn, tableH + 14);
 
-    fillRect(margin, yIn, contentW, headerH, accent, 4);
-    text(section.title.toUpperCase(), margin + 14, yIn + 15, { bold: true, size: 9, color: [255, 255, 255] });
-    text(`${section.lines.length} ${section.lines.length === 1 ? 'category' : 'categories'}`, pageW - margin - 14, yIn + 15, {
-      size: 8, color: [255, 255, 255], align: 'right',
-    });
-    let cy = yIn + headerH;
+    function drawHead(atY: number, continued: boolean): number {
+      fillRect(margin, atY, contentW, headerH, accent, 4);
+      text(`${section.title.toUpperCase()}${continued ? ' (CONTINUED)' : ''}`, margin + 14, atY + 15, { bold: true, size: 9, color: [255, 255, 255] });
+      text(`${section.lines.length} ${section.lines.length === 1 ? 'category' : 'categories'}`, pageW - margin - 14, atY + 15, {
+        size: 8, color: [255, 255, 255], align: 'right',
+      });
+      return atY + headerH;
+    }
+
+    // Start here only if the header + one row fit; a long list flows across
+    // pages (repeating the header) rather than running off the bottom.
+    yIn = ensureSpace(yIn, headerH + rowH + 14);
+    let segTop = yIn;
+    let cy = drawHead(yIn, false);
 
     rowsToDraw.forEach((l, i) => {
+      if (cy + rowH > bottomLimit) {
+        strokeRect(margin, segTop, contentW, cy - segTop, COLOR.rule, 4);
+        doc.addPage();
+        segTop = drawBrandHeader();
+        cy = drawHead(segTop, true);
+      }
       if (i % 2 === 1) fillRect(margin, cy, contentW, rowH, COLOR.zebra);
       text(l.category, margin + 14, cy + 12, { size: 9, color: section.lines.length === 0 ? COLOR.textFaint : COLOR.text });
       if (section.lines.length > 0) {
@@ -200,12 +213,18 @@ export async function renderApprovalPdf(opts: {
       cy += rowH;
     });
 
+    if (cy + totalH > bottomLimit) {
+      strokeRect(margin, segTop, contentW, cy - segTop, COLOR.rule, 4);
+      doc.addPage();
+      segTop = drawBrandHeader();
+      cy = drawHead(segTop, true);
+    }
     fillRect(margin, cy, contentW, totalH, soft);
     text(`Total ${section.title}`, margin + 14, cy + 14, { bold: true, size: 10, color: accent });
     text(fmtMoneyGbp(section.total), pageW - margin - 14, cy + 14, { bold: true, size: 11, align: 'right', color: accent });
     cy += totalH;
 
-    strokeRect(margin, yIn, contentW, tableH, COLOR.rule, 4);
+    strokeRect(margin, segTop, contentW, cy - segTop, COLOR.rule, 4);
     return cy;
   }
 
@@ -237,8 +256,7 @@ export async function renderApprovalPdf(opts: {
     const accent = tone === 'income' ? COLOR.income : COLOR.expense;
     const soft   = tone === 'income' ? COLOR.incomeSoft : COLOR.expenseSoft;
     const headerH = 22, colHeaderH = 13, rowH = 18, totalH = 22;
-    const tableH = headerH + colHeaderH + rows.length * rowH + totalH;
-    yIn = ensureSpace(yIn, tableH + 14);
+    const bottomLimit = pageH - 50; // keep rows clear of the footer strip
 
     // Columns: Date | Description | Supplier | Invoice | Amount
     const dateW = 58, supplierW = 88, invoiceW = 62, amtW = 74;
@@ -249,26 +267,41 @@ export async function renderApprovalPdf(opts: {
     const invoiceX  = supplierX + supplierW;
     const amtX      = pageW - margin - 14;
 
-    fillRect(margin, yIn, contentW, headerH, accent, 4);
-    text(`${tone === 'income' ? 'INCOME' : 'EXPENSE'} - ${clip(category, contentW - 200, 9).toUpperCase()}`, margin + 14, yIn + 15, {
-      bold: true, size: 9, color: [255, 255, 255],
-    });
-    text(`${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}`, pageW - margin - 14, yIn + 15, {
-      size: 8, color: [255, 255, 255], align: 'right',
-    });
+    // Draws the section header + column-label sub-row at `atY`; returns the y of
+    // the first data row. `continued` tags carry-over segments after a break.
+    function drawHead(atY: number, continued: boolean): number {
+      fillRect(margin, atY, contentW, headerH, accent, 4);
+      const title = `${tone === 'income' ? 'INCOME' : 'EXPENSE'} - ${clip(category, contentW - 220, 9).toUpperCase()}${continued ? ' (CONTINUED)' : ''}`;
+      text(title, margin + 14, atY + 15, { bold: true, size: 9, color: [255, 255, 255] });
+      text(`${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}`, pageW - margin - 14, atY + 15, {
+        size: 8, color: [255, 255, 255], align: 'right',
+      });
+      let hy = atY + headerH;
+      fillRect(margin, hy, contentW, colHeaderH, COLOR.zebra);
+      text('DATE',        dateX,     hy + 9, { bold: true, size: 6.5, color: COLOR.textMuted });
+      text('DESCRIPTION', descX,     hy + 9, { bold: true, size: 6.5, color: COLOR.textMuted });
+      text('SUPPLIER',    supplierX, hy + 9, { bold: true, size: 6.5, color: COLOR.textMuted });
+      text('INVOICE',     invoiceX,  hy + 9, { bold: true, size: 6.5, color: COLOR.textMuted });
+      text('AMOUNT',      amtX,      hy + 9, { bold: true, size: 6.5, color: COLOR.textMuted, align: 'right' });
+      return hy + colHeaderH;
+    }
 
-    // Column-label sub-row so the extra columns read clearly.
-    let cy = yIn + headerH;
-    fillRect(margin, cy, contentW, colHeaderH, COLOR.zebra);
-    text('DATE',        dateX,     cy + 9, { bold: true, size: 6.5, color: COLOR.textMuted });
-    text('DESCRIPTION', descX,     cy + 9, { bold: true, size: 6.5, color: COLOR.textMuted });
-    text('SUPPLIER',    supplierX, cy + 9, { bold: true, size: 6.5, color: COLOR.textMuted });
-    text('INVOICE',     invoiceX,  cy + 9, { bold: true, size: 6.5, color: COLOR.textMuted });
-    text('AMOUNT',      amtX,      cy + 9, { bold: true, size: 6.5, color: COLOR.textMuted, align: 'right' });
-    cy += colHeaderH;
+    // Only start on this page if the header + at least one row fit; otherwise
+    // begin on a fresh page. A long list then FLOWS across pages (repeating the
+    // header each time) instead of running off the bottom.
+    yIn = ensureSpace(yIn, headerH + colHeaderH + rowH + 14);
+    let segTop = yIn;
+    let cy = drawHead(yIn, false);
 
     let total = 0;
     rows.forEach((r, i) => {
+      // Break before any row that would cross the bottom margin.
+      if (cy + rowH > bottomLimit) {
+        strokeRect(margin, segTop, contentW, cy - segTop, COLOR.rule, 4);
+        doc.addPage();
+        segTop = drawBrandHeader();
+        cy = drawHead(segTop, true);
+      }
       if (i % 2 === 1) fillRect(margin, cy, contentW, rowH, COLOR.zebra);
       const desc = r.description || '(no description)';
       const amt  = gbpAmount(r);
@@ -288,11 +321,20 @@ export async function renderApprovalPdf(opts: {
       text(fmtMoneyGbp(amt), amtX, cy + 12, { size: 9, align: 'right' });
       cy += rowH;
     });
+
+    // Keep the category-total row with the table; carry it to a fresh page
+    // (with a repeated header) if it would otherwise cross the margin.
+    if (cy + totalH > bottomLimit) {
+      strokeRect(margin, segTop, contentW, cy - segTop, COLOR.rule, 4);
+      doc.addPage();
+      segTop = drawBrandHeader();
+      cy = drawHead(segTop, true);
+    }
     fillRect(margin, cy, contentW, totalH, soft);
     text('Category total', margin + 14, cy + 14, { bold: true, size: 9, color: accent });
     text(fmtMoneyGbp(total), amtX, cy + 14, { bold: true, size: 10, align: 'right', color: accent });
     cy += totalH;
-    strokeRect(margin, yIn, contentW, tableH, COLOR.rule, 4);
+    strokeRect(margin, segTop, contentW, cy - segTop, COLOR.rule, 4);
     return cy;
   }
 
