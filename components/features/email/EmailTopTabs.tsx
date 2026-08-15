@@ -10,7 +10,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Inbox, Send, FileEdit, Star, AlertOctagon, Trash2, Tag, Plus, PenSquare,
+  Inbox, Send, FileEdit, Star, Archive, AlertOctagon, Trash2, Tag, Plus, PenSquare,
   Settings2, ChevronDown, Loader2, X, MailOpen,
 } from 'lucide-react';
 import type { GmailLabel } from '@/lib/gmail';
@@ -21,6 +21,7 @@ const SYSTEM_TABS: { id: string; name: string; icon: React.ElementType }[] = [
   { id: 'SENT',    name: 'Sent',    icon: Send },
   { id: 'DRAFT',   name: 'Drafts',  icon: FileEdit },
   { id: 'STARRED', name: 'Starred', icon: Star },
+  { id: 'ARCHIVE', name: 'Archive', icon: Archive },
   { id: 'SPAM',    name: 'Spam',    icon: AlertOctagon },
   { id: 'TRASH',   name: 'Trash',   icon: Trash2 },
 ];

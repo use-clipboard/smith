@@ -1029,6 +1029,8 @@ export default function EmailTriagePage() {
         const labelScope: Record<string, string> = {
           INBOX: 'in:inbox', SENT: 'in:sent', STARRED: 'is:starred',
           SPAM: 'in:spam', TRASH: 'in:trash', DRAFT: 'in:drafts',
+          // Archive isn't a real folder — it's everything outside the others.
+          ARCHIVE: '-in:inbox -in:sent -in:draft -in:spam -in:trash -in:chats',
         };
         const scope = labelScope[label] ?? `label:${label.toLowerCase().replace(/\s+/g, '-')}`;
         q = `${q} ${scope}`;

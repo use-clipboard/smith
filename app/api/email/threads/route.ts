@@ -28,7 +28,14 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const label = searchParams.get('label') || connection.inbox_label || 'INBOX';
-  const q = searchParams.get('q') || undefined;
+  let q = searchParams.get('q') || undefined;
+  // Gmail has no "Archive" label — archived mail is simply everything not in
+  // Inbox, Sent, Drafts, Spam or Trash. Translate the synthetic ARCHIVE folder
+  // into a query so it flows through the normal q path (there's no such label id
+  // to pass to labelIds).
+  if (label === 'ARCHIVE' && !q) {
+    q = '-in:inbox -in:sent -in:draft -in:spam -in:trash -in:chats';
+  }
   const pageToken = searchParams.get('pageToken') || undefined;
   const taskLinkedOnly = searchParams.get('taskLinkedOnly') === 'true';
   const allocatedOnly = searchParams.get('allocatedOnly') === 'true';
