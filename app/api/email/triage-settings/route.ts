@@ -13,13 +13,20 @@ const DEFAULTS = {
   markReadOnAutoTriage: false,
   autoFileEnabled: false,
   autoFileDays: 90,
+  // 'triage' = the full triage experience (categories, Auto Triage, untriaged
+  // counter). 'traditional' = a plain Gmail-style inbox (no triage surfaces,
+  // unread counter). Per-user; defaults to triage so nothing changes on rollout.
+  mode: 'triage' as 'triage' | 'traditional',
 };
 
+// All optional so a caller can PATCH-style update just one field (e.g. mode)
+// without having to resend the rest; the POST merges over the stored settings.
 const Schema = z.object({
   markReadOnAutoTriage: z.boolean(),
   autoFileEnabled: z.boolean(),
   autoFileDays: z.number().int().min(1).max(3650),
-});
+  mode: z.enum(['triage', 'traditional']),
+}).partial();
 
 export async function GET() {
   const ctx = await getUserContext();
@@ -54,9 +61,12 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const svc = createServiceClient();
+  // Merge over the caller's existing settings so a partial update keeps the rest.
+  const { data: cur } = await svc.from('users').select('email_triage_settings').eq('id', ctx.userId).single();
+  const merged = { ...DEFAULTS, ...(cur?.email_triage_settings as Partial<typeof DEFAULTS> | null ?? {}), ...parsed.data };
   const { error } = await svc
     .from('users')
-    .update({ email_triage_settings: parsed.data })
+    .update({ email_triage_settings: merged })
     .eq('id', ctx.userId);
   if (error) {
     console.error('triage-settings update', error);

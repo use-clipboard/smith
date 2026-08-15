@@ -26,6 +26,34 @@ export default function EmailTriageTab({ isAdmin = false }: { isAdmin?: boolean 
   const [labels, setLabels] = useState<{ id: string; name: string }[]>([]);
   const [desktopNotifs, setDesktopNotifs] = useState(true);
 
+  // Email mode (per-user): 'triage' (categories + Auto Triage + untriaged
+  // counter) or 'traditional' (plain inbox + unread counter).
+  const [mode, setMode] = useState<'triage' | 'traditional'>('triage');
+  const [savingMode, setSavingMode] = useState(false);
+  useEffect(() => {
+    fetch('/api/email/triage-settings')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d?.settings?.mode === 'traditional') setMode('traditional'); })
+      .catch(() => {});
+  }, []);
+
+  async function handleSetMode(next: 'triage' | 'traditional') {
+    if (next === mode || savingMode) return;
+    setSavingMode(true);
+    try {
+      const res = await fetch('/api/email/triage-settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: next }),
+      });
+      if (!res.ok) throw new Error('save failed');
+      // Reload so every surface (the tool, sidebar badge, dashboard) rebuilds
+      // for the new mode in one clean pass.
+      window.location.reload();
+    } catch {
+      setSavingMode(false);
+    }
+  }
+
   // Firm-wide default font for outgoing email. Everyone sees it (it's what
   // their compose window starts in); only admins can change it.
   const [firmFont, setFirmFont] = useState(DEFAULT_EMAIL_FONT);
@@ -198,13 +226,48 @@ export default function EmailTriageTab({ isAdmin = false }: { isAdmin?: boolean 
             <Mail size={16} className="text-[var(--accent)]" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Email Triage</h3>
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Email</h3>
             <p className="text-xs text-[var(--text-muted)] mt-0.5 leading-relaxed">
-              Connect your Gmail account to send, receive, and triage client emails directly in SMITH.
+              Connect your Gmail account to send, receive, and manage client emails directly in SMITH.
               Each team member connects their own account.
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Email mode */}
+      <div className="glass-solid rounded-xl p-5 space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Email mode</h3>
+          <p className="text-xs text-[var(--text-muted)] mt-0.5">Choose how the Email tool works for you. Changing this reloads the app.</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {([
+            { id: 'triage', title: 'Triage', desc: 'Sort emails into categories, use Auto Triage, and see an untriaged counter.' },
+            { id: 'traditional', title: 'Traditional', desc: 'A plain inbox — no categories or triage. The counter shows unread emails.' },
+          ] as const).map(opt => {
+            const activeOpt = mode === opt.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => handleSetMode(opt.id)}
+                disabled={savingMode}
+                className={`text-left rounded-xl border p-4 transition-colors disabled:opacity-60 ${activeOpt ? 'border-[var(--accent)] bg-[var(--accent-light)]' : 'border-[var(--border)] hover:bg-[var(--bg-nav-hover)]'}`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${activeOpt ? 'border-[var(--accent)]' : 'border-[var(--border-input)]'}`}>
+                    {activeOpt && <span className="w-2 h-2 rounded-full bg-[var(--accent)]" />}
+                  </span>
+                  <span className="text-sm font-semibold text-[var(--text-primary)]">{opt.title}</span>
+                </span>
+                <span className="block text-xs text-[var(--text-muted)] mt-1.5 ml-6">{opt.desc}</span>
+              </button>
+            );
+          })}
+        </div>
+        {savingMode && (
+          <p className="text-xs text-[var(--text-muted)] flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> Switching mode…</p>
+        )}
       </div>
 
       {/* Gmail connection */}
@@ -327,7 +390,7 @@ export default function EmailTriageTab({ isAdmin = false }: { isAdmin?: boolean 
                 <option key={l.id} value={l.id}>{l.name}</option>
               ))}
             </select>
-            <p className="text-xs text-[var(--text-muted)]">Which folder opens by default in Email Triage</p>
+            <p className="text-xs text-[var(--text-muted)]">Which folder opens by default in the Email tool</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -390,10 +453,18 @@ export default function EmailTriageTab({ isAdmin = false }: { isAdmin?: boolean 
         {fontError && <p className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1"><AlertTriangle size={11} /> {fontError}</p>}
       </div>
 
-      {/* Triage categories */}
+      {/* Triage categories — greyed out in Traditional mode */}
       {status?.connected && (
         <div className="glass-solid rounded-xl p-5">
-          <TriageCategoryManager />
+          {mode === 'traditional' && (
+            <p className="text-xs text-[var(--text-muted)] mb-3 flex items-center gap-1.5">
+              <AlertTriangle size={12} className="text-amber-500 shrink-0" />
+              Categories are part of Triage mode. Switch to Triage mode to customise them.
+            </p>
+          )}
+          <div className={mode === 'traditional' ? 'opacity-50 pointer-events-none select-none' : ''}>
+            <TriageCategoryManager />
+          </div>
         </div>
       )}
 

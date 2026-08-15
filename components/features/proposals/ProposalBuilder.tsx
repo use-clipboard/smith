@@ -685,7 +685,7 @@ export default function ProposalBuilder({ proposalId }: Props) {
                 onClick={() => void handleSend()}
                 disabled={saving || sending || !emailTriageActive}
                 title={!emailTriageActive
-                  ? 'Enable the Email Triage tool in Settings → Tool Enabling to compose proposal emails from your linked Gmail.'
+                  ? 'Enable the Email tool in Settings → Tool Enabling to compose proposal emails from your linked Gmail.'
                   : 'Opens the compose window pre-filled with the proposal email. Edit if needed, then send from your linked email.'}
                 className="btn-primary text-sm inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >

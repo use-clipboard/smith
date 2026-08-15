@@ -186,11 +186,11 @@ A CRM for managing client records across the firm.
 
 ---
 
-### 12. Email Triage (left nav → Email Triage)
+### 12. Email (left nav → Email)
 A full Gmail-connected email client built into SMITH. Each team member connects their own Gmail account. Emails are never stored in SMITH — they are read live from Gmail.
 
 **Connecting Gmail:**
-- Go to Settings → Email Triage and click "Connect Gmail Account"
+- Go to Settings → Email and click "Connect Gmail Account"
 - Authorise SMITH to access your Gmail
 - Once connected, your inbox loads automatically
 
@@ -235,11 +235,11 @@ A full Gmail-connected email client built into SMITH. Each team member connects 
 - **Delete** icon — moves to Trash (far right, icon-only)
 
 **Email signature:**
-- Your email signature is managed in **Settings → Email Triage → Email Signature**
+- Your email signature is managed in **Settings → Email → Email Signature**
 - Edit the signature using the built-in rich text editor (Bold, Italic, Underline, Insert Link)
 - Click **Save Signature** to save it directly to Gmail — it will appear on all emails sent from any device
 
-**Display preferences (Settings → Email Triage):**
+**Display preferences (Settings → Email):**
 - Toggle conversation grouping on/off
 - Set the default inbox view (Inbox, All Mail, Starred, Important, or any label)
 
@@ -506,7 +506,7 @@ Access via the **gear icon** at the bottom of the left sidebar. Settings has the
 
 - **Preferences** — set your Google Drive folder path for Document Vault syncing; manage sidebar favourites (pin tools to the top of the nav); manage device permissions (microphone and camera)
 - **Modules** — enable or disable individual tools for your firm; grayed-out features in the nav indicate a module is not active
-- **Email Triage** — connect or disconnect your Gmail account; edit your email signature (saved directly to Gmail); set display preferences (thread grouping, default inbox view)
+- **Email** — connect or disconnect your Gmail account; edit your email signature (saved directly to Gmail); set display preferences (thread grouping, default inbox view)
 - **Team** (admin only) — invite new team members by email, change roles, remove members
 - **Billing** (admin only) — view subscription tier, manage seats, update billing details
 

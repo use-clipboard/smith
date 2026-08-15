@@ -258,7 +258,7 @@ export function seedConnectedSources(): ConnectedSource[] {
     { id: 'capture',         module: 'full-analysis',   label: 'Capture',          value: 'No linked entries', detail: 'Categorised transactions', linked: false },
     { id: 'landlord',        module: 'landlord',        label: 'Landlord Analysis',value: 'No linked schedule',detail: 'Rental figures',        linked: false },
     { id: 'billing',         module: 'billing',         label: 'Billing',          value: '—',                 detail: 'Outstanding invoices',  linked: false },
-    { id: 'email',           module: 'email-triage',    label: 'Email Triage',     value: '—',                 detail: 'Latest correspondence', linked: false },
+    { id: 'email',           module: 'email-triage',    label: 'Email',     value: '—',                 detail: 'Latest correspondence', linked: false },
     { id: 'tasks',           module: 'tasks',           label: 'Tasks',            value: '—',                 detail: 'Outstanding queries',   linked: false },
     { id: 'ch',              module: 'ch-secretarial',  label: 'Companies House',  value: '—',                 detail: 'Officer changes',       linked: false },
   ];

@@ -161,7 +161,7 @@ export default function LandlordSendApprovalModal({
                   Each email opens in your compose window with the PDF attached and the client allocated{multi ? ', one person at a time — the next opens once you send the current one' : ''}.
                   {' '}Nothing is recorded as sent until you actually send it.
                 </span>
-              : <span>The email is sent from your connected Gmail with the PDF attached. Connect Email Triage to review it in a compose window first.</span>}
+              : <span>The email is sent from your connected Gmail with the PDF attached. Connect Email to review it in a compose window first.</span>}
           </div>
         </div>
 

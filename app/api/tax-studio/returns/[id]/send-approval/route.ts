@@ -48,7 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { data: connection } = await supabase
     .from('email_connections').select('refresh_token, google_email').eq('user_id', ctx.userId).maybeSingle();
   if (!prepare_only && (!connection?.refresh_token || !connection.google_email)) {
-    return NextResponse.json({ error: 'Gmail not connected. Connect your Gmail in the Email Triage tool, then try again.' }, { status: 400 });
+    return NextResponse.json({ error: 'Gmail not connected. Connect your Gmail in the Email tool, then try again.' }, { status: 400 });
   }
 
   const { data: firm } = await supabase.from('firms').select('name, logo_url').eq('id', ctx.firmId).maybeSingle();

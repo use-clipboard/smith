@@ -11,7 +11,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   if (!ctx) return NextResponse.json({ error: 'No access' }, { status: 403 });
 
   if (!ctx.activeModules.includes('email-triage')) {
-    return NextResponse.json({ error: 'Connect your Gmail (Email Triage) to send campaigns.' }, { status: 400 });
+    return NextResponse.json({ error: 'Connect your Gmail (Email) to send campaigns.' }, { status: 400 });
   }
 
   const supabase = createClient();
@@ -20,7 +20,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   const { data: connection } = await supabase
     .from('email_connections').select('refresh_token, google_email').eq('user_id', ctx.userId).maybeSingle();
   if (!connection?.refresh_token) {
-    return NextResponse.json({ error: 'Gmail is not connected. Connect it in Email Triage first.' }, { status: 400 });
+    return NextResponse.json({ error: 'Gmail is not connected. Connect it in Email first.' }, { status: 400 });
   }
 
   const { data: campaign } = await supabase

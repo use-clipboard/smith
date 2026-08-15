@@ -53,11 +53,11 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   const isAdmin = userRole === 'admin';
   const vaultActive = isModuleActive('document-vault');
 
-  // Email Triage badge = the shared Untriaged count, fetched once app-wide by
-  // EmailCountProvider (and kept live by the triage page's broadcasts). null
-  // while it first loads — treat as 0 for the badge.
-  const { untriaged } = useEmailCount();
-  const emailUnreadCount = untriaged ?? 0;
+  // Email badge = the shared mode-appropriate count (untriaged in triage mode,
+  // unread in traditional mode), fetched once app-wide by EmailCountProvider and
+  // kept live by the email page's broadcasts. null while it first loads → 0.
+  const { count: emailCount, mode: emailMode } = useEmailCount();
+  const emailUnreadCount = emailCount ?? 0;
 
   // Tasks badge + alert markers = the shared workload counts, fetched once
   // app-wide by TasksCountProvider (same source as the dashboard hero/widget).
@@ -256,7 +256,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
       const collapsedLabel =
         item.comingSoon ? `${item.label} · Coming soon`
         : calBadge   ? `${item.label} · ${todayEventCount} event${todayEventCount !== 1 ? 's' : ''} today`
-        : emailBadge ? `${item.label} · ${emailUnreadCount} untriaged`
+        : emailBadge ? `${item.label} · ${emailUnreadCount} ${emailMode === 'traditional' ? 'unread' : 'untriaged'}`
         : taskBadge  ? `${item.label} · ${myTaskCount} active task${myTaskCount !== 1 ? 's' : ''} assigned to you`
         : hrBadge    ? `${item.label} · ${hrBadgeCount} item${hrBadgeCount !== 1 ? 's' : ''} needing attention`
         : mtdItBadge ? `${item.label} · ${mtdItUnreadCount} new client response${mtdItUnreadCount !== 1 ? 's' : ''}`

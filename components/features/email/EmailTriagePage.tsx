@@ -344,8 +344,14 @@ export default function EmailTriagePage() {
      *  "No Action Needed" every time the page loads. No AI involved. */
     autoFileEnabled: boolean;
     autoFileDays: number;
+    /** 'triage' = categories + Auto Triage + untriaged counter.
+     *  'traditional' = a plain Gmail-style inbox (no triage surfaces). */
+    mode: 'triage' | 'traditional';
   }
-  const [triageSettings, setTriageSettings] = useState<TriageSettings>({ markReadOnAutoTriage: false, autoFileEnabled: false, autoFileDays: 90 });
+  const [triageSettings, setTriageSettings] = useState<TriageSettings>({ markReadOnAutoTriage: false, autoFileEnabled: false, autoFileDays: 90, mode: 'triage' });
+  const traditional = triageSettings.mode === 'traditional';
+  // Traditional mode has no categories — clear any lingering category filter.
+  useEffect(() => { if (traditional) setCategoryFilter(null); }, [traditional]);
   useEffect(() => {
     if (!connected) return;
     fetch('/api/email/triage-settings')
@@ -756,7 +762,7 @@ export default function EmailTriagePage() {
   const autoFileRanRef = useRef(false);
   useEffect(() => {
     if (!connected || autoFileRanRef.current) return;
-    if (!triageSettings.autoFileEnabled) return;
+    if (traditional || !triageSettings.autoFileEnabled) return; // no auto-file in traditional mode
     autoFileRanRef.current = true;
     fetch('/api/email/triage-autofile', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1317,6 +1323,8 @@ export default function EmailTriagePage() {
           })
           .catch(() => {});
       }
+      // Reading an unread email drops the Inbox unread badge instantly.
+      if (!thread.isRead) adjustInboxUnread(-1);
       // Mark thread as read in local state
       setThreads(prev => prev.map(t => t.id === thread.id ? { ...t, isRead: true } : t));
     } finally {
@@ -2282,9 +2290,17 @@ export default function EmailTriagePage() {
   // Only once the inbox label has loaded — otherwise the initial render would
   // push a misleading 0 over whatever the sidebar fetched itself.
   useEffect(() => {
-    if (!labels.some(l => l.id === 'INBOX')) return;
+    if (traditional || !labels.some(l => l.id === 'INBOX')) return;
     window.dispatchEvent(new CustomEvent('smith:email-untriaged', { detail: categoryCounts.untriaged }));
-  }, [categoryCounts.untriaged, labels]);
+  }, [categoryCounts.untriaged, labels, traditional]);
+  // Broadcast the Inbox unread count live (both modes) so the sidebar badge +
+  // dashboard track reads and new mail in real time — the same way untriaged
+  // does. Driven by the locally-maintained INBOX unread label counter.
+  const inboxUnread = labels.find(l => l.id === 'INBOX')?.messagesUnread;
+  useEffect(() => {
+    if (inboxUnread == null) return;
+    window.dispatchEvent(new CustomEvent('smith:email-unread', { detail: inboxUnread }));
+  }, [inboxUnread]);
   // Server-side fetch scopes the list to the active category, but we also hide
   // any row explicitly re-categorised to a DIFFERENT bucket this session, so a
   // triaged email leaves the current list immediately (no refetch needed).
@@ -2394,6 +2410,7 @@ export default function EmailTriagePage() {
           row. relative z-30 lifts the row's stacking context above the body
           panels below (which create their own contexts via backdrop-blur), so
           the Auto Triage / settings popovers aren't clipped underneath them. */}
+      {!traditional && (
       <div className="shrink-0 relative z-30 flex items-start gap-3 px-3 py-2 border-b border-[var(--border)] bg-[var(--bg-card)] backdrop-blur-md">
         <div className="flex-1 min-w-0">
           {/* Category cards are inbox triage — hide them on Sent/Drafts/etc.
@@ -2523,6 +2540,7 @@ export default function EmailTriagePage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Body: list · reader · context panel */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -2654,8 +2672,8 @@ export default function EmailTriagePage() {
               userLabels={labels.filter(l => l.type === 'user').map(l => ({ id: l.id, name: l.name }))}
               aiSummary={summaries[activeThread.gmailThreadId ?? activeThread.id]}
               categories={categoryList}
-              category={categoryOf(activeThread)}
-              onCategoryChange={c => setThreadCategory(activeThread.id, c, activeThread.gmailThreadId)}
+              category={traditional ? undefined : categoryOf(activeThread)}
+              onCategoryChange={traditional ? undefined : (c => setThreadCategory(activeThread.id, c, activeThread.gmailThreadId))}
               onAllocate={openAllocate}
               onRemoveAllocation={handleRemoveAllocation}
               onRemoveTaskLink={handleRemoveTaskLink}

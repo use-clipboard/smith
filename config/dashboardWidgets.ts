@@ -44,7 +44,7 @@ export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
   { id: 'calendar', label: "Today's Calendar", description: 'Your events for the next 24 hours.',                    size: 'small',  moduleId: 'google-calendar' },
   { id: 'mtd-it',   label: 'MTD IT',           description: 'Four-quarter client submission status donuts.',         size: 'large',  moduleId: 'mtd-it' },
   { id: 'hr',       label: 'HR',               description: 'Holidays, requests to approve, and upcoming dates.',    size: 'medium', moduleId: 'hr' },
-  { id: 'email-triage',   label: 'Email Triage',   description: 'Your unread inbox count.',                            size: 'small',  moduleId: 'email-triage' },
+  { id: 'email-triage',   label: 'Email',   description: 'Your unread inbox count.',                            size: 'small',  moduleId: 'email-triage' },
   { id: 'document-vault', label: 'Document Vault', description: 'Documents waiting to be tagged.',                     size: 'small',  moduleId: 'document-vault' },
   { id: 'proposals',      label: 'Proposals',      description: 'Proposals awaiting a response, and outcomes.',        size: 'small',  moduleId: 'proposals' },
 

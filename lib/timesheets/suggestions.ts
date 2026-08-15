@@ -5,7 +5,7 @@
 import type { SuggestionSource } from './types';
 
 export const SOURCE_META: Record<SuggestionSource, { label: string; icon: string; hue: number }> = {
-  email:           { label: 'Email Triage',     icon: 'Mail',          hue: 220 },
+  email:           { label: 'Email',     icon: 'Mail',          hue: 220 },
   meeting:         { label: 'Meeting Notes',     icon: 'MicVocal',      hue: 280 },
   task:            { label: 'Tasks',             icon: 'CheckSquare',   hue: 160 },
   accounts_review: { label: 'Accounts Review',   icon: 'ClipboardCheck',hue: 250 },

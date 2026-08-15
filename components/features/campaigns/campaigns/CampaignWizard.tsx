@@ -572,7 +572,7 @@ function StepPreviewTest({ campaign, form, meta }: { campaign: Campaign; form: a
           <button onClick={sendTest} disabled={testBusy || !meta?.gmail.connected} className="btn-secondary w-full justify-center">
             {testBusy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send test to me
           </button>
-          {!meta?.gmail.connected && <p className="text-[11px] text-amber-600 mt-2">Connect Gmail in Email Triage to send.</p>}
+          {!meta?.gmail.connected && <p className="text-[11px] text-amber-600 mt-2">Connect Gmail in Email to send.</p>}
           {testMsg && <p className="text-xs text-[var(--text-secondary)] mt-2">{testMsg}</p>}
         </div>
       </div>
@@ -714,7 +714,7 @@ function StepSchedule({ campaign, meta, audienceChosen, onSent, save }: { campai
         <div className="flex items-center gap-2 text-xs text-amber-600 mb-3">
           <AlertTriangle size={14} />
           {!audienceChosen ? 'Choose an audience first.'
-            : !meta?.gmail.connected ? 'Connect Gmail (Email Triage) to send.'
+            : !meta?.gmail.connected ? 'Connect Gmail (Email) to send.'
             : 'This campaign needs approval before it can send.'}
         </div>
       )}

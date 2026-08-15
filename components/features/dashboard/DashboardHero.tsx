@@ -41,7 +41,8 @@ export default function DashboardHero() {
   const { isModuleActive } = useModules();
   const { openTab } = useTabContext();
   const data = useDashboardData();
-  const { untriaged } = useEmailCount();
+  const { count: emailCount, mode: emailMode } = useEmailCount();
+  const emailTraditional = emailMode === 'traditional';
   const { counts: taskCounts } = useTasksCount();
   const { unreadCount: notifications } = useNotifications();
 
@@ -54,7 +55,7 @@ export default function DashboardHero() {
   // EmailCountProvider (same number as the sidebar badge), NOT Gmail's unread
   // count. Kept null while the (slow) untriaged enumeration is still in flight
   // so the tile shows a loading state rather than flashing a misleading 0.
-  const emails   = hasEmail ? untriaged : null;
+  const emails   = hasEmail ? emailCount : null;
   // Task counts come from the shared TasksCountProvider (same source as the
   // sidebar badge + Tasks widget). null while loading → tiles show a pulse.
   const overdue  = hasTasks ? (taskCounts?.overdue ?? null) : null;
@@ -75,7 +76,7 @@ export default function DashboardHero() {
 
   // Actionable metrics — drive the tiles, the donut and the total.
   const metrics = [
-    hasEmail && { key: 'emails',  label: 'Emails to triage',   value: emails,    color: C_EMAIL, icon: Mail,         onClick: () => open('email-triage', 'Email Triage', '/email', Mail) },
+    hasEmail && { key: 'emails',  label: emailTraditional ? 'Unread emails' : 'Emails to triage',   value: emails,    color: C_EMAIL, icon: Mail,         onClick: () => open('email-triage', 'Email', '/email', Mail) },
     { key: 'notifs',  label: 'Notifications',     value: notifications, color: C_NOTIF, icon: Bell,         onClick: openNotifications },
     hasTasks && { key: 'overdue', label: 'My overdue tasks',   value: overdue,   color: C_OVER,  icon: CircleAlert,  onClick: () => open('tasks', 'Tasks', '/tasks', CheckSquare) },
     hasTasks && { key: 'week',    label: 'Due this week',      value: dueWeek,   color: C_WEEK,  icon: CalendarClock, onClick: () => open('tasks', 'Tasks', '/tasks', CheckSquare) },
@@ -88,7 +89,7 @@ export default function DashboardHero() {
 
   // Rule-based suggested actions — top non-zero metrics, max 3.
   const suggestions = [
-    (emails ?? 0) > 0    && { label: `Triage ${emails} email${emails === 1 ? '' : 's'}`, onClick: () => open('email-triage', 'Email Triage', '/email', Mail) },
+    (emails ?? 0) > 0    && { label: emailTraditional ? `Read ${emails} unread email${emails === 1 ? '' : 's'}` : `Triage ${emails} email${emails === 1 ? '' : 's'}`, onClick: () => open('email-triage', 'Email', '/email', Mail) },
     notifications > 0    && { label: `Check ${notifications} notification${notifications === 1 ? '' : 's'}`, onClick: openNotifications },
     (overdue ?? 0) > 0   && { label: `Clear ${overdue} overdue task${overdue === 1 ? '' : 's'}`, onClick: () => open('tasks', 'Tasks', '/tasks', CheckSquare) },
     (toApprove ?? 0) > 0 && { label: `Approve ${toApprove} holiday${toApprove === 1 ? '' : 's'}`, onClick: () => open('hr', 'HR', '/hr', HeartHandshake) },

@@ -69,7 +69,7 @@ export default function EmailToastNotifier() {
   // both open the email tab *and* push the URL.
   const openEmailTool = useCallback((key: string) => {
     dismiss(key);
-    openTab({ id: 'email-triage', title: 'Email Triage', route: '/email', icon: Mail });
+    openTab({ id: 'email-triage', title: 'Email', route: '/email', icon: Mail });
     router.push('/email');
   }, [dismiss, openTab, router]);
 
@@ -89,7 +89,7 @@ export default function EmailToastNotifier() {
       isUnread: email.isUnread,
     };
     try { sessionStorage.setItem(EMAIL_OPEN_THREAD_KEY, JSON.stringify(payload)); } catch { /* ignore */ }
-    openTab({ id: 'email-triage', title: 'Email Triage', route: '/email', icon: Mail });
+    openTab({ id: 'email-triage', title: 'Email', route: '/email', icon: Mail });
     router.push('/email');
     window.dispatchEvent(new CustomEvent<OpenEmailThreadPayload>(EMAIL_OPEN_THREAD_EVENT, { detail: payload }));
   }, [dismiss, openTab, router]);
@@ -125,7 +125,7 @@ export default function EmailToastNotifier() {
           const key = `group-${Date.now()}`;
           setToasts(prev => [...prev, {
             key,
-            fromName: 'Email Triage',
+            fromName: 'Email',
             subject: `${fresh.length} new emails`,
             snippet: fresh.slice(0, 3).map(e => e.fromName).join(', ') + (fresh.length > 3 ? '…' : ''),
             count: fresh.length,

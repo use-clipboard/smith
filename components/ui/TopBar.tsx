@@ -50,7 +50,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/risk-assessment': 'Risk Assessment',
   '/summarise':       'Summarise Documents',
   '/ch-secretarial':  'CH Secretarial',
-  '/email':           'Email Triage',
+  '/email':           'Email',
   '/campaigns':       'Campaigns',
   '/vault':           'Document Vault',
   '/calendar':        'Calendar',

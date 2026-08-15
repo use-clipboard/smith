@@ -55,7 +55,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .eq('user_id', ctx.userId)
     .maybeSingle();
   if (!prepare_only && (!connection?.refresh_token || !connection.google_email)) {
-    return NextResponse.json({ error: 'Gmail not connected. Connect your Gmail in the Email Triage tool, then try again.' }, { status: 400 });
+    return NextResponse.json({ error: 'Gmail not connected. Connect your Gmail in the Email tool, then try again.' }, { status: 400 });
   }
 
   // ── Firm + preparer names + branding/templates ─────────────────────────────

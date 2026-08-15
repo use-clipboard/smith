@@ -72,7 +72,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .maybeSingle();
   if (!connection?.refresh_token || !connection.google_email) {
     return NextResponse.json({
-      error: 'Gmail not connected. Connect your Gmail in the Email Triage tool, then try again.',
+      error: 'Gmail not connected. Connect your Gmail in the Email tool, then try again.',
     }, { status: 400 });
   }
 

@@ -7,7 +7,7 @@ export async function GET() {
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
 
   if (!ctx.activeModules.includes('email-triage')) {
-    return NextResponse.json({ error: 'Email Triage module not active' }, { status: 403 });
+    return NextResponse.json({ error: 'Email module not active' }, { status: 403 });
   }
 
   const url = getGmailAuthUrl();

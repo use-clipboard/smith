@@ -96,8 +96,8 @@ const FAQS: FAQ[] = [
     a: 'Meeting notes are saved to the linked client\'s Timeline tab on the client record page. Open a client, go to the Timeline tab, and you\'ll see all saved meeting notes alongside other notes and documents for that client.',
   },
   {
-    q: 'How do I connect my Gmail to Email Triage?',
-    a: 'Go to Settings → Email Triage and click "Connect Gmail Account". You\'ll be redirected to Google to authorise SMITH. Once connected, your inbox loads automatically and refreshes every 30 seconds. Each team member connects their own individual Gmail account.',
+    q: 'How do I connect my Gmail to Email?',
+    a: 'Go to Settings → Email and click "Connect Gmail Account". You\'ll be redirected to Google to authorise SMITH. Once connected, your inbox loads automatically and refreshes every 30 seconds. Each team member connects their own individual Gmail account.',
   },
   {
     q: 'Are my emails stored in SMITH?',
@@ -105,7 +105,7 @@ const FAQS: FAQ[] = [
   },
   {
     q: 'How do I edit my email signature in SMITH?',
-    a: 'Go to Settings → Email Triage → Email Signature. Use the built-in editor to write or update your signature (Bold, Italic, Underline, and link insertion are supported). Click "Save Signature" and it is written directly back to Gmail — it will appear on emails sent from any device, including Gmail on mobile.',
+    a: 'Go to Settings → Email → Email Signature. Use the built-in editor to write or update your signature (Bold, Italic, Underline, and link insertion are supported). Click "Save Signature" and it is written directly back to Gmail — it will appear on emails sent from any device, including Gmail on mobile.',
   },
   {
     q: 'What is the difference between Reply, Reply All, and Forward?',
@@ -224,7 +224,7 @@ const TOOLS = [
   { icon: MicVocal, name: 'Meeting Notes', desc: 'Records and transcribes client meetings using your device microphone, then uses AI to produce a structured summary with action items and decisions. Notes are saved to the client\'s Timeline.' },
   { icon: BookOpen, name: 'Policies & Procedures', desc: 'A static reference section for the firm\'s internal policies and procedures.' },
   { icon: UserPlus, name: 'Staff Hire', desc: 'AI-powered recruitment tool. Write professional job postings in a guided step-by-step wizard, upload CVs and cover letters for AI evaluation, generate tailored interview questions, build and complete scorecards during interviews, and rank all applicants with a final AI hiring recommendation. Access is controlled per-user by admins in Settings → Staff Hire.' },
-  { icon: Mail, name: 'Email Triage', desc: 'A full Gmail-connected email client built into SMITH. Read, send, reply, reply all, and forward emails. Allocate emails to client timelines and tasks. AI features include Suggest Reply, Rewrite, and AI Draft Reply. BCC support, file attachments, label management, and an in-app signature editor that syncs directly to Gmail. Each team member connects their own Gmail account.' },
+  { icon: Mail, name: 'Email', desc: 'A full Gmail-connected email client built into SMITH. Read, send, reply, reply all, and forward emails. Allocate emails to client timelines and tasks. AI features include Suggest Reply, Rewrite, and AI Draft Reply. BCC support, file attachments, label management, and an in-app signature editor that syncs directly to Gmail. Each team member connects their own Gmail account.' },
   { icon: ListChecks, name: 'Tasks', desc: 'A full workflow and task management tool. Create tasks from templates, assign steps to team members, track progress with a live flowchart and checklist, log time, and leave step-level notes visible to the whole team. Includes personal views (My Tasks, My Week, My Month) and firm-wide views (All Tasks, By Client, By Team, By Type). A "Records Here" status lets the team instantly see which jobs are ready to start.' },
   { icon: HeartHandshake, name: 'HR', desc: 'In-house HR module for the firm: holiday requests with manager approval, a shared firm holiday calendar, spreadsheet-style absence tracker, sickness/absence recording with return-to-work, org chart with birthday and work-anniversary markers, personnel files (right-to-work, probation, training/CPD, 1:1s, appraisals, DSE, TOIL, salary, leaver workflow), AI HR adviser, confidential disclosures with anonymity, auto-generated quarterly UK employment-law briefings for managers, and a guided joiner wizard. Bank holidays auto-sync from gov.uk and optionally push to each user\'s Google Calendar.' },
 ];

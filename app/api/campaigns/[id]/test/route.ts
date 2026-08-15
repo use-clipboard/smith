@@ -22,7 +22,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const ctx = await getCampaignsContext();
   if (!ctx) return NextResponse.json({ error: 'No access' }, { status: 403 });
   if (!ctx.activeModules.includes('email-triage')) {
-    return NextResponse.json({ error: 'Connect your Gmail (Email Triage) to send a test.' }, { status: 400 });
+    return NextResponse.json({ error: 'Connect your Gmail (Email) to send a test.' }, { status: 400 });
   }
 
   const parsed = Schema.safeParse(await req.json().catch(() => ({})));

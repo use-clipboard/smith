@@ -62,7 +62,7 @@ export default function AiSuggestionsPanel() {
             </div>
             <p className="text-sm font-semibold text-[var(--text-primary)]">You&apos;re all caught up</p>
             <p className="max-w-xs text-xs text-[var(--text-muted)]">
-              SMITH watches Email Triage, Meeting Notes, Tasks, Capture, Accounts Review, Performance and your Calendar. New work will appear here to confirm.
+              SMITH watches Email, Meeting Notes, Tasks, Capture, Accounts Review, Performance and your Calendar. New work will appear here to confirm.
             </p>
             <button onClick={scanForWork} className="btn-secondary mt-1"><Wand2 size={14} /> Run a scan</button>
           </div>

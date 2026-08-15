@@ -428,7 +428,7 @@ function ProposalSenderPicker({ value, onChange }: { value: string | null; onCha
       ) : (
         <>
           {connections.length === 0 ? (
-            <p className="text-xs text-[var(--text-muted)] italic mb-2">No Gmail account linked for proposals yet. This is independent of Email Triage — you can use a different mailbox (e.g. a shared <code className="bg-gray-100 px-1 rounded">hello@firm.co.uk</code>) for proposals.</p>
+            <p className="text-xs text-[var(--text-muted)] italic mb-2">No Gmail account linked for proposals yet. This is independent of Email — you can use a different mailbox (e.g. a shared <code className="bg-gray-100 px-1 rounded">hello@firm.co.uk</code>) for proposals.</p>
           ) : (
             <>
               <select value={value ?? ''} onChange={e => onChange(e.target.value || null)} className="input-base text-sm w-full">
@@ -1608,7 +1608,7 @@ function SenderCard({
       <div className="flex items-center justify-between mb-3">
         <div>
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">Sender accounts</h3>
-          <p className="text-xs text-[var(--text-muted)] mt-0.5">Independent of Email Triage. Replies land in the linked inbox.</p>
+          <p className="text-xs text-[var(--text-muted)] mt-0.5">Independent of Email. Replies land in the linked inbox.</p>
         </div>
         <button onClick={connectGmail} className="btn-primary text-xs inline-flex items-center gap-1.5">
           <Mail size={11} />{connections.length === 0 ? 'Connect Gmail' : 'Connect another'}
