@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-import { notifyTaskStepAssignments, createNotification } from '@/lib/notifications';
+import { notifyTaskStepAssignments, createNotification, deleteTaskNotifications } from '@/lib/notifications';
 import { spawnNextRecurrence } from '@/lib/tasks/recurrence';
 import { syncStepReminders } from '@/lib/tasks/reminderProducer';
 
@@ -175,6 +175,10 @@ async function syncTaskStatus(
   // No row back → the task was already complete (a concurrent tick won the
   // race, or this is a re-tick of a finished task). Nothing more to do.
   if (!flipped) return;
+
+  // Task just completed by ticking its last step → clear its "assigned to you"
+  // notifications for everyone (they've dealt with it).
+  await deleteTaskNotifications(taskId);
 
   // Recurring task just completed via the step path → roll forward. Previously
   // recurrence only fired from the task PUT route, so tasks finished by ticking

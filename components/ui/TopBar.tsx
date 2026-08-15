@@ -15,6 +15,7 @@ import ChatPanel from '@/components/chat/ChatPanel';
 import { useTabContext } from '@/components/ui/TabContext';
 import { useFocusMode } from './FocusModeProvider';
 import { useNotifications } from './NotificationsProvider';
+import { notificationTarget, goToNotification, NAVIGATE_TAB_EVENT } from '@/lib/notificationTarget';
 import { useModules } from './ModulesProvider';
 import { useTimesheets } from '@/components/features/timesheets/TimesheetsProvider';
 import { fmtStopwatch, timerElapsedMs } from '@/lib/timesheets/format';
@@ -178,6 +179,15 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
     window.addEventListener('smith:open-notifications', openNotifs);
     return () => window.removeEventListener('smith:open-notifications', openNotifs);
   }, [refreshNotifs]);
+
+  // A notification click (from a toast or the bell) asks us to open the right
+  // tool tab — we own the route→tab map, so route it through `navigate`.
+  useEffect(() => {
+    const onNav = (e: Event) => navigate((e as CustomEvent<string>).detail);
+    window.addEventListener(NAVIGATE_TAB_EVENT, onNav);
+    return () => window.removeEventListener(NAVIGATE_TAB_EVENT, onNav);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleMarkAllRead() {
     await markAllReadCtx();
@@ -498,12 +508,16 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
                 <div className="max-h-80 overflow-y-auto">
                   {notifications.map(n => {
                     const isCalendar = n.type === 'calendar_invite' || n.type === 'calendar_updated' || n.type === 'calendar_deleted';
-                    const taskLink = (n.data as { task_link?: string } | null)?.task_link ?? null;
-                    const isClickable = !!taskLink;
+                    const isClickable = !!notificationTarget(n).route;
                     return (
                       <div
                         key={n.id}
-                        onClick={() => { if (taskLink) { navigate(taskLink); setNotifOpen(false); } }}
+                        onClick={() => {
+                          if (!isClickable) return;
+                          goToNotification(n);
+                          void dismissCtx(n.id);   // dealt with → clear it
+                          setNotifOpen(false);
+                        }}
                         className={`flex items-start gap-3 px-4 py-3 border-b border-[var(--border)] last:border-b-0 group
                           ${!n.read ? 'bg-[var(--accent-light)]' : 'bg-transparent'}
                           ${isClickable ? 'cursor-pointer hover:bg-[var(--bg-nav-hover)]' : ''}`}

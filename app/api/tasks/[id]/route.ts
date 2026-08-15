@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-import { createNotification } from '@/lib/notifications';
+import { createNotification, deleteTaskNotifications } from '@/lib/notifications';
 import { logTaskUpdate, logTaskDeleted } from '@/lib/taskAudit';
 import { loadTaskTimeEntriesByTask } from '@/lib/tasks/taskTime';
 import { spawnNextRecurrence } from '@/lib/tasks/recurrence';
@@ -140,6 +140,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   // so it's safe even if the step-completion path already spawned the child.
   if (parsed.data.status === 'complete' && existing.status !== 'complete') {
     await spawnNextRecurrence(supabase, params.id, ctx.firmId, ctx.userId);
+    // Task done → clear its "assigned to you" notifications for everyone.
+    await deleteTaskNotifications(params.id);
   }
 
   return NextResponse.json({ task });

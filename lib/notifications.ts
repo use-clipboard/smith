@@ -57,6 +57,23 @@ export async function notifyTaskStepAssignments({
   if (error) console.error('Failed to create task assignment notifications:', error);
 }
 
+/**
+ * Clear the "assigned to you" notifications for a task once it's completed, so
+ * they drop off the assignee's bell (and any toast) in real time — the user has
+ * effectively dealt with them by finishing the task. Matches on the jsonb
+ * task_id; uses the service client to bypass RLS (like the rest of this file).
+ */
+export async function deleteTaskNotifications(taskId: string): Promise<void> {
+  if (!taskId) return;
+  const service = createServiceClient();
+  const { error } = await service
+    .from('notifications')
+    .delete()
+    .eq('type', 'task_assigned')
+    .eq('data->>task_id', taskId);
+  if (error) console.error('Failed to delete task notifications:', error);
+}
+
 /** Create a single in-app notification for a user. Uses service client to bypass RLS. */
 export async function createNotification({
   userId, firmId, type, title, body, data,

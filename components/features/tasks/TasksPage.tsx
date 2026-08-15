@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { OPEN_TASK_EVENT, OPEN_TASK_KEY } from '@/lib/notificationTarget';
 import {
   CheckSquare, Plus, ListTodo, Users, Building2, LayoutGrid, Layers,
   BookTemplate, Loader2, RefreshCw, FileStack, PlayCircle, List,
@@ -108,6 +109,33 @@ export default function TasksPage() {
 
   // Modals
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+
+  // Deep-link: open a specific task when its notification is clicked. The Tasks
+  // tab stays mounted once opened, so handle BOTH a cold open (sessionStorage
+  // handoff) and a live click while already on screen (window event).
+  const tasksRef = useRef<Task[]>([]);
+  tasksRef.current = tasks;
+  useEffect(() => {
+    async function openById(id: string) {
+      if (!id) return;
+      const existing = tasksRef.current.find(t => t.id === id);
+      if (existing) { setSelectedTask(existing); return; }
+      try {
+        const r = await fetch(`/api/tasks/${id}`);
+        if (r.ok) { const d = await r.json(); if (d?.task) setSelectedTask(d.task as Task); }
+      } catch { /* ignore */ }
+    }
+    try {
+      const pending = sessionStorage.getItem(OPEN_TASK_KEY);
+      if (pending) { sessionStorage.removeItem(OPEN_TASK_KEY); void openById(pending); }
+    } catch { /* ignore */ }
+    const onOpen = (e: Event) => {
+      try { sessionStorage.removeItem(OPEN_TASK_KEY); } catch { /* ignore */ }
+      void openById((e as CustomEvent<string>).detail);
+    };
+    window.addEventListener(OPEN_TASK_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_TASK_EVENT, onOpen);
+  }, []);
   // Task creation flow: selector → quick or full (wizard or builder)
   const [showTaskTypeSelector, setShowTaskTypeSelector] = useState(false);
   const [showQuickTask, setShowQuickTask]               = useState(false);
