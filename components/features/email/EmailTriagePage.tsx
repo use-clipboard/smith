@@ -2287,12 +2287,15 @@ export default function EmailTriagePage() {
     return counts;
   }, [categoryOverrides, labels, untriagedServer, categoryOrder]);
   // Broadcast the Untriaged count so the sidebar badge tracks it in real time.
-  // Only once the inbox label has loaded — otherwise the initial render would
-  // push a misleading 0 over whatever the sidebar fetched itself.
+  // Gated on BOTH the inbox label AND the exact server baseline being loaded —
+  // otherwise the first render would broadcast the coarse fallback
+  // (inboxTotal − categorised ≈ the whole inbox) and flash a huge number over
+  // the sidebar/dashboard before the real count lands. Until then the sidebar
+  // shows its own poll value (also the exact count), so nothing is lost.
   useEffect(() => {
-    if (traditional || !labels.some(l => l.id === 'INBOX')) return;
+    if (traditional || untriagedServer === null || !labels.some(l => l.id === 'INBOX')) return;
     window.dispatchEvent(new CustomEvent('smith:email-untriaged', { detail: categoryCounts.untriaged }));
-  }, [categoryCounts.untriaged, labels, traditional]);
+  }, [categoryCounts.untriaged, labels, traditional, untriagedServer]);
   // Broadcast the Inbox unread count live (both modes) so the sidebar badge +
   // dashboard track reads and new mail in real time — the same way untriaged
   // does. Driven by the locally-maintained INBOX unread label counter.

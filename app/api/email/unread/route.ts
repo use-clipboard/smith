@@ -6,10 +6,14 @@ import { syncInboxCache, getUntriagedCount } from '@/lib/emailInboxCache';
 
 export async function GET() {
   const ctx = await getUserContext();
-  if (!ctx) return NextResponse.json({ count: 0 });
+  // Unexpected/transient (no session on a call from the logged-in shell): return
+  // nulls so the client keeps its last good value instead of blanking to 0.
+  if (!ctx) return NextResponse.json({ count: null, untriaged: null });
 
+  // Stable states — the module is genuinely off / no mailbox connected — so 0 is
+  // correct and should clear the badge.
   if (!ctx.activeModules.includes('email-triage')) {
-    return NextResponse.json({ count: 0 });
+    return NextResponse.json({ count: 0, untriaged: 0 });
   }
 
   const supabase = createClient();
@@ -19,7 +23,7 @@ export async function GET() {
     .eq('user_id', ctx.userId)
     .single();
 
-  if (!connection?.refresh_token) return NextResponse.json({ count: 0 });
+  if (!connection?.refresh_token) return NextResponse.json({ count: 0, untriaged: 0 });
 
   try {
     const { gmail } = await getRefreshedGmailClient(connection.refresh_token);
@@ -36,17 +40,22 @@ export async function GET() {
     // API) and compute the count from the DB: cache minus this user's
     // non-"untriaged" triage rows. Triage stays live, so re-categorising any
     // email — however old — is reflected on the next read.
-    let untriaged = 0;
+    // null = "couldn't compute" so the client preserves its last good value
+    // rather than flashing to 0 on a transient hiccup. A genuine 0 (everything
+    // triaged) is returned as 0 and clears the badge.
+    let untriaged: number | null = null;
     try {
       // Pass Gmail's authoritative INBOX message total so the sync can detect a
       // drifted cache (incremental history feed missed an event) and reconcile
       // it with a full rebuild — otherwise the untriaged count reads high.
       await syncInboxCache(ctx.userId, connection.refresh_token, label.data.messagesTotal ?? undefined);
       untriaged = await getUntriagedCount(ctx.userId);
-    } catch { /* cache missing pre-migration / sync hiccup — badge just hides */ }
+    } catch { /* cache missing pre-migration / sync hiccup — keep last value */ }
 
     return NextResponse.json({ count, untriaged });
   } catch {
-    return NextResponse.json({ count: 0, untriaged: 0 });
+    // Transient Gmail/token error — return nulls so a momentary failure on one
+    // of several concurrent callers can't blank the sidebar/dashboard counts.
+    return NextResponse.json({ count: null, untriaged: null });
   }
 }

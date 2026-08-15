@@ -47,6 +47,12 @@ export default function EmailCountProvider({ children }: { children: React.React
   const [untriaged, setUntriaged] = useState<number | null>(null);
   const [unread, setUnread] = useState<number | null>(null);
   const [mode, setMode] = useState<EmailMode>('triage');
+  // Whether the user's mode has been resolved yet. Until it is, we don't know
+  // which count to show, so `count` stays null — otherwise a traditional-mode
+  // user would briefly see the untriaged number (the default) before it flips
+  // to unread. The settings fetch (a fast DB read) resolves before the Gmail
+  // poll, so triage users see no added delay.
+  const [modeResolved, setModeResolved] = useState(false);
   // Timestamp of the last broadcast from the (open) email page — while recent,
   // poll results are ignored so the two can never fight over the number.
   const lastBroadcastRef = useRef(0);
@@ -54,14 +60,15 @@ export default function EmailCountProvider({ children }: { children: React.React
   // The user's email mode. Fetched once (settings changes reload the page, so
   // this is always fresh on mount). Decides which count the badge/widgets show.
   useEffect(() => {
-    if (!active) { setMode('triage'); return; }
+    if (!active) { setMode('triage'); setModeResolved(true); return; }
     let cancelled = false;
     fetch('/api/email/triage-settings')
       .then(r => (r.ok ? r.json() : null))
       .catch(() => null)
       .then(d => {
-        if (cancelled || !d?.settings) return;
-        setMode(d.settings.mode === 'traditional' ? 'traditional' : 'triage');
+        if (cancelled) return;
+        if (d?.settings) setMode(d.settings.mode === 'traditional' ? 'traditional' : 'triage');
+        setModeResolved(true); // resolved even on failure → fall back to the triage default
       });
     return () => { cancelled = true; };
   }, [active]);
@@ -107,7 +114,9 @@ export default function EmailCountProvider({ children }: { children: React.React
     };
   }, []);
 
-  const count = mode === 'traditional' ? unread : untriaged;
+  // Hold the count back until we know the mode, so a traditional user never
+  // flashes the untriaged number (and vice-versa) during mode resolution.
+  const count = !modeResolved ? null : (mode === 'traditional' ? unread : untriaged);
 
   return <Ctx.Provider value={{ untriaged, unread, mode, count, refresh }}>{children}</Ctx.Provider>;
 }

@@ -70,13 +70,38 @@ async function fullRebuild(svc: ServiceClient, gmail: Gmail, userId: string): Pr
     if (!pageToken) break;
   }
 
-  // Replace the cache wholesale: clear the user's rows, then upsert the fresh
-  // listing. Upsert (not insert) so that if two rebuilds ever race — across
-  // serverless instances, where the in-process lock can't help — they write the
-  // same rows and converge instead of failing on primary-key conflicts.
-  await svc.from('email_inbox_cache').delete().eq('user_id', userId);
+  // Reconcile the cache WITHOUT ever emptying it. A wholesale
+  // DELETE-then-INSERT leaves a window in which the cache has no rows, and any
+  // read of email_untriaged_count() during that window returns 0 — which flashed
+  // the sidebar/dashboard untriaged badge to zero on every (drift-triggered)
+  // rebuild. Instead: upsert the fresh listing first (idempotent), THEN delete
+  // only the ids that are no longer in the inbox. The cache stays populated
+  // throughout, so the count can at worst be momentarily a little high (a few
+  // not-yet-removed stale ids) — never 0. Upsert (not insert) also keeps two
+  // racing rebuilds across serverless instances converging on primary-key
+  // conflicts instead of failing.
+  // Read ALL currently-cached ids (paged — a single PostgREST select caps at
+  // ~1000 rows, and a large inbox has more), so we can prune exactly the ids
+  // that have left the inbox without missing any.
+  const existingIds = new Set<string>();
+  for (let from = 0; ; from += CHUNK) {
+    const { data: page } = await svc
+      .from('email_inbox_cache').select('message_id')
+      .eq('user_id', userId).range(from, from + CHUNK - 1);
+    const batch = page ?? [];
+    for (const r of batch) existingIds.add(r.message_id as string);
+    if (batch.length < CHUNK) break;
+  }
+  const freshIds = new Set(rows.map(r => r.message_id));
+  const staleIds = [...existingIds].filter(id => !freshIds.has(id));
+
+  // Upsert the fresh listing first (cache is never empty), THEN remove stale ids.
   for (let i = 0; i < rows.length; i += CHUNK) {
     await svc.from('email_inbox_cache').upsert(rows.slice(i, i + CHUNK), { onConflict: 'user_id,message_id' });
+  }
+  for (let i = 0; i < staleIds.length; i += CHUNK) {
+    await svc.from('email_inbox_cache')
+      .delete().eq('user_id', userId).in('message_id', staleIds.slice(i, i + CHUNK));
   }
   return startHistoryId;
 }
@@ -214,10 +239,15 @@ export async function syncInboxCache(
   return run;
 }
 
-/** Fast untriaged count straight from the DB (cache minus categorised). */
-export async function getUntriagedCount(userId: string): Promise<number> {
+/**
+ * Fast untriaged count straight from the DB (cache minus categorised). Returns
+ * null — meaning "couldn't compute" — on an RPC error, so callers can preserve
+ * the last good value rather than blanking the badge to a misleading 0. A
+ * genuine 0 (everything triaged) still comes back as 0.
+ */
+export async function getUntriagedCount(userId: string): Promise<number | null> {
   const svc = createServiceClient();
   const { data, error } = await svc.rpc('email_untriaged_count', { p_user_id: userId });
-  if (error || typeof data !== 'number') return 0;
+  if (error || typeof data !== 'number') return null;
   return data;
 }
