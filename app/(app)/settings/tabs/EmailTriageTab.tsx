@@ -30,6 +30,9 @@ export default function EmailTriageTab({ isAdmin = false }: { isAdmin?: boolean 
   // counter) or 'traditional' (plain inbox + unread counter).
   const [mode, setMode] = useState<'triage' | 'traditional'>('triage');
   const [savingMode, setSavingMode] = useState(false);
+  // The mode the user has clicked but not yet confirmed → drives the confirm
+  // dialog. Null when no change is pending.
+  const [pendingMode, setPendingMode] = useState<'triage' | 'traditional' | null>(null);
   useEffect(() => {
     fetch('/api/email/triage-settings')
       .then(r => (r.ok ? r.json() : null))
@@ -37,13 +40,20 @@ export default function EmailTriageTab({ isAdmin = false }: { isAdmin?: boolean 
       .catch(() => {});
   }, []);
 
-  async function handleSetMode(next: 'triage' | 'traditional') {
+  // Clicking a mode tile opens a confirm dialog (the change reloads the app), so
+  // it never happens by accident.
+  function requestMode(next: 'triage' | 'traditional') {
     if (next === mode || savingMode) return;
+    setPendingMode(next);
+  }
+
+  async function confirmModeChange() {
+    if (!pendingMode) return;
     setSavingMode(true);
     try {
       const res = await fetch('/api/email/triage-settings', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: next }),
+        body: JSON.stringify({ mode: pendingMode }),
       });
       if (!res.ok) throw new Error('save failed');
       // Reload so every surface (the tool, sidebar badge, dashboard) rebuilds
@@ -51,6 +61,7 @@ export default function EmailTriageTab({ isAdmin = false }: { isAdmin?: boolean 
       window.location.reload();
     } catch {
       setSavingMode(false);
+      setPendingMode(null);
     }
   }
 
@@ -250,7 +261,7 @@ export default function EmailTriageTab({ isAdmin = false }: { isAdmin?: boolean 
             return (
               <button
                 key={opt.id}
-                onClick={() => handleSetMode(opt.id)}
+                onClick={() => requestMode(opt.id)}
                 disabled={savingMode}
                 className={`text-left rounded-xl border p-4 transition-colors disabled:opacity-60 ${activeOpt ? 'border-[var(--accent)] bg-[var(--accent-light)]' : 'border-[var(--border)] hover:bg-[var(--bg-nav-hover)]'}`}
               >
@@ -556,6 +567,53 @@ export default function EmailTriageTab({ isAdmin = false }: { isAdmin?: boolean 
           </li>
         </ul>
       </div>
+
+      {/* Mode-change confirmation — the change reloads the app, so we warn first */}
+      {pendingMode && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => { if (!savingMode) setPendingMode(null); }}
+        >
+          <div
+            className="bg-[var(--bg-card-solid)] w-full max-w-sm rounded-2xl shadow-2xl border border-[var(--border)] p-5"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="h-9 w-9 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center shrink-0">
+                <AlertTriangle size={16} className="text-amber-500" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                  Switch to {pendingMode === 'traditional' ? 'Traditional' : 'Triage'} mode?
+                </h3>
+                <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
+                  SMITH will reload to apply the change.
+                  {pendingMode === 'traditional'
+                    ? ' Your triage categories are kept — they’re just hidden while you’re in Traditional mode.'
+                    : ' Your categories and triage tools will be shown again.'}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setPendingMode(null)}
+                disabled={savingMode}
+                className="text-sm px-3 py-1.5 rounded-lg border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmModeChange}
+                disabled={savingMode}
+                className="text-sm px-4 py-1.5 rounded-lg bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-50 font-medium inline-flex items-center gap-1.5 transition-opacity"
+              >
+                {savingMode && <Loader2 size={12} className="animate-spin" />}
+                {savingMode ? 'Applying…' : 'Confirm & reload'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
