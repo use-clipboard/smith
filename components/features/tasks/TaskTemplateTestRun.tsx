@@ -30,6 +30,54 @@ Object.assign(EXAMPLE_CONTEXT, {
   due_date:       null,
 });
 
+// ── Task status (mirrors the server's syncTaskStatus precedence) ──────────────
+
+const TASK_STATUS_META: Record<string, { label: string; color: string }> = {
+  not_started:       { label: 'Not Started',       color: '#94a3b8' },
+  in_progress:       { label: 'In Progress',       color: '#6366f1' },
+  waiting_on_client: { label: 'Waiting on Client', color: '#f59e0b' },
+  records_here:      { label: 'Records Here',      color: '#0891b2' },
+  review:            { label: 'Review',            color: '#8b5cf6' },
+  complete:          { label: 'Complete',          color: '#16a34a' },
+};
+const STICKY_STATUSES = new Set(['records_here', 'review']);
+const STATUS_TRIGGER_WORD: Record<string, string> = {
+  complete:          'completed',
+  in_progress:       'started',
+  waiting_on_client: 'set to Waiting on Client',
+  skipped:           'skipped',
+};
+
+/** Replay the task status as the simulation walks step-by-step, applying the
+ *  same rules the server does: all steps done → Complete (wins); else a fired
+ *  step automation wins; else derive from the step mix, keeping a sticky
+ *  Records Here / Review. Returns the status shown WHILE each step is the
+ *  current (in-progress) one, plus the final all-done status. */
+function simulateTaskStatuses(sortedSteps: TemplateStepData[]): { atStep: string[]; final: string } {
+  const stepStatus: string[] = sortedSteps.map(() => 'not_started');
+  let taskStatus = 'not_started';
+  const atStep: string[] = [];
+
+  const tick = (ruleTarget: string | null) => {
+    if (stepStatus.length > 0 && stepStatus.every(s => s === 'complete' || s === 'skipped')) { taskStatus = 'complete'; return; }
+    if (ruleTarget) { taskStatus = ruleTarget; return; }
+    const derived = stepStatus.some(s => s === 'waiting_on_client') ? 'waiting_on_client'
+      : stepStatus.some(s => s === 'in_progress' || s === 'complete') ? 'in_progress'
+      : 'not_started';
+    taskStatus = (STICKY_STATUSES.has(taskStatus) && derived !== 'waiting_on_client') ? taskStatus : derived;
+  };
+
+  for (let i = 0; i < sortedSteps.length; i++) {
+    const rule = sortedSteps[i].status_automation ?? null;
+    stepStatus[i] = 'in_progress';
+    tick(rule && rule.on === 'in_progress' ? rule.set_task_status : null);
+    atStep[i] = taskStatus;
+    stepStatus[i] = 'complete';
+    tick(rule && rule.on === 'complete' ? rule.set_task_status : null);
+  }
+  return { atStep, final: taskStatus };
+}
+
 // ── Topological sort ──────────────────────────────────────────────────────────
 
 function topoSort(steps: TemplateStepData[], edges: TemplateEdgeData[]): TemplateStepData[] {
@@ -688,6 +736,18 @@ export default function TaskTemplateTestRun({ steps, edges, templateName, onClos
   const progressPct = sortedSteps.length > 1
     ? ((completed ? sortedSteps.length : currentIdx) / (sortedSteps.length - 1)) * 100
     : 100;
+  // Simulated task status, replayed with the server's precedence — updates as
+  // the run advances so you can watch automations drive the status live.
+  const simStatuses = useMemo(() => simulateTaskStatuses(sortedSteps), [sortedSteps]);
+  const simTaskStatus = completed ? simStatuses.final : (simStatuses.atStep[currentIdx] ?? 'not_started');
+  // True when the CURRENT step's own rule is what produced the current status
+  // (only on-start rules resolve while the step is active; on-complete rules
+  // resolve as you move on, and the badge simply updates then).
+  const currentStepSetStatus = !completed
+    && !!currentStep?.status_automation
+    && currentStep.status_automation.on === 'in_progress'
+    && currentStep.status_automation.set_task_status === simTaskStatus;
+  const anyStatusRules = useMemo(() => sortedSteps.some(s => s.status_automation), [sortedSteps]);
   const assigneeLabel = !currentStep ? '' :
     currentStep.assignee_role === 'client' ? 'Client' :
     currentStep.assignee_role === 'team_member' ? 'Team Member' : 'Anyone';
@@ -896,6 +956,29 @@ export default function TaskTemplateTestRun({ steps, edges, templateName, onClos
                 </div>
               </div>
 
+              {/* Live task status — updates as the run advances (automations + the
+                  same derivation the real task uses). */}
+              {(() => {
+                const meta = TASK_STATUS_META[simTaskStatus] ?? TASK_STATUS_META.not_started;
+                return (
+                  <div className="px-4 py-2.5 border-b border-gray-100 flex-shrink-0 flex items-center gap-2">
+                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Task status</span>
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold border transition-colors"
+                      style={{ color: meta.color, borderColor: `${meta.color}55`, background: `${meta.color}14` }}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.color }} />
+                      {meta.label}
+                    </span>
+                    {currentStepSetStatus && (
+                      <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-indigo-500">
+                        <Zap className="h-3 w-3" /> set by this step
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* Tab content */}
               <div className="flex-1 overflow-y-auto">
 
@@ -927,6 +1010,18 @@ export default function TaskTemplateTestRun({ steps, edges, templateName, onClos
                             </span>
                           )}
                         </div>
+                        {currentStep.status_automation && (() => {
+                          const m = TASK_STATUS_META[currentStep.status_automation.set_task_status];
+                          if (!m) return null;
+                          return (
+                            <div className="flex items-start gap-2 px-3 py-2 rounded-lg border" style={{ borderColor: `${m.color}44`, background: `${m.color}0f` }}>
+                              <Zap className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" style={{ color: m.color }} />
+                              <p className="text-[11px] leading-relaxed" style={{ color: m.color }}>
+                                When this step is <strong>{STATUS_TRIGGER_WORD[currentStep.status_automation.on] ?? currentStep.status_automation.on}</strong>, the task status becomes <strong>{m.label}</strong>.
+                              </p>
+                            </div>
+                          );
+                        })()}
                         {(hasEmail || hasClient || module) && (
                           <div className="space-y-1.5 pt-1">
                             {hasEmail && (
@@ -982,6 +1077,20 @@ export default function TaskTemplateTestRun({ steps, edges, templateName, onClos
                               )}
                               <span className={`truncate ${isCurrent ? 'font-semibold' : ''}`}>{s.title}</span>
                               <div className="ml-auto flex items-center gap-0.5 flex-shrink-0">
+                                {s.status_automation && (() => {
+                                  const m = TASK_STATUS_META[s.status_automation!.set_task_status];
+                                  if (!m) return null;
+                                  return (
+                                    <Tooltip label={`When this step is ${STATUS_TRIGGER_WORD[s.status_automation!.on] ?? s.status_automation!.on} → task status ${m.label}`} side="top">
+                                      <span
+                                        className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-bold"
+                                        style={{ color: m.color, background: `${m.color}1f` }}
+                                      >
+                                        <Zap className="h-2.5 w-2.5" />{m.label}
+                                      </span>
+                                    </Tooltip>
+                                  );
+                                })()}
                                 {stepIssues.some(i => i.severity === 'error')   && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
                                 {stepIssues.some(i => i.severity === 'warning') && !stepIssues.some(i => i.severity === 'error') && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
                                 {s.email_reminder_enabled && <Mail className="h-3 w-3 text-blue-300" />}
@@ -1001,6 +1110,9 @@ export default function TaskTemplateTestRun({ steps, edges, templateName, onClos
                         <div className="flex items-center gap-2 text-[11px] text-gray-500"><Mail className="h-3 w-3 text-blue-400 flex-shrink-0" /> Email reminder sent</div>
                         <div className="flex items-center gap-2 text-[11px] text-gray-500"><Puzzle className="h-3 w-3 text-indigo-400 flex-shrink-0" /> AI tool runs</div>
                         <div className="flex items-center gap-2 text-[11px] text-gray-500"><UserCheck className="h-3 w-3 text-amber-400 flex-shrink-0" /> Client action required</div>
+                        {anyStatusRules && (
+                          <div className="flex items-center gap-2 text-[11px] text-gray-500"><Zap className="h-3 w-3 text-indigo-400 flex-shrink-0" /> Changes the task status</div>
+                        )}
                         <div className="flex items-center gap-2 text-[11px] text-gray-500"><span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" /> Issue on step</div>
                       </div>
                     </div>
