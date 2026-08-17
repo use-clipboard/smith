@@ -55,6 +55,8 @@ interface TimesheetsContextValue {
   defaultRatePence: number;
   dailyTargetHours: number;
   roundingMinutes: number;
+  /** Firm approval routing: 'manager' (manager only) or 'admins' (any admin). */
+  approvalMode: 'manager' | 'admins';
   reloadSettings: () => Promise<void>;
   suggestions: AiSuggestion[];
   scanning: boolean;
@@ -209,6 +211,7 @@ export default function TimesheetsProvider({
   const [defaultRatePence, setDefaultRatePence] = useState(12000);
   const [dailyTargetHours, setDailyTargetHours] = useState(7.5);
   const [roundingMinutes, setRoundingMinutes] = useState(15);
+  const [approvalMode, setApprovalMode] = useState<'manager' | 'admins'>('manager');
   const roundingRef = useRef(15);
   roundingRef.current = roundingMinutes;
   const [suggestions, setSuggestions] = useState<AiSuggestion[]>([]);
@@ -288,6 +291,7 @@ export default function TimesheetsProvider({
         if (settingsRes.defaultRatePence != null) setDefaultRatePence(firmRate);
         if (settingsRes.dailyTargetHours != null) setDailyTargetHours(Number(settingsRes.dailyTargetHours));
         if (settingsRes.roundingMinutes != null) setRoundingMinutes(Number(settingsRes.roundingMinutes));
+        setApprovalMode(settingsRes.approvalMode === 'admins' ? 'admins' : 'manager');
       }
 
       const members = (teamRes.members ?? []) as StaffDto[];
@@ -587,6 +591,7 @@ export default function TimesheetsProvider({
       if (d.defaultRatePence != null) setDefaultRatePence(Number(d.defaultRatePence));
       if (d.dailyTargetHours != null) setDailyTargetHours(Number(d.dailyTargetHours));
       if (d.roundingMinutes != null) setRoundingMinutes(Number(d.roundingMinutes));
+      setApprovalMode(d.approvalMode === 'admins' ? 'admins' : 'manager');
     } catch { /* ignore */ }
   }, []);
 
@@ -725,7 +730,7 @@ export default function TimesheetsProvider({
 
   const value = useMemo<TimesheetsContextValue>(() => ({
     ready, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
-    defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
+    defaultRatePence, dailyTargetHours, roundingMinutes, approvalMode, reloadSettings,
     suggestions, scanning, updateStaffRate, timers, nowMs: now, canAddTimer,
     timerUndo, undoTimer, dismissTimerUndo, staleTimerNotice, dismissStaleTimerNotice,
     clientBudgets, setClientBudget,
@@ -735,7 +740,7 @@ export default function TimesheetsProvider({
     addEntry, updateEntry, deleteEntry, scanForWork, acceptSuggestion, dismissSuggestion,
   }), [
     ready, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
-    defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
+    defaultRatePence, dailyTargetHours, roundingMinutes, approvalMode, reloadSettings,
     suggestions, scanning, updateStaffRate, timers, now, canAddTimer,
     timerUndo, undoTimer, dismissTimerUndo, staleTimerNotice, dismissStaleTimerNotice,
     clientBudgets, setClientBudget,

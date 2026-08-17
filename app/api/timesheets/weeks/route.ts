@@ -4,6 +4,7 @@ import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { createServiceClient } from '@/lib/supabase-server';
 import { createNotification } from '@/lib/notifications';
+import { getApprovalMode } from '@/lib/timesheets/approvalMode';
 
 export interface WeekStatusRow {
   userId: string;
@@ -32,49 +33,63 @@ async function managerOf(service: any, userId: string): Promise<string | null> {
   }
 }
 
-// Notify the ONE approver a submitted week is routed to: the submitter's manager.
-// No manager → the week is auto-approved (see the submit action), so this is
-// never called with a null manager. No admin fallback — only the manager is
-// notified. Best-effort — never blocks submit.
+// Notify the approver(s) a submitted week is routed to. The caller decides who
+// (the manager in 'manager' mode, the firm's admins in 'admins' mode) so this
+// just fans a notification out to that list. Best-effort — never blocks submit.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function notifyApprovers(service: any, firmId: string, submitterId: string, managerId: string | null, weekStart: string) {
+async function notifySubmitted(service: any, firmId: string, submitterId: string, recipients: string[], weekStart: string) {
   try {
-    if (!managerId || managerId === submitterId) return; // no manager → nobody to notify
+    if (recipients.length === 0) return;
     const { data: submitter } = await service.from('users').select('full_name, email').eq('id', submitterId).single();
     const name = submitter?.full_name || submitter?.email || 'A team member';
 
     const [y, m, d] = weekStart.split('-');
-    void createNotification({
-      userId: managerId,
-      firmId,
-      type: 'timesheet_approval',
-      title: `Timesheet submitted: ${name}`,
-      body: `Week of ${d}-${m}-${y} is awaiting your approval.`,
-      data: { link: '/timesheets' },
-    });
+    for (const rid of recipients) {
+      void createNotification({
+        userId: rid,
+        firmId,
+        type: 'timesheet_approval',
+        title: `Timesheet submitted: ${name}`,
+        body: `Week of ${d}-${m}-${y} is awaiting your approval.`,
+        data: { link: '/timesheets' },
+      });
+    }
   } catch { /* non-critical */ }
 }
 
-// Notify the approver that a week they'd already approved has been reopened
-// (the owner edited it, so it needs approving again). Only the actual approver
-// is notified — no admin fallback. An auto-approved (manager-less) week has no
-// approver, so nobody is notified. Best-effort — never blocks the reopen.
+// The firm's admins (approvers in 'admins' mode), excluding one user (the
+// submitter shouldn't approve their own week).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function notifyReopen(service: any, firmId: string, submitterId: string, approverId: string | null, weekStart: string) {
+async function firmAdminIds(service: any, firmId: string, excludeUserId?: string): Promise<string[]> {
   try {
-    if (!approverId || approverId === submitterId) return; // nobody specific approved it → nobody to notify
+    const { data } = await service.from('users').select('id').eq('firm_id', firmId).eq('role', 'admin');
+    return (data ?? []).map((a: { id: string }) => a.id).filter((id: string) => id !== excludeUserId);
+  } catch {
+    return [];
+  }
+}
+
+// Notify that a week which had been approved was reopened (the owner edited it,
+// so it needs approving again). Caller supplies the recipients (the original
+// approver in 'manager' mode; the firm's admins in 'admins' mode). Best-effort.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function notifyReopen(service: any, firmId: string, submitterId: string, recipients: string[], weekStart: string) {
+  try {
+    if (recipients.length === 0) return;
     const { data: submitter } = await service.from('users').select('full_name, email').eq('id', submitterId).single();
     const name = submitter?.full_name || submitter?.email || 'A team member';
 
     const [y, m, d] = weekStart.split('-');
-    void createNotification({
-      userId: approverId,
-      firmId,
-      type: 'timesheet_approval',
-      title: `Timesheet reopened: ${name}`,
-      body: `The approved week of ${d}-${m}-${y} was reopened and will need approving again.`,
-      data: { link: '/timesheets' },
-    });
+    for (const rid of recipients) {
+      void createNotification({
+        userId: rid,
+        firmId,
+        type: 'timesheet_approval',
+        title: `Timesheet reopened: ${name}`,
+        body: `The approved week of ${d}-${m}-${y} was reopened and will need approving again.`,
+        data: { link: '/timesheets' },
+      });
+    }
   } catch { /* non-critical */ }
 }
 
@@ -133,18 +148,26 @@ export async function POST(req: NextRequest) {
   const targetUser = parsed.data.userId ?? ctx.userId;
   const service = createServiceClient();
 
-  // Permission: self may submit/withdraw own weeks; ONLY the manager the week was
-  // routed to may approve/reject — no admin override. A week with no manager is
-  // auto-approved at submit time, so it never reaches a manual review here.
+  // Firm-wide approval routing: 'manager' (the submitter's manager only) or
+  // 'admins' (any firm admin approves anyone). Set in Timesheets settings.
+  const mode = await getApprovalMode(service, ctx.firmId);
+
+  // Permission: self may submit/withdraw/reopen own weeks. For approve/reject:
+  //   'manager' mode — ONLY the manager the week was routed to may review.
+  //   'admins' mode  — any firm admin may review.
   const isReview = action === 'approve' || action === 'reject';
   if (isReview) {
-    // The manager the week was routed to (snapshot), falling back to the user's
-    // current manager if the row/column predates the snapshot.
-    const { data: existing } = await service
-      .from('timesheet_week_status').select('manager_id')
-      .eq('user_id', targetUser).eq('week_start', weekStart).maybeSingle();
-    const rowManager = (existing?.manager_id as string | null) ?? await managerOf(service, targetUser);
-    if (!rowManager || rowManager !== ctx.userId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (mode === 'admins') {
+      if (ctx.userRole !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    } else {
+      // The manager the week was routed to (snapshot), falling back to the
+      // user's current manager if the row/column predates the snapshot.
+      const { data: existing } = await service
+        .from('timesheet_week_status').select('manager_id')
+        .eq('user_id', targetUser).eq('week_start', weekStart).maybeSingle();
+      const rowManager = (existing?.manager_id as string | null) ?? await managerOf(service, targetUser);
+      if (!rowManager || rowManager !== ctx.userId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
   } else if (targetUser !== ctx.userId) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
@@ -178,7 +201,13 @@ export async function POST(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     if (existing?.status === 'approved') {
-      void notifyReopen(service, ctx.firmId, targetUser, (existing.reviewed_by as string | null) ?? null, weekStart);
+      // Tell whoever would re-approve it: the admins in 'admins' mode, else the
+      // original approver (an auto-approved week has none → nobody notified).
+      const approver = (existing.reviewed_by as string | null) ?? null;
+      const recipients = mode === 'admins'
+        ? await firmAdminIds(service, ctx.firmId, targetUser)
+        : (approver && approver !== targetUser ? [approver] : []);
+      void notifyReopen(service, ctx.firmId, targetUser, recipients, weekStart);
     }
     return NextResponse.json({ ok: true, status: 'draft' });
   }
@@ -188,10 +217,17 @@ export async function POST(req: NextRequest) {
     // A user who is (somehow) their own manager counts as having no manager.
     const managerId = rawManager && rawManager !== targetUser ? rawManager : null;
 
-    // No manager → nobody needs to approve this: auto-approve it and notify no
-    // one. With a manager → route it to them for approval.
+    // Who this week is routed to for approval:
+    //   'admins' mode  — every firm admin (bar the submitter).
+    //   'manager' mode — the submitter's manager, if any.
+    const recipients = mode === 'admins'
+      ? await firmAdminIds(service, ctx.firmId, targetUser)
+      : (managerId ? [managerId] : []);
+
+    // Nobody to approve (no manager in manager-mode, or the submitter is the only
+    // admin in admins-mode) → auto-approve and notify no one.
+    const autoApprove = recipients.length === 0;
     const now = new Date().toISOString();
-    const autoApprove = !managerId;
     const row: Record<string, unknown> = {
       firm_id: ctx.firmId, user_id: targetUser, week_start: weekStart,
       status: autoApprove ? 'approved' : 'submitted', note: null, submitted_at: now,
@@ -207,8 +243,7 @@ export async function POST(req: NextRequest) {
 
     if (autoApprove) return NextResponse.json({ ok: true, status: 'approved', autoApproved: true });
 
-    // Route a notification to the one approver — the submitter's manager.
-    void notifyApprovers(service, ctx.firmId, targetUser, managerId, weekStart);
+    void notifySubmitted(service, ctx.firmId, targetUser, recipients, weekStart);
     return NextResponse.json({ ok: true, status: 'submitted' });
   }
 

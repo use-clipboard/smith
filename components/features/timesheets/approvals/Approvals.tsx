@@ -13,7 +13,7 @@ import { useOpenProfile } from '@/components/features/team/useOpenProfile';
 import AdjustEntryModal, { type AdjustPatch } from './AdjustEntryModal';
 
 export default function Approvals() {
-  const { weekStatuses, staff, entries, reviewWeek, refreshWeeks, userId, defaultRatePence } = useTimesheets();
+  const { weekStatuses, staff, entries, reviewWeek, refreshWeeks, isAdmin, approvalMode, userId, defaultRatePence } = useTimesheets();
   const openProfile = useOpenProfile();
   const [rejecting, setRejecting] = useState<string | null>(null); // `${userId}__${weekStart}`
   const [note, setNote] = useState('');
@@ -55,9 +55,10 @@ export default function Approvals() {
 
   const staffById = useMemo(() => new Map(staff.map(s => [s.id, s])), [staff]);
 
-  // Only the manager a week was routed to sees it here — no admin-sees-all. A
-  // week with no manager is auto-approved and never appears for approval.
-  const mine = (w: { managerId: string | null }) => w.managerId === userId;
+  // Who sees a week for approval depends on the firm's approval mode:
+  //   'admins'  — any admin sees every week; a manager-less week is auto-approved.
+  //   'manager' — only the manager the week was routed to sees it.
+  const mine = (w: { managerId: string | null }) => (approvalMode === 'admins' ? isAdmin : w.managerId === userId);
 
   const rows = useMemo(() => {
     return Object.values(weekStatuses)
@@ -65,7 +66,7 @@ export default function Approvals() {
       .map(w => ({ ...w, staff: staffById.get(w.userId) }))
       .sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStatuses, staffById, userId]);
+  }, [weekStatuses, staffById, userId, isAdmin, approvalMode]);
 
   // The normal entries feed is RLS-scoped to the current user, so a submitter's
   // hours aren't in `entries`. Fetch each pending week's entries (permission-
@@ -97,7 +98,7 @@ export default function Approvals() {
       .sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1))
       .slice(0, 8);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStatuses, userId]);
+  }, [weekStatuses, userId, isAdmin, approvalMode]);
 
   function doReject(userId: string, weekStart: string) {
     reviewWeek(userId, weekStart, 'reject', note.trim() || undefined);
@@ -160,7 +161,7 @@ export default function Approvals() {
       <GlassCard>
         <SectionHeader
           title="Timesheet approvals"
-          subtitle="Weeks submitted by the people who report to you."
+          subtitle={approvalMode === 'admins' ? 'Weeks submitted by the team, awaiting an admin’s approval.' : 'Weeks submitted by the people who report to you.'}
           right={
             <div className="flex items-center gap-2">
               <button

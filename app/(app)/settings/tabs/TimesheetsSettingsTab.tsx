@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, GripVertical, Clock } from 'lucide-react';
+import { Loader2, Plus, Trash2, GripVertical, Clock, UserCheck, Users } from 'lucide-react';
 import { useTimesheets } from '@/components/features/timesheets/TimesheetsProvider';
 
 type ActType = 'billable' | 'non_billable' | 'internal';
@@ -22,6 +22,7 @@ export default function TimesheetsSettingsTab({ isAdmin = true }: { isAdmin?: bo
   const [defaultRate, setDefaultRate] = useState('120'); // pounds/hr
   const [dailyTarget, setDailyTarget] = useState('7.5');
   const [rounding, setRounding] = useState(15);
+  const [approvalMode, setApprovalMode] = useState<'manager' | 'admins'>('manager');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -38,6 +39,7 @@ export default function TimesheetsSettingsTab({ isAdmin = true }: { isAdmin?: bo
         setDefaultRate(String(Math.round((d.defaultRatePence ?? 12000) / 100)));
         setDailyTarget(String(d.dailyTargetHours ?? 7.5));
         setRounding(Number(d.roundingMinutes ?? 15));
+        setApprovalMode(d.approvalMode === 'admins' ? 'admins' : 'manager');
       })
       .catch(() => { if (!cancelled) setError('Could not load Timesheets settings.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -74,6 +76,7 @@ export default function TimesheetsSettingsTab({ isAdmin = true }: { isAdmin?: bo
           defaultRatePence: Math.max(0, Math.round(Number(defaultRate) || 0) * 100),
           dailyTargetHours: Math.max(0, Math.min(24, Number(dailyTarget) || 0)),
           roundingMinutes: rounding,
+          approvalMode,
         }),
       });
       if (!res.ok) { setError('Failed to save. Please try again.'); return; }
@@ -141,6 +144,39 @@ export default function TimesheetsSettingsTab({ isAdmin = true }: { isAdmin?: bo
             </select>
             <p className="mt-1 text-[11px] text-[var(--text-muted)]">Timer + drag entries snap to this.</p>
           </div>
+        </div>
+      </div>
+
+      {/* Approvals */}
+      <div className="glass-solid rounded-xl p-6">
+        <div className="mb-4">
+          <h4 className="text-sm font-semibold text-[var(--text-primary)]">Approvals</h4>
+          <p className="text-xs text-[var(--text-muted)]">Who reviews a submitted week. Applies to everyone in the firm.</p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {([
+            { value: 'manager' as const, icon: UserCheck, title: 'Manager only', desc: 'Each week goes to the submitter’s manager (set in HR). Anyone with no manager is approved automatically — no one else is involved.' },
+            { value: 'admins' as const, icon: Users, title: 'All admins', desc: 'Any firm admin can review and approve anyone’s week. Managers are not used for routing.' },
+          ]).map(opt => {
+            const active = approvalMode === opt.value;
+            const Icon = opt.icon;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => isAdmin && setApprovalMode(opt.value)}
+                disabled={!isAdmin}
+                aria-pressed={active}
+                className={`flex flex-col gap-1.5 rounded-xl border p-3.5 text-left transition-colors disabled:opacity-60 ${active ? 'border-[var(--accent)] bg-[var(--accent-light)]' : 'border-[var(--border-input)] bg-[var(--bg-input)] hover:border-[var(--text-muted)]/40'}`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${active ? 'bg-[var(--accent)] text-white' : 'bg-black/[0.04] text-[var(--text-muted)]'}`}><Icon size={15} /></span>
+                  <span className="text-sm font-semibold text-[var(--text-primary)]">{opt.title}</span>
+                </span>
+                <span className="text-[11.5px] leading-snug text-[var(--text-muted)]">{opt.desc}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 

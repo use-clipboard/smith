@@ -11,6 +11,10 @@ const DEFAULTS = {
   defaultRatePence: 12000, // £120/hr — used when a user has no rate set
   dailyTargetHours: 7.5,    // drives the utilisation target + timeline target line
   roundingMinutes: 15,      // round timer/drag entries to this increment
+  // Who approves submitted weeks:
+  //   'manager' — the submitter's manager only; no manager => auto-approved.
+  //   'admins'  — any firm admin may approve anyone's weeks.
+  approvalMode: 'manager' as 'manager' | 'admins',
 };
 
 const ActivitySchema = z.object({
@@ -25,6 +29,7 @@ const SettingsSchema = z.object({
   defaultRatePence: z.number().int().min(0).max(1_000_000).optional().default(12000),
   dailyTargetHours: z.number().min(0).max(24).optional().default(7.5),
   roundingMinutes: z.number().int().min(1).max(60).optional().default(15),
+  approvalMode: z.enum(['manager', 'admins']).optional().default('manager'),
 });
 
 // GET /api/timesheets/settings → firm departments + activities (or defaults).
@@ -44,6 +49,7 @@ export async function GET() {
     defaultRatePence: s?.defaultRatePence ?? DEFAULTS.defaultRatePence,
     dailyTargetHours: s?.dailyTargetHours ?? DEFAULTS.dailyTargetHours,
     roundingMinutes: s?.roundingMinutes ?? DEFAULTS.roundingMinutes,
+    approvalMode: s?.approvalMode === 'admins' ? 'admins' : 'manager',
   });
 }
 
