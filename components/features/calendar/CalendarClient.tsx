@@ -30,6 +30,8 @@ interface CalendarEvent {
   isHidden?: boolean;
   /** Synthetic, read-only UK bank-holiday overlay event (not from Google). */
   isBankHoliday?: boolean;
+  /** Synthetic, read-only approved-holiday overlay event (from HR). */
+  isHoliday?: boolean;
 }
 
 /** ISO date string (YYYY-MM-DD) one day after the given one — all-day event ends
@@ -143,6 +145,7 @@ export default function CalendarClient() {
   // Personal reminders
   const [reminders, setReminders] = useState<PersonalReminder[]>([]);
   const [bankHolidays, setBankHolidays] = useState<{ date: string; title: string }[]>([]);
+  const [hrHolidays, setHrHolidays] = useState<{ id: string; userId: string; ownerName: string; start_date: string; end_date: string; start_half: string; end_half: string }[]>([]);
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [editingReminder, setEditingReminder] = useState<PersonalReminder | null>(null);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
@@ -170,10 +173,11 @@ export default function CalendarClient() {
         end.setDate(end.getDate() + 30);
       }
 
-      const [eventsRes, remindersRes, bankHolidaysRes] = await Promise.all([
+      const [eventsRes, remindersRes, bankHolidaysRes, hrHolidaysRes] = await Promise.all([
         fetch(`/api/calendar/events?start=${start.toISOString()}&end=${end.toISOString()}`),
         fetch(`/api/calendar/personal-reminders?start=${start.toISOString()}&end=${end.toISOString()}`),
         fetch(`/api/calendar/bank-holidays?start=${start.toISOString()}&end=${end.toISOString()}`),
+        fetch(`/api/calendar/hr-holidays?start=${start.toISOString()}&end=${end.toISOString()}`),
       ]);
 
       if (eventsRes.ok) {
@@ -198,6 +202,11 @@ export default function CalendarClient() {
       if (bankHolidaysRes.ok) {
         const data = await bankHolidaysRes.json();
         setBankHolidays(data.holidays ?? []);
+      }
+
+      if (hrHolidaysRes.ok) {
+        const data = await hrHolidaysRes.json();
+        setHrHolidays(data.holidays ?? []);
       }
     } catch {
       // Network-level failure (e.g. offline, or the dev server mid-recompile) —
@@ -321,8 +330,26 @@ export default function CalendarClient() {
         isBankHoliday: true,
       });
     }
+    // Overlay approved HR holidays that aren't already on Google — so an
+    // approved, "add to calendar" holiday shows here even when the person hasn't
+    // connected Google. Tagged with the owner so team-calendar selection filters
+    // them like Google events; read-only via the isHoliday flag.
+    for (const h of hrHolidays) {
+      if (hiddenMembers.has(h.userId)) continue; // respect calendar selection
+      const singleHalf = h.start_date === h.end_date && h.start_half !== 'full';
+      out.push({
+        id: `hol-${h.id}`,
+        title: singleHalf ? `Holiday (${h.start_half})` : 'Holiday',
+        start: h.start_date,
+        end: nextDayIso(h.end_date),
+        ownerUserId: h.userId,
+        ownerName: h.ownerName,
+        ownerColor: '#0284c7', // sky — matches the HR "on calendar" badge
+        isHoliday: true,
+      });
+    }
     return out;
-  }, [events, hiddenMembers, userId, bankHolidays]);
+  }, [events, hiddenMembers, userId, bankHolidays, hrHolidays]);
   // Personal reminders only belong to the current user — hide them whenever
   // "My Calendar" isn't in the visible set (e.g. when the user has filtered
   // down to a colleague's calendar, their own reminder shouldn't follow).
@@ -896,7 +923,7 @@ export default function CalendarClient() {
               )}
 
               {/* Visibility toggle — admin-only, own events only */}
-              {!isMaskedBusy && selectedEvent.ownerUserId === userId && isAdmin && (
+              {!isMaskedBusy && !selectedEvent.isHoliday && selectedEvent.ownerUserId === userId && isAdmin && (
                 <div className="flex items-center justify-between px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-nav-hover)]">
                   <div className="flex items-center gap-2">
                     {selectedEvent.isHidden
@@ -949,7 +976,7 @@ export default function CalendarClient() {
                       <Calendar size={12} /> Open in Google
                     </a>
                   )}
-                  {selectedEvent.ownerUserId === userId && (
+                  {selectedEvent.ownerUserId === userId && !selectedEvent.isHoliday && (
                     <>
                       <button
                         onClick={() => {
