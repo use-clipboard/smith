@@ -423,12 +423,33 @@ export default function MyTimesheet() {
             ))}
             {dayEntries.length === 0 && <p className="py-6 text-center text-sm text-[var(--text-muted)]">No entries.</p>}
           </div>
-          {dayEntries.length > 0 && (
-            <div className="mt-4 flex items-center justify-between border-t border-black/5 pt-3">
-              <TypeBadge type="billable" />
-              <span className="text-[13px] font-bold text-[var(--text-primary)]">{fmtDuration(dayTotals.total)} total</span>
-            </div>
-          )}
+          {dayEntries.length > 0 && (() => {
+            // Break the day down by the actual entry types present (billable /
+            // non-billable / internal) rather than labelling everything as
+            // billable. A day may be a mix, so show each non-zero type's subtotal
+            // plus a grand total when there's more than one.
+            const rows = ([
+              ['billable', dayTotals.billable],
+              ['non_billable', dayTotals.nonBillable],
+              ['internal', dayTotals.internal],
+            ] as const).filter(([, mins]) => mins > 0);
+            return (
+              <div className="mt-4 space-y-2 border-t border-black/5 pt-3">
+                {rows.map(([type, mins]) => (
+                  <div key={type} className="flex items-center justify-between">
+                    <TypeBadge type={type} />
+                    <span className="text-[13px] font-bold text-[var(--text-primary)]">{fmtDuration(mins)}</span>
+                  </div>
+                ))}
+                {rows.length > 1 && (
+                  <div className="flex items-center justify-between pt-0.5">
+                    <span className="text-[12px] font-semibold text-[var(--text-muted)]">Total</span>
+                    <span className="text-[13px] font-bold text-[var(--text-primary)]">{fmtDuration(dayTotals.total)}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </GlassCard>
       </div>
 
