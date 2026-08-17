@@ -21,7 +21,7 @@ import { getRefreshedGmailClient, parseGmailMessage } from '@/lib/gmail';
 //
 // `id` is the thread id (kept for a clean RESTful path / future use); the
 // search itself is a global Sent-folder query keyed off `?subject=`.
-export async function GET(req: NextRequest, _ctx: { params: { id: string } }) {
+export async function GET(req: NextRequest) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
 
@@ -44,12 +44,20 @@ export async function GET(req: NextRequest, _ctx: { params: { id: string } }) {
     .trim();
   if (baseSubject.length <= 1) return NextResponse.json({ externalForwardedAt: null });
 
+  // A forward can't predate the message it forwards. `after` is the viewed
+  // message's own date — we only look for forwards sent at/after it, so a
+  // same-subject forward of a DIFFERENT, older email (common with generic
+  // subjects like "Accounts") can never be mis-attributed to this message.
+  const afterMs = Date.parse(req.nextUrl.searchParams.get('after') ?? '');
+
   try {
     const { gmail } = await getRefreshedGmailClient(connection.refresh_token);
 
     // Escape inner quotes so Gmail parses the search correctly.
     const safe = baseSubject.replace(/"/g, '\\"');
-    const query = `in:sent (subject:"Fwd: ${safe}" OR subject:"FW: ${safe}")`;
+    // Gmail's after: is day-granular; we filter to the exact time below too.
+    const afterClause = Number.isFinite(afterMs) ? ` after:${Math.floor(afterMs / 1000)}` : '';
+    const query = `in:sent (subject:"Fwd: ${safe}" OR subject:"FW: ${safe}")${afterClause}`;
     const searchRes = await gmail.users.messages.list({ userId: 'me', q: query, maxResults: 5 });
     const ids = (searchRes.data.messages ?? []).map(m => m.id).filter((id): id is string => !!id);
     if (ids.length === 0) return NextResponse.json({ externalForwardedAt: null });
@@ -67,7 +75,10 @@ export async function GET(req: NextRequest, _ctx: { params: { id: string } }) {
     );
     const dated = headRes
       .map(r => (r ? parseGmailMessage(r.data as Parameters<typeof parseGmailMessage>[0]) : null))
-      .filter((m): m is NonNullable<typeof m> => !!m && !!m.date);
+      .filter((m): m is NonNullable<typeof m> => !!m && !!m.date)
+      // Exact-time guard: drop any match sent before the message arrived (Gmail's
+      // after: only filters by whole day).
+      .filter(m => !Number.isFinite(afterMs) || (Date.parse(m.date) || 0) >= afterMs);
     if (dated.length === 0) return NextResponse.json({ externalForwardedAt: null });
 
     const latest = dated.reduce((acc, m) =>

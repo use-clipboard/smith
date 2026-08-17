@@ -1308,18 +1308,52 @@ export default function EmailTriagePage() {
           return next;
         });
       }
+      // Self-heal false markers: a message can't have been replied to or
+      // forwarded BEFORE it arrived. The subject-only Sent-folder forward search
+      // can match an unrelated, older email that merely shares a generic subject
+      // (e.g. "Accounts"), pinning a wrong past date onto a message received
+      // today. Drop any stored mark dated before its own message.
+      {
+        const GRACE_MS = 2 * 60 * 1000; // tolerate minor clock skew on a genuine forward
+        const dateByRfc = new Map<string, number>();
+        for (const m of data.messages) {
+          if (m.messageId && m.date) dateByRfc.set(m.messageId, new Date(m.date).getTime() || 0);
+        }
+        const prune = (
+          setMap: React.Dispatch<React.SetStateAction<Map<string, ReplyMark>>>,
+          storageKey: string,
+        ) => setMap(prev => {
+          let changed = false;
+          const next = new Map(prev);
+          for (const [rfc, mark] of prev) {
+            const msgMs = dateByRfc.get(rfc);
+            if (msgMs && mark.date && (new Date(mark.date).getTime() || 0) < msgMs - GRACE_MS) {
+              next.delete(rfc); changed = true;
+            }
+          }
+          if (changed) { try { localStorage.setItem(storageKey, JSON.stringify([...next])); } catch { /* ignore */ } }
+          return changed ? next : prev;
+        });
+        prune(setForwardedMsgIds, 'email-forwarded-msgids-v2');
+        prune(setRepliedMsgIds, 'email-replied-msgids-v2');
+      }
       // Deferred out-of-thread forward check: when the viewed message isn't
       // already known-forwarded, ask the server to search the Sent folder for a
       // forward of this subject (Gmail often breaks threading on forward). Runs
       // *after* render so its Gmail round-trips never delay the open. Attributed
-      // to the viewed message's RFC id.
+      // to the viewed message's RFC id. Scoped to forwards sent AFTER this
+      // message arrived, so a same-subject forward of an older email can't match.
       const viewedRfc = viewedMsg?.messageId || '';
+      const viewedMs = viewedMsg?.date ? (new Date(viewedMsg.date).getTime() || 0) : 0;
       if (viewedRfc && !forwardedSet.has(viewedRfc) && !forwardedMsgIds.has(viewedRfc)) {
-        fetch(`/api/email/thread/${detailId}/forwarded?subject=${encodeURIComponent(thread.subject || '')}`)
+        fetch(`/api/email/thread/${detailId}/forwarded?subject=${encodeURIComponent(thread.subject || '')}&after=${encodeURIComponent(viewedMsg?.date || '')}`)
           .then(r => (r.ok ? r.json() : null))
           .then((d: { externalForwardedAt?: string | null; to?: ReplyRecipient[] } | null) => {
             const date = d?.externalForwardedAt;
             if (!date) return;
+            // Guard again client-side: never accept a forward dated before the
+            // message it's attributed to.
+            if (viewedMs && (new Date(date).getTime() || 0) < viewedMs) return;
             setForwardedMsgIds(prev => {
               if (prev.get(viewedRfc)?.date === date) return prev;
               const next = new Map(prev);
