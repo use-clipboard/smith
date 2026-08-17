@@ -2755,6 +2755,9 @@ export default function EmailTriagePage() {
           onAllocatedOnlyChange={v => { setAllocatedOnly(v); if (v) { setTaskLinkedOnly(false); setUnreadOnly(false); } }}
           activeLabel={activeLabel}
           userLabels={labels.filter(l => l.type === 'user').map(l => ({ id: l.id, name: l.name }))}
+          showCategoryTags={!traditional && activeLabel === 'INBOX'}
+          categoryOverrides={categoryOverrides}
+          categoryMeta={categoryMeta}
           onBulkDelete={handleBulkDelete}
           onBulkMarkRead={handleBulkMarkRead}
           onBulkAllocate={handleBulkAllocate}

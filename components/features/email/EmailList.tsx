@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import type { EmailThread } from '@/lib/gmail';
+import { metaFor, iconFor, type CategoryDef } from './emailCategories';
 
 // Deterministic hue (0–359) from a label name so each Gmail label always gets
 // the same colour without us having to fetch Gmail's per-label colour settings.
@@ -77,6 +78,15 @@ interface Props {
   /** The firm's user-created Gmail labels (id + name) so each row can show a
    *  little coloured tag chip for any of these labels applied to the thread. */
   userLabels?: { id: string; name: string }[];
+  /** Triage mode: when true, every row shows a small icon badge for its triage
+   *  category (Untriaged → No Action Needed, plus the user's custom middle
+   *  categories & icons) so the user can see at a glance what's been triaged. */
+  showCategoryTags?: boolean;
+  /** Per-thread saved category, keyed by thread id (same lookup as categoryOf).
+   *  Passed straight from parent state so the badge updates live during triage. */
+  categoryOverrides?: Record<string, { category: string }>;
+  /** key → CategoryDef (label / iconName / colour), for resolving the badge. */
+  categoryMeta?: Record<string, CategoryDef>;
 }
 
 export default function EmailList({
@@ -88,6 +98,7 @@ export default function EmailList({
   taskLinkedOnly, onTaskLinkedOnlyChange,
   allocatedOnly, onAllocatedOnlyChange,
   activeLabel, userLabels,
+  showCategoryTags, categoryOverrides, categoryMeta,
 }: Props) {
   // Filter / sort state
   const [filterOpen, setFilterOpen] = useState(false);
@@ -567,6 +578,15 @@ export default function EmailList({
               // User-created Gmail labels applied to this thread → little tag chips.
               const threadUserLabels = (userLabels ?? []).filter(l => thread.labelIds.includes(l.id));
 
+              // Triage category badge (icon + colour). Only in triage mode; every
+              // row gets one — Untriaged (grey inbox) through the user's custom
+              // categories to No Action Needed. Reads from parent state so it
+              // updates the instant an email is triaged (no refresh needed).
+              const catDef = showCategoryTags
+                ? metaFor(categoryMeta ?? {}, categoryOverrides?.[thread.id]?.category ?? 'untriaged')
+                : null;
+              const CatIcon = catDef ? iconFor(catDef.iconName) : null;
+
               return (
                 <div
                   key={thread.id}
@@ -649,6 +669,17 @@ export default function EmailList({
                         )}
                       </span>
                       <div className="flex items-center gap-1 shrink-0">
+                        {catDef && CatIcon && (
+                          <Tooltip label={catDef.label} side="top">
+                            <span
+                              aria-label={`Triage: ${catDef.label}`}
+                              className="inline-flex items-center justify-center w-[18px] h-[18px] rounded-[5px] shrink-0 group-hover:hidden"
+                              style={{ backgroundColor: `${catDef.color}22`, color: catDef.color }}
+                            >
+                              <CatIcon size={11} />
+                            </span>
+                          </Tooltip>
+                        )}
                         {pinnedIds?.has(thread.id) && <Pin size={11} className="text-[var(--accent)] fill-[var(--accent)] group-hover:hidden" />}
                         {thread.labelIds.includes('STARRED') && <Star size={11} className="text-amber-400 fill-amber-400 group-hover:hidden" />}
                         {hasAttachments && <Paperclip size={11} className="text-[var(--text-muted)] group-hover:hidden" />}
