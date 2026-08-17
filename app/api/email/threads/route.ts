@@ -476,6 +476,32 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // ── Replied / forwarded list markers, from ANY client ────────────────────
+    // A conversation you've replied to (or forwarded) has a Sent message in its
+    // thread — regardless of where you sent it (phone, Outlook, Gmail web…). We
+    // fetch the recent Sent thread-id sets once (two cheap list calls, no gets)
+    // and tag inbox rows, so the list shows the marker without opening each
+    // email. Forwards are Fwd:/FW: subjects; everything else is a reply. Skipped
+    // unless we're actually showing inbox mail (Sent/Drafts rows never need it).
+    if (threads.some(t => t.labelIds?.includes('INBOX'))) {
+      try {
+        const [replRes, fwdRes] = await Promise.all([
+          gmailRetry(() => gmail.users.messages.list({ userId: 'me', q: 'in:sent -subject:fwd -subject:fw', maxResults: 500 }), 2),
+          gmailRetry(() => gmail.users.messages.list({ userId: 'me', q: 'in:sent (subject:fwd OR subject:fw)', maxResults: 500 }), 2),
+        ]);
+        const repliedThreads = new Set((replRes.data.messages ?? []).map(m => m.threadId).filter(Boolean) as string[]);
+        const forwardedThreads = new Set((fwdRes.data.messages ?? []).map(m => m.threadId).filter(Boolean) as string[]);
+        for (const t of threads) {
+          if (!t.labelIds?.includes('INBOX')) continue; // only mark inbox rows
+          const tid = t.gmailThreadId ?? t.id;
+          if (repliedThreads.has(tid)) t.isReplied = true;
+          if (forwardedThreads.has(tid)) t.isForwarded = true;
+        }
+      } catch {
+        // Non-fatal — list just falls back to per-open detection.
+      }
+    }
+
     // Update access token in DB
     await supabase
       .from('email_connections')

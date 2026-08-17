@@ -1117,6 +1117,27 @@ export default function EmailTriagePage() {
       } else {
         setThreads(dedupeById(newThreads));
       }
+      // Paint replied/forwarded LIST markers from the server — these reflect
+      // replies/forwards made from ANY client (phone, Outlook, Gmail web), so the
+      // chip shows without opening each email. Additive merge: never disturbs the
+      // allocation / task / reaction flags, and only ever adds a marker.
+      setThreadMeta(prev => {
+        let changed = false;
+        const next = { ...prev };
+        for (const t of newThreads) {
+          if (!t.isReplied && !t.isForwarded) continue;
+          const cur = next[t.id] ?? { hasAllocation: false, hasTaskLink: false };
+          if ((t.isReplied && !cur.isReplied) || (t.isForwarded && !cur.isForwarded)) {
+            next[t.id] = {
+              ...cur,
+              isReplied: cur.isReplied || !!t.isReplied,
+              isForwarded: cur.isForwarded || !!t.isForwarded,
+            };
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
       // Don't rewind the "Load more" cursor on a background refresh — keep the
       // deepest token so the next Load more continues from where the user was.
       if (!isBackgroundRefresh) setNextPageToken(data.nextPageToken ?? null);

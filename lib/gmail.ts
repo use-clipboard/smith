@@ -173,6 +173,11 @@ export interface EmailThread {
   isRead: boolean;
   labelIds: string[];
   messages: EmailMessage[];
+  /** You've replied in this conversation (a Sent message exists in the thread) —
+   *  reflects replies made from ANY client, not just SMITH. List-view marker. */
+  isReplied?: boolean;
+  /** You've forwarded from this conversation (a Fwd:/FW: Sent message exists). */
+  isForwarded?: boolean;
 }
 
 export interface GmailLabel {
