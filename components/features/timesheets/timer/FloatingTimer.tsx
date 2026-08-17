@@ -63,7 +63,7 @@ export default function FloatingTimer() {
       {/* Minimised timers — coloured pills (the timer's colour), title + live
           time. Click to maximise (auto-minimises whichever was up). */}
       {minimised.length > 0 && (
-        <div className="flex flex-col items-start gap-1.5">
+        <div className="flex flex-row flex-wrap items-center gap-1.5 max-w-[min(560px,calc(100vw-2rem))]">
           {minimised.map(t => {
             const counting = !t.paused;
             const elapsed = timerElapsedMs(t, nowMs);
