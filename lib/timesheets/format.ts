@@ -8,19 +8,25 @@ export function timerElapsedMs(t: TimerState, now: number): number {
   return t.accumulatedMs + (t.running && !t.paused && t.segmentStartedAt ? now - t.segmentStartedAt : 0);
 }
 
-/** "2h 15m" · "45m" · "3h". Rounds to the nearest minute. */
-export function fmtDuration(minutes: number): string {
+/** Minutes → "H:MM" (e.g. 150 → "2:30", 45 → "0:45", 120 → "2:00").
+ *
+ * All logged time in Timesheets is shown as hours:minutes, never decimals —
+ * "2.5h" / "2.7h" confused users (is 2.5h = 2h30m or 2h50m?). One unambiguous
+ * clock-style format everywhere. Rounds to the nearest minute. */
+function hoursMins(minutes: number): string {
   const m = Math.max(0, Math.round(minutes));
-  const h = Math.floor(m / 60);
-  const rem = m % 60;
-  if (h === 0) return `${rem}m`;
-  if (rem === 0) return `${h}h`;
-  return `${h}h ${rem}m`;
+  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
 }
 
-/** Decimal hours to 1dp — "6.5h". Used for chart axes / compact stats. */
+/** Duration as "H:MM" — "2:15", "0:45", "3:00". */
+export function fmtDuration(minutes: number): string {
+  return hoursMins(minutes);
+}
+
+/** Hours as "H:MM" — replaces the old decimal ("6.5h") display. Same format as
+ *  fmtDuration; kept as a separate name for its call sites (stats / chart axes). */
 export function fmtHours(minutes: number): string {
-  return `${(minutes / 60).toFixed(1)}h`;
+  return hoursMins(minutes);
 }
 
 /** Live timer readout "01:24:37" from milliseconds. */

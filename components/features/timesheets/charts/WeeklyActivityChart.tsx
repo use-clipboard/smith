@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { DayBucket } from '@/lib/timesheets/compute';
 import { TYPE_COLORS, TYPE_LABELS } from '@/lib/timesheets/palette';
-import { fmtDuration } from '@/lib/timesheets/format';
+import { fmtDuration, fmtHours } from '@/lib/timesheets/format';
 
 interface Props {
   days: DayBucket[];
@@ -52,7 +52,7 @@ export default function WeeklyActivityChart({ days, targetHours, height = 240 }:
               className="absolute right-1 -translate-y-1/2"
               style={{ top: `${(1 - h / (axisMax / 60)) * 100}%` }}
             >
-              {h}h
+              {fmtHours(h * 60)}
             </div>
           ))}
         </div>
@@ -74,7 +74,7 @@ export default function WeeklyActivityChart({ days, targetHours, height = 240 }:
               style={{ top: `${(1 - (targetHours * 60) / axisMax) * 100}%` }}
             >
               <span className="absolute -top-4 right-0 text-[9px] font-semibold text-[var(--accent)]/70">
-                Target {targetHours}h
+                Target {fmtHours(targetHours * 60)}
               </span>
             </div>
           )}

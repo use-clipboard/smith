@@ -7,7 +7,7 @@ import type { StaffRow } from '@/lib/timesheets/compute';
 import { GlassCard, SectionHeader, ProgressBar } from '../shared/ui';
 import Avatar from '@/components/ui/Avatar';
 import { useOpenProfile } from '@/components/features/team/useOpenProfile';
-import { fmtDuration, fmtPct, fmtGBPCompact } from '@/lib/timesheets/format';
+import { fmtDuration, fmtHours, fmtPct, fmtGBPCompact } from '@/lib/timesheets/format';
 
 /** Rows above this are hidden behind a scroll / "View all" lightbox so the
  *  panel never grows unbounded on large teams. */
@@ -39,7 +39,7 @@ function CapacityRow({ r, onOpen }: { r: StaffRow; onOpen: (id: string, name: st
             {r.staff.name}
           </button>
           <span className="shrink-0 text-[11px] tabular-nums text-[var(--text-muted)]">
-            {fmtDuration(r.minutes)} <span className="opacity-50">/ {Math.round(r.capacityMinutes / 60)}h</span>
+            {fmtDuration(r.minutes)} <span className="opacity-50">/ {fmtHours(r.capacityMinutes)}</span>
           </span>
         </div>
         <ProgressBar value={util} color={capColor(util)} />

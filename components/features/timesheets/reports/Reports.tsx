@@ -282,7 +282,7 @@ export default function Reports() {
         }),
         summary: [
           { label: 'Avg utilisation', value: fmtPct(rows.length ? rows.reduce((a, r) => a + r.utilisation, 0) / rows.length : 0) },
-          { label: 'Daily target', value: `${dailyTargetHours}h` },
+          { label: 'Daily target', value: fmtHours(dailyTargetHours * 60) },
         ],
         csv: { headers: ['Staff', 'Utilisation %', 'Billable hours'], data: rows.map(r => [r.staff.name, Math.round(r.utilisation * 100), (r.billable / 60).toFixed(2)]) },
       };
