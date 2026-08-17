@@ -55,6 +55,7 @@ interface StepInput {
   tool_module_id?: string | null;
   email_reminder_enabled: boolean;
   email_reminder_config: { recipients: string[]; timing: string };
+  status_automation?: { on: string; set_task_status: string } | null;
   position_x: number;
   position_y: number;
   step_type?: 'regular' | 'start' | 'end';
@@ -339,6 +340,7 @@ function toTemplateData(t: DefaultTemplate | TaskTemplate): TemplateData {
       email_reminder_config: (s.email_reminder_config as { recipients: ('assignee' | 'client')[]; timing: string }) ?? { recipients: [], timing: 'on_assign' },
       email_reminder_subject:(s.email_reminder_subject as string | null) ?? null,
       email_reminder_message:(s.email_reminder_message as string | null) ?? null,
+      status_automation:     (s.status_automation as { on: string; set_task_status: string } | null) ?? null,
       client_instructions:   (s.client_instructions as string | null) ?? null,
       client_can_upload:     (s.client_can_upload as boolean) ?? false,
       time_estimate_minutes: (s.time_estimate_minutes as number | null) ?? null,
@@ -422,6 +424,7 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
       tool_module_id: s.tool_module_id ?? null,
       email_reminder_enabled: s.email_reminder_enabled ?? false,
       email_reminder_config: (s.email_reminder_config as { recipients: string[]; timing: string } | undefined) ?? { recipients: [], timing: 'on_assign' },
+      status_automation: ('status_automation' in s ? (s.status_automation as { on: string; set_task_status: string } | null) : null) ?? null,
       position_x: s.position_x,
       position_y: s.position_y,
       step_type: ('step_type' in s ? s.step_type : undefined) as 'regular' | 'start' | 'end' | undefined,
@@ -468,6 +471,7 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
     step_type: (s.step_type ?? 'regular') as 'regular' | 'start' | 'end',
     start_trigger_config: s.start_trigger_config ?? null,
     end_config: s.end_config ?? null,
+    status_automation: s.status_automation ?? null,
     created_at: '',
     updated_at: '',
     assignee: teamMembers.find(m => m.id === s.assignee_id) ?? null,

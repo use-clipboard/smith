@@ -61,6 +61,7 @@ function toViewSteps(steps: TemplateStepData[]): TaskStep[] {
     email_reminder_config: s.email_reminder_config,
     email_reminder_subject: null,
     email_reminder_message: null,
+    status_automation: s.status_automation ?? null,
     client_instructions: s.client_instructions ?? null,
     client_can_upload: s.client_can_upload ?? false,
     due_date: null,

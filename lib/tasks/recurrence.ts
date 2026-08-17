@@ -127,6 +127,7 @@ export async function spawnNextRecurrence(
         email_reminder_config: s.email_reminder_config,
         email_reminder_subject: s.email_reminder_subject ?? null,
         email_reminder_message: s.email_reminder_message ?? null,
+        status_automation: s.status_automation ?? null,
         client_instructions: s.client_instructions ?? null,
         client_can_upload: s.client_can_upload ?? false,
         position_x: s.position_x,

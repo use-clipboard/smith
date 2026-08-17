@@ -680,6 +680,21 @@ export interface EmailReminderConfig {
   custom_message?: string;
 }
 
+// ─── Step status automation ──────────────────────────────────────────────────
+// A per-step rule: when the step reaches `on`, set the whole task's status to
+// `set_task_status`. Lets a workflow drive its own status (e.g. "when the
+// 'Client provides documents' step completes → Records Here") instead of the
+// user changing it by hand. 'complete' is intentionally NOT a target — a task
+// auto-completes when every step is done (which is what rolls recurring tasks
+// forward), so rules only ever set intermediate statuses.
+export type StepAutomationTrigger = 'in_progress' | 'waiting_on_client' | 'complete' | 'skipped';
+export type StepAutomationTargetStatus = 'not_started' | 'in_progress' | 'waiting_on_client' | 'records_here' | 'review';
+
+export interface StepStatusAutomation {
+  on: StepAutomationTrigger;
+  set_task_status: StepAutomationTargetStatus;
+}
+
 export interface TaskUserRef {
   id: string;
   full_name: string | null;
@@ -709,6 +724,7 @@ export interface TaskTemplateStep {
   email_reminder_config: EmailReminderConfig;
   email_reminder_subject: string | null;
   email_reminder_message: string | null;
+  status_automation: StepStatusAutomation | null;
   client_instructions: string | null;
   client_can_upload: boolean;
   time_estimate_minutes: number | null;
@@ -789,6 +805,8 @@ export interface TaskStep {
   step_type: StepType;
   start_trigger_config: StartTriggerConfig | null;
   end_config: EndConfig | null;
+  /** Optional rule: when this step hits `on`, set the task's status. Null = none. */
+  status_automation: StepStatusAutomation | null;
   created_at: string;
   updated_at: string;
   assignee?: TaskUserRef | null;

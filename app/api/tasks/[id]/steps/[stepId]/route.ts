@@ -20,6 +20,7 @@ const UpdateStepSchema = z.object({
   tool_output_id: z.string().uuid().optional().nullable(),
   email_reminder_enabled: z.boolean().optional(),
   email_reminder_config: z.any().optional(),
+  status_automation: z.any().optional().nullable(),
   due_date: z.string().optional().nullable(),
   position_x: z.number().optional(),
   position_y: z.number().optional(),
@@ -106,8 +107,19 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string; 
     }
   }
 
-  // Auto-update task status based on step statuses
-  await syncTaskStatus(supabase, params.id, ctx.firmId, ctx.userId);
+  // Per-step status automation: if this update moved the step INTO the status
+  // its rule watches for, the rule sets the task status (see syncTaskStatus).
+  const oldStatus = (existingStep?.status as string | null) ?? null;
+  const newStatus = parsed.data.status ?? null;
+  const automation = (step?.status_automation as { on?: string; set_task_status?: string } | null) ?? null;
+  const ruleTarget =
+    newStatus && newStatus !== oldStatus && automation?.on === newStatus && automation?.set_task_status
+      ? automation.set_task_status
+      : null;
+
+  // Auto-update task status based on step statuses (rule takes precedence over
+  // the generic derivation, except an all-done task still auto-completes).
+  await syncTaskStatus(supabase, params.id, ctx.firmId, ctx.userId, ruleTarget);
 
   // Regenerate this step's email reminders — assignee, due date, config or
   // status may have changed. Non-blocking: a reminder hiccup must never fail
@@ -157,35 +169,53 @@ async function notifyTaskCreatorStatus(
   }).catch((err: unknown) => console.error('Task creator notification error', err));
 }
 
-// Derive task status from step statuses and update the task
+// Statuses that are only ever set by a person or a step automation — never
+// derivable from the step mix. The generic derivation must not wipe them on the
+// next unrelated step tick, so they "stick" until all steps finish (→ complete)
+// or a step actually goes Waiting on Client.
+const STICKY_STATUSES = new Set(['records_here', 'review']);
+
+// Derive task status from step statuses and update the task. `ruleTarget`, when
+// set, is a status a fired step automation wants applied — it wins over the
+// generic derivation but never over the all-steps-done → complete transition.
 async function syncTaskStatus(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   taskId: string,
   firmId: string,
   actorUserId: string | null,
+  ruleTarget: string | null = null,
 ) {
   const { data: steps } = await supabase.from('task_steps').select('status').eq('task_id', taskId);
   if (!steps || steps.length === 0) return;
 
   const statuses: string[] = steps.map((s: { status: string }) => s.status);
-  let taskStatus = 'not_started';
-
-  if (statuses.every(s => s === 'complete' || s === 'skipped')) {
-    taskStatus = 'complete';
-  } else if (statuses.some(s => s === 'waiting_on_client')) {
-    taskStatus = 'waiting_on_client';
-  } else if (statuses.some(s => s === 'in_progress' || s === 'complete')) {
-    taskStatus = 'in_progress';
-  }
+  const allDone = statuses.every(s => s === 'complete' || s === 'skipped');
 
   const now = new Date().toISOString();
 
-  if (taskStatus !== 'complete') {
+  if (!allDone) {
     // Read the current row first so we only notify the creator on a REAL status
     // change (syncTaskStatus re-runs on every step tick).
     const { data: cur } = await supabase
       .from('tasks').select('status, created_by, title').eq('id', taskId).eq('firm_id', firmId).maybeSingle();
+
+    let taskStatus: string;
+    if (ruleTarget) {
+      // A step automation fired this tick — its target wins.
+      taskStatus = ruleTarget;
+    } else {
+      const derived =
+        statuses.some(s => s === 'waiting_on_client') ? 'waiting_on_client'
+        : statuses.some(s => s === 'in_progress' || s === 'complete') ? 'in_progress'
+        : 'not_started';
+      // Don't let the generic derivation clobber a sticky status (set earlier by
+      // a rule or by hand) — unless a step has actually gone Waiting on Client.
+      taskStatus = (cur?.status && STICKY_STATUSES.has(cur.status) && derived !== 'waiting_on_client')
+        ? cur.status
+        : derived;
+    }
+
     await supabase.from('tasks').update({ status: taskStatus, updated_at: now }).eq('id', taskId).eq('firm_id', firmId);
     if (cur && cur.status !== taskStatus) {
       await notifyTaskCreatorStatus(supabase, {

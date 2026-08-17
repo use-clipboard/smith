@@ -27,6 +27,7 @@ const UpdateTemplateSchema = z.object({
     email_reminder_config: z.any().optional(),
     email_reminder_subject: z.string().optional().nullable(),
     email_reminder_message: z.string().optional().nullable(),
+    status_automation: z.any().optional().nullable(),
     client_instructions: z.string().optional().nullable(),
     client_can_upload: z.boolean().optional(),
     time_estimate_minutes: z.number().int().positive().optional().nullable(),
@@ -132,6 +133,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           email_reminder_config: s.email_reminder_config ?? { recipients: [], timing: 'on_assign' },
           email_reminder_subject: s.email_reminder_subject ?? null,
           email_reminder_message: s.email_reminder_message ?? null,
+          status_automation: s.status_automation ?? null,
           client_instructions: s.client_instructions ?? null,
           client_can_upload: s.client_can_upload ?? false,
           time_estimate_minutes: s.time_estimate_minutes ?? null,
@@ -169,7 +171,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     // Re-load freshly-saved template steps (with their generated IDs)
     const { data: freshSteps } = await supabase
       .from('task_template_steps')
-      .select('id, step_key, title, description, assignee_role, default_assignee_id, tool_module_id, email_reminder_enabled, email_reminder_config, email_reminder_subject, email_reminder_message, client_instructions, client_can_upload, time_estimate_minutes, position_x, position_y, step_type, start_trigger_config, end_config')
+      .select('id, step_key, title, description, assignee_role, default_assignee_id, tool_module_id, email_reminder_enabled, email_reminder_config, email_reminder_subject, email_reminder_message, status_automation, client_instructions, client_can_upload, time_estimate_minutes, position_x, position_y, step_type, start_trigger_config, end_config')
       .eq('template_id', params.id);
     const templateStepsById = new Map<string, NonNullable<typeof freshSteps>[number]>();
     const templateStepsByKey = new Map<string, NonNullable<typeof freshSteps>[number]>();
@@ -226,6 +228,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
             email_reminder_config: tpl.email_reminder_config,
             email_reminder_subject: tpl.email_reminder_subject,
             email_reminder_message: tpl.email_reminder_message,
+            status_automation: tpl.status_automation,
             client_instructions: tpl.client_instructions,
             client_can_upload: tpl.client_can_upload,
             template_step_id: tpl.id,
@@ -256,6 +259,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
             email_reminder_config: tpl.email_reminder_config,
             email_reminder_subject: tpl.email_reminder_subject,
             email_reminder_message: tpl.email_reminder_message,
+            status_automation: tpl.status_automation,
             client_instructions: tpl.client_instructions,
             client_can_upload: tpl.client_can_upload,
             position_x: tpl.position_x,

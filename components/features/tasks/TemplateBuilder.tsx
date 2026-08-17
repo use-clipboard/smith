@@ -12,7 +12,7 @@ import { runStaticAnalysis, type StaticIssue } from './TaskTemplateTestRun';
 import type { FlowAnalysis } from '@/app/api/tasks/templates/ai-check/route';
 import { MODULES } from '@/config/modules.config';
 import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
-import type { TaskTemplate, TaskTemplateStep, TaskTemplateEdge, RecurrenceType, EmailReminderTiming, EdgeConditionType, EdgeConditionConfig, StepType, StartTriggerConfig, EndConfig } from '@/types';
+import type { TaskTemplate, TaskTemplateStep, TaskTemplateEdge, RecurrenceType, EmailReminderTiming, EdgeConditionType, EdgeConditionConfig, StepType, StartTriggerConfig, EndConfig, StepStatusAutomation, StepAutomationTrigger, StepAutomationTargetStatus } from '@/types';
 import { triggerLabel } from './StartEndNodes';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
 
@@ -114,6 +114,7 @@ export interface TemplateStepData {
   email_reminder_config: { recipients: ('assignee' | 'client')[]; timing: EmailReminderTiming };
   email_reminder_subject?: string | null;
   email_reminder_message?: string | null;
+  status_automation?: StepStatusAutomation | null;
   client_instructions?: string | null;
   client_can_upload: boolean;
   time_estimate_minutes?: number | null;
@@ -141,6 +142,21 @@ const TIMING_OPTIONS: { value: EmailReminderTiming; label: string }[] = [
   { value: '3_days_before_due',  label: '3 days before due date' },
   { value: '1_day_before_due',   label: '1 day before due date' },
   { value: 'on_due_date',        label: 'On the due date' },
+];
+
+// Status-automation options: when the step reaches `on`, set the task status.
+const STATUS_TRIGGER_OPTIONS: { value: StepAutomationTrigger; label: string }[] = [
+  { value: 'complete',          label: 'completed' },
+  { value: 'in_progress',       label: 'started (In Progress)' },
+  { value: 'waiting_on_client', label: 'set to Waiting on Client' },
+  { value: 'skipped',           label: 'skipped' },
+];
+const STATUS_TARGET_OPTIONS: { value: StepAutomationTargetStatus; label: string; color: string }[] = [
+  { value: 'not_started',       label: 'Not Started',       color: '#94a3b8' },
+  { value: 'in_progress',       label: 'In Progress',       color: '#6366f1' },
+  { value: 'waiting_on_client', label: 'Waiting on Client', color: '#f59e0b' },
+  { value: 'records_here',      label: 'Records Here',      color: '#0891b2' },
+  { value: 'review',            label: 'Review',            color: '#8b5cf6' },
 ];
 
 const TOOL_MODULES = MODULES.filter(m => m.category === 'tool' && m.route);
@@ -645,6 +661,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
       email_reminder_config: s.email_reminder_config,
       email_reminder_subject: s.email_reminder_subject,
       email_reminder_message: s.email_reminder_message,
+      status_automation: (s.status_automation as StepStatusAutomation | null) ?? null,
       client_instructions: s.client_instructions ?? null,
       client_can_upload: s.client_can_upload ?? false,
       time_estimate_minutes: s.time_estimate_minutes,
@@ -739,6 +756,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
     email_reminder_config: s.email_reminder_config,
     email_reminder_subject: s.email_reminder_subject ?? null,
     email_reminder_message: s.email_reminder_message ?? null,
+    status_automation: s.status_automation ?? null,
     client_instructions: s.client_instructions ?? null,
     client_can_upload: s.client_can_upload ?? false,
     time_estimate_minutes: s.time_estimate_minutes ?? null,
@@ -1006,6 +1024,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
           tool_module_id:         s.tool_module_id ?? null,
           email_reminder_enabled: s.email_reminder_enabled,
           email_reminder_config:  s.email_reminder_config as { recipients: string[]; timing: string },
+          status_automation:      s.status_automation ?? null,
           position_x:             s.position_x,
           position_y:             s.position_y,
           step_type:              s.step_type,
@@ -1042,6 +1061,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
           tool_module_id:         s.tool_module_id ?? null,
           email_reminder_enabled: s.email_reminder_enabled,
           email_reminder_config:  s.email_reminder_config as { recipients: string[]; timing: string },
+          status_automation:      s.status_automation ?? null,
           position_x:             s.position_x,
           position_y:             s.position_y,
           step_type:              s.step_type,
@@ -1770,6 +1790,82 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
                         <ArrowRight className="h-3.5 w-3.5" />
                       </button>
                     </div>
+                  )}
+                </div>
+
+                {/* Status automation — when this step reaches a status, change
+                    the whole task's status (still overridable by hand). */}
+                <div className="border border-gray-200 rounded-lg p-3 bg-white">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!selectedStep.status_automation}
+                      onChange={e => updateSelectedStep({
+                        status_automation: e.target.checked
+                          ? { on: 'complete', set_task_status: 'records_here' }
+                          : null,
+                      })}
+                      className="rounded"
+                    />
+                    <span className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+                      <Zap className="h-3.5 w-3.5 text-indigo-500" /> Auto-change task status
+                    </span>
+                  </label>
+
+                  {selectedStep.status_automation ? (
+                    <div className="mt-2.5 space-y-2">
+                      {/* Indicator chip */}
+                      {(() => {
+                        const on = selectedStep.status_automation.on;
+                        const target = STATUS_TARGET_OPTIONS.find(o => o.value === selectedStep.status_automation!.set_task_status);
+                        const trig = STATUS_TRIGGER_OPTIONS.find(o => o.value === on);
+                        return (
+                          <div className="flex items-center gap-1.5 text-xs text-gray-600 flex-wrap">
+                            <span>When this step is <span className="font-medium">{trig?.label}</span> →</span>
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold border"
+                              style={{ color: target?.color, borderColor: `${target?.color}55`, background: `${target?.color}14` }}
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full" style={{ background: target?.color }} />
+                              {target?.label}
+                            </span>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Scenario picker */}
+                      <div>
+                        <label className="text-[11px] text-gray-500 block mb-1">When this step is</label>
+                        <select
+                          value={selectedStep.status_automation.on}
+                          onChange={e => updateSelectedStep({
+                            status_automation: { ...selectedStep.status_automation!, on: e.target.value as StepAutomationTrigger },
+                          })}
+                          className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        >
+                          {STATUS_TRIGGER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-gray-500 block mb-1">Set the task status to</label>
+                        <select
+                          value={selectedStep.status_automation.set_task_status}
+                          onChange={e => updateSelectedStep({
+                            status_automation: { ...selectedStep.status_automation!, set_task_status: e.target.value as StepAutomationTargetStatus },
+                          })}
+                          className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        >
+                          {STATUS_TARGET_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </div>
+                      <p className="text-[11px] text-gray-400 leading-relaxed">
+                        Runs automatically — you can still change the task status by hand at any time. When every step is done the task completes regardless.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-1.5 text-[11px] text-gray-400 italic">
+                      Task status stays automatic. Add a rule to move it (e.g. this step completes → Records Here).
+                    </p>
                   )}
                 </div>
 

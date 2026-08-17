@@ -161,6 +161,7 @@ export async function POST(req: NextRequest) {
         client_can_upload: boolean; time_estimate_minutes: number | null;
         position_x: number; position_y: number;
         step_type: string | null; start_trigger_config: unknown; end_config: unknown;
+        status_automation: unknown;
       }>;
 
       if (steps.length > 0) {
@@ -196,6 +197,7 @@ export async function POST(req: NextRequest) {
               email_reminder_config: s.email_reminder_config ?? { recipients: [], timing: 'on_assign' },
               email_reminder_subject: s.email_reminder_subject ?? null,
               email_reminder_message: s.email_reminder_message ?? null,
+              status_automation: s.status_automation ?? null,
               client_instructions: s.client_instructions ?? null,
               client_can_upload: s.client_can_upload ?? false,
               time_estimate_minutes: s.time_estimate_minutes ?? null,
