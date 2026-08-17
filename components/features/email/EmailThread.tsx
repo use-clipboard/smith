@@ -98,10 +98,13 @@ function formatDate(dateStr: string) {
   });
 }
 
-function EmojiPicker({ onSelect, onClose, openAbove = true }: {
+function EmojiPicker({ onSelect, onClose, openAbove = true, alignRight = false }: {
   onSelect: (emoji: string) => void;
   onClose: () => void;
   openAbove?: boolean;
+  /** Anchor the picker to the trigger's right edge (opens leftward) so it can't
+   *  overflow the reading pane and end up hidden behind the right context panel. */
+  alignRight?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -115,7 +118,7 @@ function EmojiPicker({ onSelect, onClose, openAbove = true }: {
   return (
     <div
       ref={ref}
-      className={`absolute ${openAbove ? 'bottom-full mb-1' : 'top-full mt-1'} left-0 z-40 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg p-2 flex flex-wrap gap-1`}
+      className={`absolute ${openAbove ? 'bottom-full mb-1' : 'top-full mt-1'} ${alignRight ? 'right-0' : 'left-0'} z-40 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg p-2 flex flex-wrap gap-1`}
       style={{ width: 188 }}
     >
       {QUICK_EMOJIS.map(e => (
@@ -524,6 +527,7 @@ function MessageCard({
                   onSelect={emoji => onReact(message.id, emoji)}
                   onClose={() => setEmojiPickerTopOpen(false)}
                   openAbove={false}
+                  alignRight
                 />
               )}
             </div>
@@ -586,6 +590,7 @@ function MessageCard({
                   onSelect={emoji => onReact(message.id, emoji)}
                   onClose={() => setEmojiPickerBottomOpen(false)}
                   openAbove={true}
+                  alignRight
                 />
               )}
             </div>
@@ -1008,6 +1013,7 @@ export default function EmailThread({
                   onSelect={emoji => { handleReact(lastMessage.id, emoji); setEmojiPickerHeaderOpen(false); }}
                   onClose={() => setEmojiPickerHeaderOpen(false)}
                   openAbove={false}
+                  alignRight
                 />
               )}
             </div>
