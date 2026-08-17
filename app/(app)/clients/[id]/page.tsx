@@ -59,6 +59,8 @@ interface Client {
   vat_submit_type: string | null;
   vat_scheme: string | null;
   vat_scheme_period_end_month: number | null;
+  vat_rate_type: string | null;
+  vat_flat_rate_percentage: number | null;
   year_end: string | null;
   mtd_it: boolean;
   account_manager_id: string | null;
@@ -174,6 +176,7 @@ function showFor(field: string, type: string | null): boolean {
     paye_accounts_office_reference: NON_INDIVIDUAL,
     vat_submit_type: NON_INDIVIDUAL,
     vat_scheme: NON_INDIVIDUAL,
+    vat_rate_type: NON_INDIVIDUAL,
     year_end: NON_INDIVIDUAL,
     mtd_it: ['individual'],
   };
@@ -1059,6 +1062,9 @@ export default function ClientDetailPage() {
   const [editVatScheme, setEditVatScheme] = useState('');
   // Period-end month: '' when not set, otherwise '1'..'12' as a string for the <select>
   const [editVatPeriodEnd, setEditVatPeriodEnd] = useState('');
+  // VAT rate basis (Standard / Flat Rate) + the Flat Rate % (string for the input, '' when unset).
+  const [editVatRateType, setEditVatRateType] = useState('');
+  const [editVatFlatRatePct, setEditVatFlatRatePct] = useState('');
   const [editYearEndDay, setEditYearEndDay] = useState('');
   const [editYearEndMonth, setEditYearEndMonth] = useState('');
   const [editMtdIt, setEditMtdIt] = useState(false);
@@ -1264,6 +1270,8 @@ export default function ClientDetailPage() {
     setEditVatSubmitType(client.vat_submit_type ?? '');
     setEditVatScheme(client.vat_scheme ?? '');
     setEditVatPeriodEnd(client.vat_scheme_period_end_month != null ? String(client.vat_scheme_period_end_month) : '');
+    setEditVatRateType(client.vat_rate_type ?? '');
+    setEditVatFlatRatePct(client.vat_flat_rate_percentage != null ? String(client.vat_flat_rate_percentage) : '');
     // year_end is free-text from imports / earlier edits — accept either
     // a space or a dash between day and month (we've seen both "31 MAR"
     // and "31-DEC" in real data). Splitting on a single literal here used
@@ -1320,6 +1328,10 @@ export default function ClientDetailPage() {
           vat_submit_type: editVatSubmitType,
           vat_scheme: editVatScheme,
           vat_scheme_period_end_month: editVatPeriodEnd ? Number(editVatPeriodEnd) : null,
+          vat_rate_type: editVatRateType,
+          vat_flat_rate_percentage: (editVatRateType === 'Flat Rate' && editVatFlatRatePct !== '')
+            ? Number(editVatFlatRatePct)
+            : null,
           year_end: (editYearEndDay && editYearEndMonth)
             ? `${editYearEndDay.padStart(2, '0')} ${editYearEndMonth}`
             : '',
@@ -2009,6 +2021,39 @@ export default function ClientDetailPage() {
                 )}
                 {showFor('paye_reference', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">PAYE Reference</label><input value={editPayeRef} onChange={e => setEditPayeRef(e.target.value)} className="input-base w-full font-mono" /></div>}
                 {showFor('paye_accounts_office_reference', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">PAYE Accounts Office Reference</label><input value={editPayeAOR} onChange={e => setEditPayeAOR(e.target.value)} className="input-base w-full font-mono" /></div>}
+                {showFor('vat_rate_type', editType || null) && (
+                  <div>
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">VAT Type</label>
+                    <select
+                      value={editVatRateType}
+                      onChange={e => {
+                        const next = e.target.value;
+                        setEditVatRateType(next);
+                        // The rate % only applies to Flat Rate — clear it otherwise.
+                        if (next !== 'Flat Rate') setEditVatFlatRatePct('');
+                      }}
+                      className="input-base w-full"
+                    >
+                      <option value="">— Not set —</option>
+                      <option value="Standard">Standard</option>
+                      <option value="Flat Rate">Flat Rate</option>
+                    </select>
+                  </div>
+                )}
+                {showFor('vat_rate_type', editType || null) && editVatRateType === 'Flat Rate' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">VAT Rate %</label>
+                    <div className="flex items-center rounded-lg border border-[var(--border-input)] bg-[var(--bg-input)] px-2.5 focus-within:border-[var(--accent)]">
+                      <input
+                        type="number" min="0" max="100" step="0.1" placeholder="e.g. 14.5"
+                        value={editVatFlatRatePct} onChange={e => setEditVatFlatRatePct(e.target.value)}
+                        className="w-full bg-transparent py-2 text-sm text-[var(--text-primary)] outline-none"
+                      />
+                      <span className="text-sm text-[var(--text-muted)]">%</span>
+                    </div>
+                    <p className="text-xs text-[var(--text-muted)] mt-1">Optional — the client’s effective flat rate percentage.</p>
+                  </div>
+                )}
                 {showFor('vat_submit_type', editType || null) && (
                   <div>
                     <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">VAT Submit Type</label>

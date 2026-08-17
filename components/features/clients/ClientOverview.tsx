@@ -48,6 +48,8 @@ export interface ClientForOverview {
   vat_scheme: string | null;
   vat_scheme_period_end_month: number | null;
   vat_submit_type: string | null;
+  vat_rate_type: string | null;
+  vat_flat_rate_percentage: number | null;
   paye_reference: string | null;
   paye_accounts_office_reference: string | null;
   year_end: string | null;
@@ -112,6 +114,11 @@ const KEY_INFO_FIELDS: KIField[] = [
   { key: 'ch_idv_code',               label: 'CH IDV Code',              types: ['individual'] },
   { key: 'companies_house_auth_code', label: 'Companies House Auth Code', types: ['limited_company', 'llp'] },
   { key: 'vat_number',                label: 'VAT Number',               types: ['sole_trader', 'limited_company', 'llp', 'partnership'] },
+  { key: 'vat_rate_type',             label: 'VAT Type',                 types: NON_INDIVIDUAL,
+    format: c => c.vat_rate_type
+      ? (c.vat_rate_type === 'Flat Rate' && c.vat_flat_rate_percentage != null
+          ? `Flat Rate (${c.vat_flat_rate_percentage}%)` : c.vat_rate_type)
+      : '—' },
   { key: 'vat_scheme',                label: 'VAT Scheme',               types: NON_INDIVIDUAL },
   { key: 'vat_submit_type',           label: 'VAT Submit Type',          types: NON_INDIVIDUAL },
   { key: 'vat_scheme_period_end_month', label: 'VAT Quarter Stagger',    types: NON_INDIVIDUAL,

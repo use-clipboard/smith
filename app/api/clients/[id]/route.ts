@@ -32,6 +32,10 @@ const UpdateClientSchema = z.object({
   paye_accounts_office_reference: z.string().optional(),
   vat_submit_type: z.enum(['Cash', 'Accrual']).optional().or(z.literal('')),
   vat_scheme: z.enum(['Monthly', 'Quarterly', 'Yearly']).optional().or(z.literal('')),
+  // VAT rate basis (Standard vs Flat Rate) + the Flat Rate % (only kept when
+  // the type is Flat Rate — the handler clears it otherwise).
+  vat_rate_type: z.enum(['Standard', 'Flat Rate']).optional().or(z.literal('')),
+  vat_flat_rate_percentage: z.number().min(0).max(100).optional().nullable(),
   // Period-end month for the VAT scheme (1–12). For Quarterly, only 1–3
   // are valid (HMRC stagger groups). For Monthly, must be null. The PATCH
   // handler normalises this when the scheme is changed.
@@ -156,6 +160,21 @@ export async function PATCH(
     } else if (d.vat_scheme_period_end_month !== undefined) {
       // Scheme unchanged, just updating the month: trust the input range.
       updates.vat_scheme_period_end_month = proposedMonth;
+    }
+  }
+  if (d.vat_rate_type !== undefined) updates.vat_rate_type = d.vat_rate_type || null;
+  // The Flat Rate % is only meaningful for a Flat Rate client — clear it when
+  // the type is Standard or unset (mirrors the vat_scheme/period-end handling).
+  if (d.vat_flat_rate_percentage !== undefined || d.vat_rate_type !== undefined) {
+    const effectiveRateType = d.vat_rate_type !== undefined ? (d.vat_rate_type || null) : undefined;
+    if (effectiveRateType === 'Flat Rate') {
+      updates.vat_flat_rate_percentage = d.vat_flat_rate_percentage ?? null;
+    } else if (effectiveRateType !== undefined) {
+      // Type set to Standard or cleared → drop any stored %.
+      updates.vat_flat_rate_percentage = null;
+    } else if (d.vat_flat_rate_percentage !== undefined) {
+      // Type unchanged, just updating the % → trust the input.
+      updates.vat_flat_rate_percentage = d.vat_flat_rate_percentage;
     }
   }
   if (d.year_end !== undefined) updates.year_end = d.year_end || null;
