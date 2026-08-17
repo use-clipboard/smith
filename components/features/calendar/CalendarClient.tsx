@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   ChevronLeft, ChevronRight, Plus, Calendar, RefreshCw,
   CalendarDays, List, WifiOff, Trash2, Loader2, Pencil, EyeOff, Eye, Lock, Check, Bell, ChevronDown,
@@ -273,8 +273,27 @@ export default function CalendarClient() {
     });
   }
 
-  // Show only visible members' events
-  const visibleEvents = events.filter(e => !e.ownerUserId || !hiddenMembers.has(e.ownerUserId));
+  // Show only visible members' events, de-duplicated by Google event id.
+  //
+  // A single Google event sits on EVERY attendee's calendar — any meeting with
+  // more than one SMITH guest — and the calendar API fetches each team member's
+  // calendar separately, so it returns one copy of that meeting per attendee.
+  // Rendered as-is, the same meeting appears two, three or more times on the
+  // same day and time. We collapse them to one row per Google event id,
+  // preferring the current user's own copy so it stays editable/removable.
+  const visibleEvents = useMemo(() => {
+    const filtered = events.filter(e => !e.ownerUserId || !hiddenMembers.has(e.ownerUserId));
+    const indexById = new Map<string, number>();
+    const out: CalendarEvent[] = [];
+    for (const e of filtered) {
+      if (!e.id) { out.push(e); continue; } // no id to dedupe on — keep it
+      const idx = indexById.get(e.id);
+      if (idx === undefined) { indexById.set(e.id, out.length); out.push(e); continue; }
+      // Same underlying event already kept — swap in MY copy if this is it.
+      if (e.ownerUserId === userId && out[idx].ownerUserId !== userId) out[idx] = e;
+    }
+    return out;
+  }, [events, hiddenMembers, userId]);
   // Personal reminders only belong to the current user — hide them whenever
   // "My Calendar" isn't in the visible set (e.g. when the user has filtered
   // down to a colleague's calendar, their own reminder shouldn't follow).
