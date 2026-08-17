@@ -28,6 +28,16 @@ interface CalendarEvent {
   ownerColor?: string;
   /** Only present for the event owner. true = hidden from all other team members. */
   isHidden?: boolean;
+  /** Synthetic, read-only UK bank-holiday overlay event (not from Google). */
+  isBankHoliday?: boolean;
+}
+
+/** ISO date string (YYYY-MM-DD) one day after the given one — all-day event ends
+ *  are exclusive, so a single-day holiday spans [date, nextDay). */
+function nextDayIso(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
 }
 
 interface MemberInfo {
@@ -132,6 +142,7 @@ export default function CalendarClient() {
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   // Personal reminders
   const [reminders, setReminders] = useState<PersonalReminder[]>([]);
+  const [bankHolidays, setBankHolidays] = useState<{ date: string; title: string }[]>([]);
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [editingReminder, setEditingReminder] = useState<PersonalReminder | null>(null);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
@@ -159,9 +170,10 @@ export default function CalendarClient() {
         end.setDate(end.getDate() + 30);
       }
 
-      const [eventsRes, remindersRes] = await Promise.all([
+      const [eventsRes, remindersRes, bankHolidaysRes] = await Promise.all([
         fetch(`/api/calendar/events?start=${start.toISOString()}&end=${end.toISOString()}`),
         fetch(`/api/calendar/personal-reminders?start=${start.toISOString()}&end=${end.toISOString()}`),
+        fetch(`/api/calendar/bank-holidays?start=${start.toISOString()}&end=${end.toISOString()}`),
       ]);
 
       if (eventsRes.ok) {
@@ -181,6 +193,11 @@ export default function CalendarClient() {
       if (remindersRes.ok) {
         const data = await remindersRes.json();
         setReminders(data.reminders ?? []);
+      }
+
+      if (bankHolidaysRes.ok) {
+        const data = await bankHolidaysRes.json();
+        setBankHolidays(data.holidays ?? []);
       }
     } catch {
       // Network-level failure (e.g. offline, or the dev server mid-recompile) —
@@ -292,8 +309,20 @@ export default function CalendarClient() {
       // Same underlying event already kept — swap in MY copy if this is it.
       if (e.ownerUserId === userId && out[idx].ownerUserId !== userId) out[idx] = e;
     }
+    // Overlay UK bank holidays as read-only all-day events. No ownerUserId, so
+    // they're always visible regardless of which team calendars are selected.
+    for (const h of bankHolidays) {
+      out.push({
+        id: `bh-${h.date}`,
+        title: h.title,
+        start: h.date,
+        end: nextDayIso(h.date),
+        ownerColor: '#0d9488', // teal — distinct from member colours
+        isBankHoliday: true,
+      });
+    }
     return out;
-  }, [events, hiddenMembers, userId]);
+  }, [events, hiddenMembers, userId, bankHolidays]);
   // Personal reminders only belong to the current user — hide them whenever
   // "My Calendar" isn't in the visible set (e.g. when the user has filtered
   // down to a colleague's calendar, their own reminder shouldn't follow).

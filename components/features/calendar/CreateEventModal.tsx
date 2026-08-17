@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { X, CalendarDays, Loader2, Eye, EyeOff, UserPlus, Check, Copy, ExternalLink } from 'lucide-react';
 import { dispatchCalendarChanged } from '@/lib/calendarBus';
+import RecurrencePicker from './RecurrencePicker';
 
 interface TeamMember {
   id: string;
@@ -92,14 +93,6 @@ const TIMEZONES = [
   { value: 'Australia/Melbourne',  label: 'Melbourne (AEST/AEDT)' },
   { value: 'Pacific/Auckland',     label: 'Auckland (NZST/NZDT)' },
   { value: 'UTC',                  label: 'UTC' },
-];
-
-const REPEAT_OPTIONS = [
-  { value: 'none',         label: 'Does not repeat' },
-  { value: 'FREQ=DAILY',   label: 'Every day' },
-  { value: 'FREQ=WEEKLY',  label: 'Every week' },
-  { value: 'FREQ=MONTHLY', label: 'Every month' },
-  { value: 'FREQ=YEARLY',  label: 'Every year' },
 ];
 
 function isValidEmail(s: string) {
@@ -457,14 +450,11 @@ export default function CreateEventModal({
                     />
                     <span className="text-xs text-[var(--text-secondary)]">All day</span>
                   </label>
-                  <select
+                  <RecurrencePicker
+                    startDate={new Date(`${startDate}T12:00:00`)}
                     value={repeat}
-                    onChange={e => setRepeat(e.target.value)}
-                    className="input-base py-1 text-xs"
-                    style={{ width: 'auto', minWidth: 0 }}
-                  >
-                    {REPEAT_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                  </select>
+                    onChange={setRepeat}
+                  />
                 </div>
               </div>
 
