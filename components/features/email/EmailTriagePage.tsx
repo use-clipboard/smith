@@ -15,6 +15,7 @@ import { EMAIL_SENT_EVENT, EMAIL_DRAFT_DISCARDED_EVENT, EMAIL_DRAFT_CREATED_EVEN
 import AllocateModal from './AllocateModal';
 import EmailRulesModal from './EmailRulesModal';
 import QuickTaskModal from '@/components/features/tasks/QuickTaskModal';
+import CreateEventModal from '@/components/features/calendar/CreateEventModal';
 import type { CreateTaskData } from '@/components/features/tasks/CreateTaskModal';
 import { useModules } from '@/components/ui/ModulesProvider';
 import { EMAIL_OPEN_THREAD_EVENT, EMAIL_OPEN_THREAD_KEY, type OpenEmailThreadPayload } from '@/components/ui/EmailToastNotifier';
@@ -101,6 +102,7 @@ function messagesToText(messages: EmailMessage[]): string {
 export default function EmailTriagePage() {
   const { isModuleActive } = useModules();
   const tasksModuleActive = isModuleActive('tasks');
+  const calendarModuleActive = isModuleActive('google-calendar');
   const [userName, setUserName] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [connected, setConnected] = useState<boolean | null>(null);
@@ -543,6 +545,19 @@ export default function EmailTriagePage() {
   const [taskSuggestedClientName, setTaskSuggestedClientName] = useState('');
   const [teamMembers, setTeamMembers] = useState<{ id: string; full_name: string | null; email: string }[]>([]);
   const [teamMembersLoaded, setTeamMembersLoaded] = useState(false);
+
+  // Meeting creation from email (opens the calendar CreateEventModal, prefilled)
+  const [creatingMeeting, setCreatingMeeting] = useState(false);
+  const [meetingModalOpen, setMeetingModalOpen] = useState(false);
+  const [meetingPrefill, setMeetingPrefill] = useState<{
+    title: string;
+    initialStart?: Date;
+    initialEnd?: Date;
+    initialAllDay: boolean;
+    location: string;
+    description: string;
+    guests: { name: string; email: string }[];
+  } | null>(null);
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Threads we've just trashed but Gmail's INBOX query may still return for a short
@@ -1705,6 +1720,71 @@ export default function EmailTriagePage() {
     }
   }
 
+  async function handleCreateMeetingFromEmail() {
+    if (!activeThread) return;
+    if (isDraftThread(activeThread)) { showToast('error', "Drafts can't be made into meetings"); return; }
+    setCreatingMeeting(true);
+
+    const messages = activeThread.messages ?? [];
+    const latest = messages[messages.length - 1] ?? messages[0];
+    const fromEmail = latest?.from?.email ?? '';
+    const fromName  = latest?.from?.name  ?? '';
+    const body      = latest?.body ?? '';
+    const receivedDate = latest?.date ?? '';
+
+    interface MSResult {
+      title: string; date: string | null; startTime: string | null; endTime: string | null;
+      allDay: boolean; location: string; description: string; guestEmail: string; guestName: string;
+    }
+
+    try {
+      const res = await fetch('/api/calendar/meeting-suggestion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject: activeThread.subject ?? '', body, fromEmail, fromName, receivedDate }),
+      });
+      const data = res.ok ? await res.json() as MSResult : null;
+
+      // Turn the AI's date/time into concrete Date objects (local time).
+      let initialStart: Date | undefined;
+      let initialEnd: Date | undefined;
+      if (data?.date && !data.allDay && data.startTime) {
+        const s = new Date(`${data.date}T${data.startTime}:00`);
+        if (!isNaN(s.getTime())) {
+          initialStart = s;
+          if (data.endTime) {
+            const e = new Date(`${data.date}T${data.endTime}:00`);
+            if (!isNaN(e.getTime()) && e > s) initialEnd = e;
+          }
+          if (!initialEnd) initialEnd = new Date(s.getTime() + 30 * 60 * 1000);
+        }
+      } else if (data?.date && data.allDay) {
+        const s = new Date(`${data.date}T09:00:00`);
+        if (!isNaN(s.getTime())) { initialStart = s; initialEnd = new Date(s.getTime() + 60 * 60 * 1000); }
+      }
+
+      const guestEmail = data?.guestEmail || fromEmail;
+      const guestName  = data?.guestName || fromName || fromEmail;
+      setMeetingPrefill({
+        title: data?.title || activeThread.subject || 'Meeting',
+        initialStart, initialEnd,
+        initialAllDay: data?.allDay ?? false,
+        location: data?.location ?? '',
+        description: data?.description ?? '',
+        guests: guestEmail ? [{ name: guestName, email: guestEmail }] : [],
+      });
+    } catch {
+      setMeetingPrefill({
+        title: activeThread.subject || 'Meeting',
+        initialAllDay: false, location: '', description: '',
+        guests: fromEmail ? [{ name: fromName || fromEmail, email: fromEmail }] : [],
+      });
+    } finally {
+      setCreatingMeeting(false);
+      setMeetingModalOpen(true);
+    }
+  }
+
   async function handleCreateTaskFromSent({ subject, plainBody, toEmail, toName }: { subject: string; plainBody: string; toEmail: string; toName: string }) {
     // Lazy-load team members
     if (!teamMembersLoaded) {
@@ -2732,10 +2812,13 @@ export default function EmailTriagePage() {
             forwarded={threadDetail.forwarded}
             googleEmail={threadDetail.googleEmail || googleEmail}
             tasksModuleActive={tasksModuleActive}
+            calendarModuleActive={calendarModuleActive}
             labels={labels}
             onAllocate={openAllocate}
             onCreateTask={() => void handleCreateTaskFromEmail()}
             creatingTask={creatingTask}
+            onCreateMeeting={() => void handleCreateMeetingFromEmail()}
+            creatingMeeting={creatingMeeting}
             onReply={handleReply}
             onReplyAll={handleReplyAll}
             onForward={handleForward}
@@ -2865,6 +2948,23 @@ export default function EmailTriagePage() {
           defaultDueDate={taskSuggestedDueDate}
           defaultClientId={taskSuggestedClientId}
           defaultClientName={taskSuggestedClientName}
+        />
+      )}
+
+      {meetingModalOpen && meetingPrefill && (
+        <CreateEventModal
+          defaultDate={meetingPrefill.initialStart ?? new Date()}
+          onClose={() => setMeetingModalOpen(false)}
+          onCreated={() => showToast('success', 'Meeting added to your calendar')}
+          headerLabel="New Meeting"
+          prefillNote="Prefilled from this email — review the details before creating. Add the sender as a guest only if you want to send them a calendar invite."
+          initialTitle={meetingPrefill.title}
+          initialStart={meetingPrefill.initialStart}
+          initialEnd={meetingPrefill.initialEnd}
+          initialAllDay={meetingPrefill.initialAllDay}
+          initialLocation={meetingPrefill.location}
+          initialDescription={meetingPrefill.description}
+          suggestedGuests={meetingPrefill.guests}
         />
       )}
 

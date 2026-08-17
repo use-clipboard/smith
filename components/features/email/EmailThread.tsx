@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronUp, Reply, Forward, Paperclip,
   UserPlus, CheckSquare, X, Trash2, Loader2,
   Star, Archive, ArchiveRestore, Tag, Mail, Sparkles, Pin, ChevronDown as ChevronDownSmall, Smile,
-  Printer, FolderDown,
+  Printer, FolderDown, CalendarPlus,
 } from 'lucide-react';
 import type { EmailThread as EmailThreadType, EmailMessage, GmailLabel } from '@/lib/gmail';
 import Tooltip from '@/components/ui/Tooltip';
@@ -50,10 +50,13 @@ interface Props {
   taskLinks: TaskLink[];
   googleEmail: string;
   tasksModuleActive: boolean;
+  calendarModuleActive?: boolean;
   labels: GmailLabel[];
   onAllocate: () => void;
   onCreateTask: () => void;
   creatingTask?: boolean;
+  onCreateMeeting?: () => void;
+  creatingMeeting?: boolean;
   onReply: (message: EmailMessage) => void;
   onReplyAll: (message: EmailMessage) => void;
   onForward: (message: EmailMessage) => void;
@@ -594,8 +597,8 @@ function MessageCard({
 }
 
 export default function EmailThread({
-  thread, targetMessageId, allocations, taskLinks, googleEmail, tasksModuleActive, labels,
-  onAllocate, onCreateTask, creatingTask, onReply, onReplyAll, onForward, onAIDraftReply, onDelete, onArchive, onStar, onMove,
+  thread, targetMessageId, allocations, taskLinks, googleEmail, tasksModuleActive, calendarModuleActive, labels,
+  onAllocate, onCreateTask, creatingTask, onCreateMeeting, creatingMeeting, onReply, onReplyAll, onForward, onAIDraftReply, onDelete, onArchive, onStar, onMove,
   onRestore, onMarkUnread, onRemoveAllocation, onRemoveTaskLink,
   isPinned, onPin, existingReactions, onReacted, replied, forwarded,
 }: Props) {
@@ -812,6 +815,21 @@ export default function EmailThread({
                 : <><CheckSquare size={12} /> Create Task</>
               }
             </button>
+          )}
+          {calendarModuleActive && onCreateMeeting && (
+            <Tooltip label="Create a calendar meeting from this email">
+              <button
+                onClick={onCreateMeeting}
+                disabled={creatingMeeting}
+                aria-label="Create meeting from email"
+                className="btn-secondary text-xs flex items-center gap-1.5 disabled:opacity-60"
+              >
+                {creatingMeeting
+                  ? <><Loader2 size={12} className="animate-spin" /> Reading…</>
+                  : <><CalendarPlus size={12} /> Create Meeting</>
+                }
+              </button>
+            </Tooltip>
           )}
 
           <div className="w-px h-5 bg-[var(--border)] mx-1 shrink-0" />

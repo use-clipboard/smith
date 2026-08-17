@@ -175,7 +175,7 @@ export default function RecurrencePicker({
 
       {showCustom && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4" onClick={() => setShowCustom(false)}>
-          <div className="w-full max-w-sm rounded-2xl bg-[var(--bg-card,#fff)] p-5 shadow-xl" onClick={e => e.stopPropagation()}>
+          <div className="w-full max-w-sm rounded-2xl bg-[var(--bg-card-solid)] border border-[var(--border)] p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-semibold text-[var(--text-primary)] mb-4">Custom recurrence</h3>
 
             {/* Repeat every N unit */}

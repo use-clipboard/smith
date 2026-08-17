@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { X, CalendarDays, Loader2, Eye, EyeOff, UserPlus, Check, Copy, ExternalLink } from 'lucide-react';
+import { X, CalendarDays, Loader2, Eye, EyeOff, UserPlus, Check, Copy, ExternalLink, Sparkles } from 'lucide-react';
 import { dispatchCalendarChanged } from '@/lib/calendarBus';
 import RecurrencePicker from './RecurrencePicker';
 
@@ -22,6 +22,20 @@ interface Props {
   currentUserId?: string;
   /** Guests to pre-add (e.g. when scheduling with a specific teammate). */
   defaultAttendeeEmails?: string[];
+  // ── Prefill (e.g. "Create meeting" from an email) ───────────────────────────
+  initialTitle?: string;
+  initialStart?: Date;
+  initialEnd?: Date;
+  initialAllDay?: boolean;
+  initialLocation?: string;
+  initialDescription?: string;
+  /** Optional heading label (defaults to "New Event"). */
+  headerLabel?: string;
+  /** Shown as a small banner above the form — e.g. "Prefilled from an email…". */
+  prefillNote?: string;
+  /** Suggested guests offered as opt-in chips (NOT auto-added — adding one sends
+   *  a calendar invite, so the user decides per meeting). */
+  suggestedGuests?: { name: string; email: string }[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -105,23 +119,25 @@ type Tab = 'details' | 'visibility';
 
 export default function CreateEventModal({
   defaultDate, onClose, onCreated, isAdmin, members = [], currentUserId, defaultAttendeeEmails = [],
+  initialTitle, initialStart, initialEnd, initialAllDay, initialLocation, initialDescription,
+  headerLabel, prefillNote, suggestedGuests = [],
 }: Props) {
-  const startDefault = roundUpTo15(defaultDate);
-  const endDefault   = new Date(startDefault.getTime() + 60 * 60 * 1000);
+  const startDefault = initialStart ?? roundUpTo15(defaultDate);
+  const endDefault   = initialEnd ?? new Date(startDefault.getTime() + 60 * 60 * 1000);
   const browserTz    = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'Europe/London';
   const defaultTz    = TIMEZONES.find(tz => tz.value === browserTz)?.value ?? 'Europe/London';
 
   const [tab,           setTab]           = useState<Tab>('details');
-  const [title,         setTitle]         = useState('');
-  const [isAllDay,      setIsAllDay]      = useState(false);
+  const [title,         setTitle]         = useState(initialTitle ?? '');
+  const [isAllDay,      setIsAllDay]      = useState(initialAllDay ?? false);
   const [startDate,     setStartDate]     = useState(toDateValue(startDefault));
   const [startTime,     setStartTime]     = useState(toTimeValue(startDefault));
   const [endDate,       setEndDate]       = useState(toDateValue(endDefault));
   const [endTime,       setEndTime]       = useState(toTimeValue(endDefault));
   const [timezone,      setTimezone]      = useState(defaultTz);
   const [repeat,        setRepeat]        = useState('none');
-  const [location,      setLocation]      = useState('');
-  const [description,   setDescription]   = useState('');
+  const [location,      setLocation]      = useState(initialLocation ?? '');
+  const [description,   setDescription]   = useState(initialDescription ?? '');
   const [addGoogleMeet, setAddGoogleMeet] = useState(false);
   const [attendees,     setAttendees]     = useState<string[]>(defaultAttendeeEmails);
   const [attendeeInput, setAttendeeInput] = useState('');
@@ -341,12 +357,20 @@ export default function CreateEventModal({
             <div className="w-8 h-8 rounded-lg bg-[var(--accent-light)] flex items-center justify-center">
               <CalendarDays size={15} className="text-[var(--accent)]" />
             </div>
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">New Event</h2>
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">{headerLabel ?? 'New Event'}</h2>
           </div>
           <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
             <X size={16} />
           </button>
         </div>
+
+        {/* Prefill note — e.g. when created from an email */}
+        {prefillNote && (
+          <div className="flex items-start gap-2 rounded-xl border border-[var(--accent)]/30 bg-[var(--accent-light)] px-3 py-2 text-[11px] text-[var(--accent)]">
+            <Sparkles size={13} className="shrink-0 mt-px" />
+            <span>{prefillNote}</span>
+          </div>
+        )}
 
         {/* Tab switcher — admin only */}
         {isAdmin && (
@@ -549,6 +573,40 @@ export default function CreateEventModal({
                     className="flex-1 min-w-[140px] text-xs outline-none bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
                   />
                 </div>
+
+                {/* Suggested guest(s) from the source email — OPT-IN. We don't
+                    pre-add them because adding a guest sends a calendar invite;
+                    the user taps to include the sender per meeting. */}
+                {suggestedGuests.filter(g => g.email && isValidEmail(g.email)).length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-[11px] text-[var(--text-muted)] mb-1.5">
+                      From this email <span className="opacity-70">· adding sends a calendar invite</span>
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {suggestedGuests
+                        .filter(g => g.email && isValidEmail(g.email))
+                        .map(g => {
+                          const added = attendees.includes(g.email.toLowerCase());
+                          return (
+                            <button
+                              key={g.email}
+                              type="button"
+                              onClick={() => toggleTeamMember(g.email)}
+                              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] border transition-all
+                                ${added
+                                  ? 'border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]'
+                                  : 'border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)]'
+                                }`}
+                            >
+                              <UserPlus size={10} />
+                              {g.name}
+                              {added && <Check size={9} />}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Team quick-add */}
                 {teamMembers.length > 0 && (
