@@ -129,6 +129,34 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   return NextResponse.json({ success: true });
 }
 
+// Tell the task's creator/assigner that it was actioned/completed — so whoever
+// allocated it hears back (closes the "assigned but no feedback" gap). No-op
+// when the creator is the actor or unknown.
+async function notifyTaskCreatorStatus(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  opts: { taskId: string; firmId: string; actorUserId: string | null; creatorId: string | null; title: string; status: string },
+) {
+  const { taskId, firmId, actorUserId, creatorId, title, status } = opts;
+  if (!creatorId || creatorId === actorUserId) return;
+  const isDone = status === 'complete';
+  let actorName = 'A team member';
+  if (actorUserId) {
+    const { data: actor } = await supabase.from('users').select('full_name, email').eq('id', actorUserId).maybeSingle();
+    actorName = actor?.full_name || actor?.email || 'A team member';
+  }
+  await createNotification({
+    userId: creatorId,
+    firmId,
+    type: 'task_status_changed',
+    title: `Task ${isDone ? 'completed' : 'updated'}: ${title}`,
+    body: isDone
+      ? `${actorName} marked it complete — a task you assigned`
+      : `${actorName} set it to ${formatStatusLabel(status)} — a task you assigned`,
+    data: { task_id: taskId, task_link: '/tasks' },
+  }).catch((err: unknown) => console.error('Task creator notification error', err));
+}
+
 // Derive task status from step statuses and update the task
 async function syncTaskStatus(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -154,7 +182,16 @@ async function syncTaskStatus(
   const now = new Date().toISOString();
 
   if (taskStatus !== 'complete') {
+    // Read the current row first so we only notify the creator on a REAL status
+    // change (syncTaskStatus re-runs on every step tick).
+    const { data: cur } = await supabase
+      .from('tasks').select('status, created_by, title').eq('id', taskId).eq('firm_id', firmId).maybeSingle();
     await supabase.from('tasks').update({ status: taskStatus, updated_at: now }).eq('id', taskId).eq('firm_id', firmId);
+    if (cur && cur.status !== taskStatus) {
+      await notifyTaskCreatorStatus(supabase, {
+        taskId, firmId, actorUserId, creatorId: cur.created_by ?? null, title: cur.title ?? 'Task', status: taskStatus,
+      });
+    }
     return;
   }
 
@@ -169,7 +206,7 @@ async function syncTaskStatus(
     .eq('id', taskId)
     .eq('firm_id', firmId)
     .neq('status', 'complete')
-    .select('id, recurrence_type')
+    .select('id, recurrence_type, created_by, title')
     .maybeSingle();
 
   // No row back → the task was already complete (a concurrent tick won the
@@ -179,6 +216,12 @@ async function syncTaskStatus(
   // Task just completed by ticking its last step → clear its "assigned to you"
   // notifications for everyone (they've dealt with it).
   await deleteTaskNotifications(taskId);
+
+  // …and tell whoever assigned it that it's done. (Runs only on the real
+  // transition, so it fires exactly once.)
+  await notifyTaskCreatorStatus(supabase, {
+    taskId, firmId, actorUserId, creatorId: (flipped.created_by as string | null) ?? null, title: (flipped.title as string) ?? 'Task', status: 'complete',
+  });
 
   // Recurring task just completed via the step path → roll forward. Previously
   // recurrence only fired from the task PUT route, so tasks finished by ticking

@@ -66,7 +66,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   // Verify ownership and snapshot the fields we audit
   const { data: existing } = await supabase
     .from('tasks')
-    .select('id, status, recurrence_type, recurrence_interval_days, template_id, client_id, title, description, due_date, is_internal')
+    .select('id, status, recurrence_type, recurrence_interval_days, template_id, client_id, title, description, due_date, is_internal, created_by')
     .eq('id', params.id)
     .eq('firm_id', ctx.firmId)
     .single();
@@ -102,8 +102,14 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     parsed.data as Record<string, unknown>,
   ).catch(err => console.error('logTaskUpdate failed', err));
 
-  // Notify step assignees when task status changes
+  // Notify on status change: the step assignees (who are doing the work) AND the
+  // task's creator/assigner — so whoever allocated the task hears when it's
+  // actioned or completed, closing the "I assigned it but got no feedback" gap.
+  // The actor never notifies themselves.
   if (parsed.data.status && parsed.data.status !== existing.status) {
+    const statusLabel = formatStatusLabel(parsed.data.status);
+    const isDone = parsed.data.status === 'complete';
+
     const { data: steps } = await supabase
       .from('task_steps')
       .select('assignee_id')
@@ -119,7 +125,6 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     ] as string[];
 
     if (uniqueAssignees.length > 0) {
-      const statusLabel = formatStatusLabel(parsed.data.status);
       await Promise.allSettled(
         uniqueAssignees.map(userId =>
           createNotification({
@@ -132,6 +137,24 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           })
         )
       );
+    }
+
+    // The creator/assigner — unless they made the change themselves or already
+    // got a step-assignee ping (dedupe). Clicks through to the task.
+    const creatorId = (existing.created_by as string | null) ?? null;
+    if (creatorId && creatorId !== ctx.userId && !uniqueAssignees.includes(creatorId)) {
+      const { data: actor } = await supabase.from('users').select('full_name, email').eq('id', ctx.userId).single();
+      const actorName = actor?.full_name || actor?.email || 'A team member';
+      await createNotification({
+        userId: creatorId,
+        firmId: ctx.firmId,
+        type: 'task_status_changed',
+        title: `Task ${isDone ? 'completed' : 'updated'}: ${existing.title}`,
+        body: isDone
+          ? `${actorName} marked it complete — a task you assigned`
+          : `${actorName} set it to ${statusLabel} — a task you assigned`,
+        data: { task_id: params.id, task_link: '/tasks' },
+      });
     }
   }
 
