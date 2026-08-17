@@ -41,6 +41,17 @@ export function notificationTarget(n: NotificationItem): NotificationTarget {
   return { route: null };
 }
 
+/** Open a specific task in the Tasks tool from anywhere (email panel, timeline,
+ *  …). Opens the Tasks tab, then hands the task id off so it opens once mounted
+ *  (both a live event and a sessionStorage drain, covering already-mounted and
+ *  first-mount cases). No-op on the server or with no id. */
+export function openTaskInTool(taskId: string): void {
+  if (typeof window === 'undefined' || !taskId) return;
+  window.dispatchEvent(new CustomEvent(NAVIGATE_TAB_EVENT, { detail: '/tasks' }));
+  try { sessionStorage.setItem(OPEN_TASK_KEY, taskId); } catch { /* ignore */ }
+  window.dispatchEvent(new CustomEvent(OPEN_TASK_EVENT, { detail: taskId }));
+}
+
 /** Navigate to a notification's destination (opening the right tab, and the
  *  specific task when applicable). No-ops gracefully when there's no route. */
 export function goToNotification(n: NotificationItem): void {

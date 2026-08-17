@@ -19,6 +19,7 @@ import {
   Sparkles, RefreshCw, ArrowRight, Loader2, Users,
 } from 'lucide-react';
 import { useTabContext, type Tab } from '@/components/ui/TabContext';
+import { openTaskInTool } from '@/lib/notificationTarget';
 import { iconFor, buildMetaMap, metaFor, type CategoryDef, type EmailCategory } from './emailCategories';
 
 export type SummaryActionType = 'reply' | 'reply_all' | 'forward' | 'task' | 'allocate';
@@ -333,7 +334,14 @@ export default function EmailContextPanel({
             {taskLinks.map(tl => (
               <li key={tl.task_id} className="flex items-center gap-2">
                 <CheckSquare size={12} className="text-blue-600 shrink-0" />
-                <span className="text-xs text-[var(--text-primary)] truncate flex-1">{tl.tasks?.title ?? 'Task'}</span>
+                <button
+                  type="button"
+                  onClick={() => openTaskInTool(tl.task_id)}
+                  aria-label={`Open task: ${tl.tasks?.title ?? 'Task'}`}
+                  className="text-xs text-[var(--text-primary)] truncate flex-1 text-left hover:text-[var(--accent)] hover:underline transition-colors"
+                >
+                  {tl.tasks?.title ?? 'Task'}
+                </button>
                 <button onClick={() => onRemoveTaskLink(tl.task_id)} aria-label="Unlink task" className="shrink-0 text-[var(--text-muted)] hover:text-red-500 transition-colors"><X size={11} /></button>
               </li>
             ))}
