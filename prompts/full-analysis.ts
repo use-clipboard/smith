@@ -33,10 +33,27 @@ export function buildStaticInstructions(
   targetSoftware: TargetSoftware,
   isVatRegistered: boolean,
   analysisMode: 'standard' | 'thorough' = 'standard',
+  isFlatRate = false,
+  flatRatePercent: number | null = null,
 ): string {
   const vatInstruction = isVatRegistered
     ? `**VAT Status: REGISTERED.**\n- You MUST only extract a VAT amount if a VAT value (e.g., "VAT", "Value Added Tax") and a corresponding amount is explicitly listed on the document.\n- If the document does not explicitly state a VAT amount, the VAT value MUST be 0.\n- If a VAT registration number is present, it is a strong indicator that VAT might be applicable, but you still must find an explicit VAT amount on the document to extract it.`
     : `**VAT Status: NOT REGISTERED.**\n- The client is NOT VAT registered. For ALL transactions, the VAT amount MUST be 0.`;
+
+  // Flat Rate Scheme override. When the client is on FRS, the standard "extract
+  // the VAT shown on the document" logic is WRONG: input VAT on ordinary
+  // purchases is not recoverable, and output VAT owed on sales is the flat rate
+  // of gross turnover — not the rate on the invoice. This block overrides the
+  // VAT handling everywhere, including the format-specific tax-code rules below.
+  const ratePctText = flatRatePercent != null ? `${flatRatePercent}%` : 'the flat rate %';
+  const flatRateInstruction = (isVatRegistered && isFlatRate)
+    ? `**VAT FLAT RATE SCHEME (FRS): the client is on the VAT Flat Rate Scheme${flatRatePercent != null ? ` at a flat rate of ${flatRatePercent}%` : ''}.**
+This OVERRIDES all other VAT rules in these instructions — including the format-specific VAT / tax-code rules in the task below — for EVERY transaction. Apply it to the VAT/tax fields:
+- **PURCHASES / EXPENSES** (documents where the client is the buyer — supplier invoices, receipts, costs the client pays out): do NOT split out or reclaim input VAT. Set the VAT amount to 0 and record the FULL GROSS amount as the net / analysis / unit amount (net = gross). Use the "No VAT" / exempt equivalent tax code for the format. Under FRS the client cannot reclaim VAT on ordinary purchases.
+  - **EXCEPTION — capital assets:** a SINGLE purchase of capital goods (equipment, machinery, computers, tools, furniture, fixtures — NOT stock for resale, consumables, materials, or services) costing **£2,000 or MORE including VAT**. For these you MUST reclaim the input VAT: split net and VAT exactly as shown on the document and use the standard VAT tax code. You MUST ALSO add a flagged entry (Task 2) for this document with reason "FRS capital asset (>= £2,000) — input VAT reclaimed, please confirm it qualifies" so a reviewer can verify — still output the valid transaction as well.
+- **SALES / INCOME** (documents the client issues — the client's own sales invoices, money received in): the VAT the client owes HMRC is the FLAT RATE of the gross, not the rate charged on the invoice. Set the VAT amount to ${ratePctText} of the GROSS sale, and set the net / analysis / unit amount to (gross − that flat-rate VAT). The gross stays the invoice total. ${flatRatePercent == null ? 'If no flat rate % is provided, instead record the VAT as shown on the invoice and flag the entry for review.' : ''}
+- For ordinary (non-capital) purchases the VAT field is ALWAYS 0. Never reclaim input VAT on them.`
+    : '';
 
   let taskPrompt = '';
   if (targetSoftware === 'smith') {
@@ -67,6 +84,7 @@ Flag irrelevant, unprocessable, or potential duplicate documents. For EACH flagg
 
   return [
     vatInstruction,
+    flatRateInstruction,
     taskPrompt,
     flaggingPrompt,
     thoroughPrompt,

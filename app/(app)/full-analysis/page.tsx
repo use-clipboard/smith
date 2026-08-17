@@ -233,6 +233,10 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
   const [clientName, setClientName] = useState('');
   const [clientAddress, setClientAddress] = useState('');
   const [isVatRegistered, setIsVatRegistered] = useState(false);
+  // Flat Rate Scheme: shown only when VAT registered. Auto-set from the linked
+  // client record; the user can override the toggle and the %.
+  const [isFlatRate, setIsFlatRate] = useState(false);
+  const [flatRatePercent, setFlatRatePercent] = useState('');
   const [targetSoftware, setTargetSoftware] = useState<TargetSoftware>('general');
   const [analysisMode, setAnalysisMode] = useState<'standard' | 'thorough'>('standard');
 
@@ -285,6 +289,13 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     if (selectedClient.name) setClientName(selectedClient.name);
     if (selectedClient.address) setClientAddress(selectedClient.address);
     if (selectedClient.vat_number) setIsVatRegistered(true);
+    // Flat Rate Scheme: auto-enable + prefill the % from the client record when
+    // the client is marked Flat Rate; reset it otherwise (the user can still
+    // toggle it on/off and edit the % by hand afterwards).
+    const isFlat = selectedClient.vat_rate_type === 'Flat Rate';
+    setIsFlatRate(isFlat);
+    setFlatRatePercent(isFlat && selectedClient.vat_flat_rate_percentage != null
+      ? String(selectedClient.vat_flat_rate_percentage) : '');
   }, [selectedClient]);
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [pastTransactionsFile, setPastTransactionsFile] = useState<File | null>(null);
@@ -673,6 +684,8 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             clientName, clientAddress, isVatRegistered, targetSoftware, analysisMode,
+            isFlatRate: isVatRegistered && isFlatRate,
+            flatRatePercent: (isVatRegistered && isFlatRate && flatRatePercent !== '') ? Number(flatRatePercent) : null,
             files: [filePayload],
             pastTransactionsContent, ledgersContent,
             clientId: selectedClient?.id ?? null,
@@ -802,7 +815,7 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     await runWithConcurrency(tasks, SCAN_CONCURRENCY);
 
     return acc.map(buildResult);
-  }, [clientName, clientAddress, isVatRegistered, targetSoftware, analysisMode, selectedClient?.id, selectedClient?.client_ref]);
+  }, [clientName, clientAddress, isVatRegistered, isFlatRate, flatRatePercent, targetSoftware, analysisMode, selectedClient?.id, selectedClient?.client_ref]);
 
   // ─── Analysis ────────────────────────────────────────────────────────────────
 
@@ -1044,12 +1057,44 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <input type="text" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Client name" className="input-base" />
                 <input type="text" value={clientAddress} onChange={e => setClientAddress(e.target.value)} placeholder="Client address (optional)" className="input-base" />
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-[var(--text-secondary)]">VAT registered?</span>
-                  <button type="button" onClick={() => setIsVatRegistered(!isVatRegistered)}
-                    className={`relative inline-flex h-6 w-11 rounded-full transition-colors duration-200 ${isVatRegistered ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}>
-                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 mt-0.5 ml-0.5 ${isVatRegistered ? 'translate-x-5' : 'translate-x-0'}`} />
-                  </button>
+                <div className="flex flex-col gap-2.5">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-[var(--text-secondary)]">VAT registered?</span>
+                    <button type="button" onClick={() => {
+                      const next = !isVatRegistered;
+                      setIsVatRegistered(next);
+                      // Flat Rate only applies when VAT registered — reset it off.
+                      if (!next) { setIsFlatRate(false); setFlatRatePercent(''); }
+                    }}
+                      className={`relative inline-flex h-6 w-11 rounded-full transition-colors duration-200 ${isVatRegistered ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}>
+                      <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 mt-0.5 ml-0.5 ${isVatRegistered ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+                  {/* Flat Rate Scheme — only relevant for VAT-registered clients. */}
+                  {isVatRegistered && (
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="text-sm font-medium text-[var(--text-secondary)]">Flat Rate Scheme?</span>
+                      <button type="button" onClick={() => {
+                        const next = !isFlatRate;
+                        setIsFlatRate(next);
+                        if (!next) setFlatRatePercent('');
+                      }}
+                        className={`relative inline-flex h-6 w-11 rounded-full transition-colors duration-200 ${isFlatRate ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}>
+                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 mt-0.5 ml-0.5 ${isFlatRate ? 'translate-x-5' : 'translate-x-0'}`} />
+                      </button>
+                      {isFlatRate && (
+                        <div className="flex items-center rounded-lg border border-[var(--border-input)] bg-[var(--bg-input)] px-2 focus-within:border-[var(--accent)]">
+                          <input
+                            type="number" min="0" max="100" step="0.1" placeholder="e.g. 14.5"
+                            value={flatRatePercent} onChange={e => setFlatRatePercent(e.target.value)}
+                            aria-label="Flat rate percentage"
+                            className="w-20 bg-transparent py-1.5 text-sm text-[var(--text-primary)] outline-none"
+                          />
+                          <span className="text-sm text-[var(--text-muted)]">%</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="mt-4 pt-4 border-t border-[var(--border)]">

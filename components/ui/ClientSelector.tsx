@@ -14,6 +14,10 @@ export interface SelectedClient {
   status: ClientStatus;
   /** Optional — carried through so tools can auto-fill the client address. */
   address?: string | null;
+  /** Optional VAT rate basis + flat-rate % — lets tools (e.g. Capture) pick up
+   *  a client's Flat Rate Scheme settings automatically. */
+  vat_rate_type?: string | null;
+  vat_flat_rate_percentage?: number | null;
 }
 
 interface ClientSelectorProps {
@@ -33,6 +37,8 @@ interface ClientRow {
   vat_number: string | null;
   status: ClientStatus;
   address: string | null;
+  vat_rate_type: string | null;
+  vat_flat_rate_percentage: number | null;
 }
 
 const STATUS_STYLES: Record<ClientStatus, { dot: string; label: string; pill: string }> = {
@@ -95,7 +101,7 @@ export default function ClientSelector({ value, onSelect, align = 'left' }: Clie
   }
 
   function handleSelect(c: ClientRow) {
-    onSelect({ id: c.id, name: c.name, client_ref: c.client_ref, business_type: c.business_type, vat_number: c.vat_number, status: c.status, address: c.address ?? null });
+    onSelect({ id: c.id, name: c.name, client_ref: c.client_ref, business_type: c.business_type, vat_number: c.vat_number, status: c.status, address: c.address ?? null, vat_rate_type: c.vat_rate_type ?? null, vat_flat_rate_percentage: c.vat_flat_rate_percentage ?? null });
     setOpen(false);
   }
 

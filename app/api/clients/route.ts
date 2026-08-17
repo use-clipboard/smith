@@ -43,7 +43,12 @@ export async function GET(req: NextRequest) {
   const typesFilter = (url.searchParams.get('types') ?? '').split(',').map(s => s.trim()).filter(Boolean);
   const riskFilter = url.searchParams.get('risk');
 
-  const SELECT_COLS = 'id, name, client_ref, business_type, contact_email, contact_number, risk_rating, status, created_at, address, utr_number, registration_number, national_insurance_number, companies_house_id, vat_number, companies_house_auth_code, date_of_birth, paye_reference, paye_accounts_office_reference, vat_submit_type, vat_scheme, vat_scheme_period_end_month, year_end, mtd_it';
+  const SELECT_COLS_BASE = 'id, name, client_ref, business_type, contact_email, contact_number, risk_rating, status, created_at, address, utr_number, registration_number, national_insurance_number, companies_house_id, vat_number, companies_house_auth_code, date_of_birth, paye_reference, paye_accounts_office_reference, vat_submit_type, vat_scheme, vat_scheme_period_end_month, year_end, mtd_it';
+  // vat_rate_type + vat_flat_rate_percentage were added later (migration 20260787).
+  // If that migration hasn't been applied yet the select 42703s — we drop them and
+  // retry so client search never breaks on a lagging migration.
+  const SELECT_COLS = `${SELECT_COLS_BASE}, vat_rate_type, vat_flat_rate_percentage`;
+  let selectCols = SELECT_COLS;
 
   // ── Paginated fetch ───────────────────────────────────────────────────────
   // Supabase PostgREST has a server-level max_rows cap (default 1000) that
@@ -57,7 +62,7 @@ export async function GET(req: NextRequest) {
   while (true) {
     let q = supabase
       .from('clients')
-      .select(SELECT_COLS)
+      .select(selectCols)
       .eq('firm_id', ctx.firmId)
       .order('name', { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1);
@@ -71,6 +76,12 @@ export async function GET(req: NextRequest) {
     const { data, error } = await q;
 
     if (error) {
+      // Undefined column (the newer VAT columns aren't migrated yet) → retry
+      // this page without them rather than failing the whole client list.
+      if (error.code === '42703' && selectCols !== SELECT_COLS_BASE) {
+        selectCols = SELECT_COLS_BASE;
+        continue;
+      }
       console.error('GET /api/clients', error);
       return NextResponse.json({ error: 'Failed to load clients' }, { status: 500 });
     }

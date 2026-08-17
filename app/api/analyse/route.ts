@@ -28,6 +28,10 @@ const RequestSchema = z.object({
   clientCode: z.string().nullable().optional(),
   saveToDrive: z.boolean().optional(),
   isVatRegistered: z.boolean().default(false),
+  // Flat Rate Scheme: when on, VAT treatment changes (no input-VAT reclaim on
+  // ordinary purchases; output VAT = flat rate % of gross on sales).
+  isFlatRate: z.boolean().default(false),
+  flatRatePercent: z.number().min(0).max(100).nullable().optional(),
   targetSoftware: z.enum(['vt', 'capium', 'xero', 'quickbooks', 'freeagent', 'sage', 'general', 'smith']),
   analysisMode: z.enum(['standard', 'thorough']).default('standard'),
   files: z.array(FileSchema),
@@ -134,7 +138,7 @@ export async function POST(req: NextRequest) {
 
     const {
       clientName, clientAddress, clientId, clientCode, saveToDrive,
-      isVatRegistered, targetSoftware, analysisMode, files, pastTransactionsContent, ledgersContent,
+      isVatRegistered, isFlatRate, flatRatePercent, targetSoftware, analysisMode, files, pastTransactionsContent, ledgersContent,
     } = parsed.data;
 
     const userCtx = await getUserContext();
@@ -146,7 +150,7 @@ export async function POST(req: NextRequest) {
 
     // Build the static instructions once — shared across all batches. Thorough
     // mode adds careful-checking guidance and a larger output budget.
-    const staticInstructions = buildStaticInstructions(targetSoftware, isVatRegistered, analysisMode);
+    const staticInstructions = buildStaticInstructions(targetSoftware, isVatRegistered, analysisMode, isFlatRate, flatRatePercent ?? null);
     const maxTokens = analysisMode === 'thorough' ? 16000 : 8192;
 
     // Split files into batches of BATCH_SIZE and run in parallel
