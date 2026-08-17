@@ -1138,6 +1138,37 @@ export default function EmailTriagePage() {
         }
         return changed ? next : prev;
       });
+      // List-level self-heal: a message can't have been replied to or forwarded
+      // before it arrived. The old subject-only detector left "Forwarded · <past
+      // date>" entries in localStorage; drop any marker dated before its own
+      // message using the dates of the rows we just loaded, so wrong chips clear
+      // across the whole list without opening each email one by one.
+      {
+        const GRACE_MS = 2 * 60 * 1000;
+        const dateByRfc = new Map<string, number>();
+        for (const t of newThreads) {
+          for (const m of t.messages ?? []) {
+            if (m.messageId) dateByRfc.set(m.messageId, new Date(m.date || t.date).getTime() || 0);
+          }
+        }
+        const pruneList = (
+          setMap: React.Dispatch<React.SetStateAction<Map<string, ReplyMark>>>,
+          key: string,
+        ) => setMap(prev => {
+          let changed = false;
+          const next = new Map(prev);
+          for (const [rfc, mark] of prev) {
+            const msgMs = dateByRfc.get(rfc);
+            if (msgMs && mark.date && (new Date(mark.date).getTime() || 0) < msgMs - GRACE_MS) {
+              next.delete(rfc); changed = true;
+            }
+          }
+          if (changed) { try { localStorage.setItem(key, JSON.stringify([...next])); } catch { /* ignore */ } }
+          return changed ? next : prev;
+        });
+        pruneList(setForwardedMsgIds, 'email-forwarded-msgids-v2');
+        pruneList(setRepliedMsgIds, 'email-replied-msgids-v2');
+      }
       // Don't rewind the "Load more" cursor on a background refresh — keep the
       // deepest token so the next Load more continues from where the user was.
       if (!isBackgroundRefresh) setNextPageToken(data.nextPageToken ?? null);
