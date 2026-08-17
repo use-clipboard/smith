@@ -9,14 +9,21 @@ function BudgetRow({ name, clientRef, weeklyMinutes, isDefault, onCommit }: {
   name: string; clientRef: string; weeklyMinutes: number; isDefault: boolean;
   onCommit: (weeklyMinutes: number) => void;
 }) {
-  const [hours, setHours] = useState(String((weeklyMinutes / 60).toFixed(weeklyMinutes % 60 ? 1 : 0)));
+  // Hours + minutes, not decimal hours — one clear way to read/enter time.
+  const [h, setH] = useState(String(Math.floor(weeklyMinutes / 60)));
+  const [m, setM] = useState(String(weeklyMinutes % 60));
 
   const commit = () => {
-    const h = Math.max(0, Math.min(168, Number(hours) || 0));
-    const mins = Math.round(h * 60);
-    setHours(String((mins / 60).toFixed(mins % 60 ? 1 : 0)));
-    if (mins !== weeklyMinutes) onCommit(mins);
+    const hh = Math.max(0, Math.floor(Number(h) || 0));
+    const mm = Math.max(0, Math.floor(Number(m) || 0));
+    // Minutes over 59 roll into hours; total capped at 168h/week.
+    const total = Math.max(0, Math.min(168 * 60, hh * 60 + mm));
+    setH(String(Math.floor(total / 60)));
+    setM(String(total % 60));
+    if (total !== weeklyMinutes) onCommit(total);
   };
+
+  const inputCls = 'w-9 bg-transparent text-right text-[13px] font-semibold text-[var(--text-primary)] outline-none';
 
   return (
     <div className="flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-black/[0.03]">
@@ -24,15 +31,27 @@ function BudgetRow({ name, clientRef, weeklyMinutes, isDefault, onCommit }: {
         <p className="truncate text-[13px] font-semibold text-[var(--text-primary)]">{name}</p>
         {clientRef && <p className="truncate text-[10.5px] text-[var(--text-muted)]">{clientRef}{isDefault ? ' · default' : ''}</p>}
       </div>
-      <div className="flex shrink-0 items-center rounded-lg border border-[var(--border-input)] bg-[var(--bg-input)] px-2 py-1">
-        <input
-          type="number" min={0} max={168} step={0.5} value={hours}
-          onChange={e => setHours(e.target.value)}
-          onBlur={commit}
-          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-          className="w-14 bg-transparent text-right text-[13px] font-semibold text-[var(--text-primary)] outline-none"
-        />
-        <span className="text-[12px] text-[var(--text-muted)]">h / wk</span>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex items-center rounded-lg border border-[var(--border-input)] bg-[var(--bg-input)] px-2 py-1">
+          <input
+            type="number" min={0} max={168} step={1} value={h}
+            onChange={e => setH(e.target.value)} onBlur={commit}
+            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            aria-label={`${name} budget hours`}
+            className={inputCls}
+          />
+          <span className="text-[12px] text-[var(--text-muted)]">h</span>
+        </div>
+        <div className="flex items-center rounded-lg border border-[var(--border-input)] bg-[var(--bg-input)] px-2 py-1">
+          <input
+            type="number" min={0} max={59} step={5} value={m}
+            onChange={e => setM(e.target.value)} onBlur={commit}
+            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            aria-label={`${name} budget minutes`}
+            className={inputCls}
+          />
+          <span className="text-[12px] text-[var(--text-muted)]">m / wk</span>
+        </div>
       </div>
     </div>
   );
