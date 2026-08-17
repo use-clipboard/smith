@@ -1346,7 +1346,7 @@ export default function EmailTriagePage() {
       const viewedRfc = viewedMsg?.messageId || '';
       const viewedMs = viewedMsg?.date ? (new Date(viewedMsg.date).getTime() || 0) : 0;
       if (viewedRfc && !forwardedSet.has(viewedRfc) && !forwardedMsgIds.has(viewedRfc)) {
-        fetch(`/api/email/thread/${detailId}/forwarded?subject=${encodeURIComponent(thread.subject || '')}&after=${encodeURIComponent(viewedMsg?.date || '')}`)
+        fetch(`/api/email/thread/${detailId}/forwarded?subject=${encodeURIComponent(thread.subject || '')}&after=${encodeURIComponent(viewedMsg?.date || '')}&from=${encodeURIComponent(viewedMsg?.from?.email || '')}&origId=${encodeURIComponent(viewedMsg?.messageId || '')}`)
           .then(r => (r.ok ? r.json() : null))
           .then((d: { externalForwardedAt?: string | null; to?: ReplyRecipient[] } | null) => {
             const date = d?.externalForwardedAt;
