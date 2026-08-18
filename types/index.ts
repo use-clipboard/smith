@@ -851,6 +851,8 @@ export interface Task {
   recurrence_type: RecurrenceType | null;
   recurrence_interval_days: number | null;
   parent_task_id: string | null;
+  /** True once the workflow was edited independently of its template (per-client). */
+  workflow_customised?: boolean;
   completed_at: string | null;
   created_at: string;
   updated_at: string;

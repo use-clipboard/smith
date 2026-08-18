@@ -7,6 +7,7 @@ import {
   XCircle, Users, UserCheck, Check, GripVertical, Sparkles, Pencil,
 } from 'lucide-react';
 import { TaskStatusBadge } from './TaskStatusBadge';
+import ClientSpecificBadge from './ClientSpecificBadge';
 import DueDatePill from './DueDatePill';
 import Tooltip from '@/components/ui/Tooltip';
 import { sortStepsByWorkflow } from '@/utils/taskUtils';
@@ -499,6 +500,7 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3 mb-1 flex-wrap">
               <h2 className="text-lg font-bold text-gray-900 truncate">{task.title}</h2>
+              {task.workflow_customised && <ClientSpecificBadge />}
               {task.recurrence_type && task.recurrence_type !== 'once' && (() => {
                 const nextDue = computeNextDue(task.due_date, task.recurrence_type, task.recurrence_interval_days);
                 return (

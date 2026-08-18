@@ -102,6 +102,9 @@ export async function spawnNextRecurrence(
     recurrence_type: completed.recurrence_type,
     recurrence_interval_days: completed.recurrence_interval_days,
     parent_task_id: completedTaskId,
+    // The next cycle clones this occurrence's (possibly customised) steps, so
+    // carry the client-specific flag forward too.
+    workflow_customised: completed.workflow_customised ?? false,
   }).select().single();
 
   if (error || !newTask) { console.error('spawnNextRecurrence', error); return; }

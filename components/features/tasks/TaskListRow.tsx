@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { RefreshCw, ChevronRight, Loader2, Trash2, XCircle, Users, UserCheck, Check, Link2 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
+import ClientSpecificBadge from './ClientSpecificBadge';
 import { TaskStatusBadge } from './TaskStatusBadge';
 import DueDatePill from './DueDatePill';
 import { sortStepsByWorkflow } from '@/utils/taskUtils';
@@ -301,6 +302,7 @@ export default function TaskListRow({
                     {task.title}
                   </button>
                 </Tooltip>
+                {task.workflow_customised && <ClientSpecificBadge className="shrink-0" />}
                 <TaskDeadlineLinkBadge links={deadlineLinks} />
               </div>
               {/* Next repeat date — visible to all users */}

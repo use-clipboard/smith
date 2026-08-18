@@ -178,5 +178,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     );
   }
 
+  // This editor changes only this client's task, not the template — so mark it
+  // customised to surface a "Client-specific" badge. (Best-effort: never fail
+  // the save if the column isn't present yet.)
+  await supabase.from('tasks').update({ workflow_customised: true }).eq('id', params.id);
+
   return NextResponse.json({ success: true });
 }

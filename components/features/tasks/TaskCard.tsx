@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Clock, User, Users, RefreshCw, Puzzle, Trash2, XCircle, Loader2 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
+import ClientSpecificBadge from './ClientSpecificBadge';
 import { TaskStatusBadge } from './TaskStatusBadge';
 import DueDatePill from './DueDatePill';
 import TaskDeadlineLinkBadge, { type TaskDeadlineLink } from './TaskDeadlineLinkBadge';
@@ -165,6 +166,7 @@ export default function TaskCard({ task, onClick, currentUserId, isAdmin = false
             <h3 className="text-sm font-semibold text-gray-900 truncate group-hover:text-indigo-700">
               {task.title}
             </h3>
+            {task.workflow_customised && <ClientSpecificBadge />}
             <TaskDeadlineLinkBadge links={links} />
             {isRecurring && (
               <Tooltip label={recurrenceLabel(task.recurrence_type, task.recurrence_interval_days)} className="flex-shrink-0">

@@ -7,6 +7,7 @@ import {
   UserCheck, Check, Users, Building2,
 } from 'lucide-react';
 import DueDatePill from './DueDatePill';
+import ClientSpecificBadge from './ClientSpecificBadge';
 import { TaskStatusBadge } from './TaskStatusBadge';
 import Tooltip from '@/components/ui/Tooltip';
 import { sortStepsByWorkflow } from '@/utils/taskUtils';
@@ -258,6 +259,7 @@ function ClientTaskRow({
           {showClient ? (
             <div className="flex items-baseline gap-x-3 gap-y-0.5 flex-wrap min-w-0">
               <span className="text-sm font-medium text-[var(--text-primary)]">{task.title}</span>
+              {task.workflow_customised && <ClientSpecificBadge />}
               {isRecurring && nextDueStr && (
                 <span className="text-xs text-[var(--text-muted)] whitespace-nowrap">
                   Deadline on next cycle: <span className="font-medium text-indigo-600">{nextDueStr}</span>
@@ -271,7 +273,10 @@ function ClientTaskRow({
             </div>
           ) : (
             <>
-              <p className="text-sm font-medium text-[var(--text-primary)] truncate">{task.title}</p>
+              <div className="flex items-center gap-2 min-w-0">
+                <p className="text-sm font-medium text-[var(--text-primary)] truncate">{task.title}</p>
+                {task.workflow_customised && <ClientSpecificBadge className="shrink-0" />}
+              </div>
               {isRecurring && nextDueStr && (
                 <p className="text-xs text-[var(--text-muted)] mt-0.5">
                   Deadline on next cycle: <span className="font-medium text-indigo-600">{nextDueStr}</span>
