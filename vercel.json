@@ -5,6 +5,10 @@
       "schedule": "*/30 * * * *"
     },
     {
+      "path": "/api/cron/sa-poll",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/tasks/reminders/process",
       "schedule": "0 8 * * *"
     },
