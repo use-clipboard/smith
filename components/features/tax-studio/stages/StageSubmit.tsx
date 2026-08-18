@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
   Send, CheckCircle2, Loader2, ShieldCheck, Archive, Lock, FileCheck2,
-  Landmark, AlertTriangle, ChevronDown, PenLine,
+  Landmark, AlertTriangle, ChevronDown, PenLine, Code2, X,
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { fmtDateUK } from '../data';
@@ -72,6 +72,22 @@ function SaFilingCard({ ret, patch, approved, issues }: { ret: TaxReturn; patch:
   const [error, setError] = useState('');
   const [pending, setPending] = useState<{ irmark: string; message: string } | null>(null);
   const [isTest, setIsTest] = useState(true);
+  const [xml, setXml] = useState<{ xml: string; irmark: string; note: string } | null>(null);
+  const [loadingXml, setLoadingXml] = useState(false);
+
+  async function previewXml() {
+    setLoadingXml(true); setError('');
+    try {
+      const res = await fetch(`/api/tax-studio/returns/${ret.id}/sa-xml`);
+      const json = await res.json().catch(() => ({} as Record<string, unknown>));
+      if (!res.ok) throw new Error((json.error as string) || 'Could not build the return XML.');
+      setXml({ xml: json.xml as string, irmark: json.irmark as string, note: json.note as string });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not build the return XML.');
+    } finally {
+      setLoadingXml(false);
+    }
+  }
 
   async function file() {
     setPhase('filing'); setError(''); setPending(null);
@@ -145,11 +161,40 @@ function SaFilingCard({ ret, patch, approved, issues }: { ret: TaxReturn; patch:
 
         {error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-[12px] text-rose-700">{error}</p>}
 
+        <button onClick={previewXml} disabled={loadingXml} className="mt-3 inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--accent)] hover:underline disabled:opacity-50">
+          {loadingXml ? <Loader2 size={13} className="animate-spin" /> : <Code2 size={13} />} Preview filing XML
+        </button>
+
         <p className="mt-3 text-[10.5px] text-[var(--text-muted)]">
           Files the SA100 (with any supplementary pages) to HMRC’s Transaction Engine as a GovTalk submission, signed with an IRmark. Requires the firm’s Government Gateway SA-agent credentials and the client’s 64-8 authorisation. Currently in TPVS test mode until HMRC recognition is granted. For clients on Making Tax Digital, use the MTD IT tool instead.
         </p>
       </div>
+
+      {xml && <XmlViewer data={xml} clientName={ret.clientName} onClose={() => setXml(null)} />}
     </StudioCard>
+  );
+}
+
+// ─── Filing-XML preview (generation only — nothing sent to HMRC) ──────────────
+function XmlViewer({ data, clientName, onClose }: { data: { xml: string; irmark: string; note: string }; clientName: string; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2.5 border-b border-black/5 px-5 py-3">
+          <Code2 size={16} className="text-[var(--accent)]" />
+          <div className="flex-1">
+            <p className="text-[13px] font-bold text-[var(--text-primary)]">Filing XML preview — {clientName}</p>
+            <p className="text-[11px] text-[var(--text-muted)]">The SA100 return that would be filed. IRmark {data.irmark}</p>
+          </div>
+          <button onClick={() => navigator.clipboard?.writeText(data.xml)} className="btn-secondary text-[11px]">Copy</button>
+          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><X size={16} /></button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-4">
+          <pre className="whitespace-pre text-[10.5px] leading-snug text-slate-700">{data.xml}</pre>
+        </div>
+        <p className="border-t border-black/5 px-5 py-2 text-[10.5px] text-amber-700">{data.note}</p>
+      </div>
+    </div>
   );
 }
 
