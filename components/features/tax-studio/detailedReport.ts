@@ -27,6 +27,7 @@ import {
   propertyTaxableShare,
   partnershipTaxableProfit,
   partnershipTaxTakenTotal,
+  trustTotals,
   foreignTotals,
   foreignRowIncome,
   disposalGainLoss,
@@ -238,6 +239,22 @@ function foreignSection(income: Sa100Income): DetailSection | null {
   return { title: 'Foreign income', rows };
 }
 
+function trustSection(income: Sa100Income): DetailSection | null {
+  const t = trustTotals(income);
+  if (r(t.nonSavings) <= 0 && r(t.savings) <= 0 && r(t.dividend) <= 0 && r(t.taxCredit) <= 0) return null;
+  const rows: DetailRow[] = [];
+  // Income split by tax treatment — discretionary trust income is grossed up for
+  // the 45% trust-rate credit, matching the computation.
+  if (r(t.nonSavings) > 0) rows.push({ label: 'Non-savings income', value: r(t.nonSavings), indent: 1 });
+  if (r(t.savings) > 0) rows.push({ label: 'Savings income', value: r(t.savings), indent: 1 });
+  if (r(t.dividend) > 0) rows.push({ label: 'Dividend income', value: r(t.dividend), indent: 1 });
+  rows.push({ label: 'Total trust & estate income', value: r(t.nonSavings + t.savings + t.dividend), kind: 'total' });
+  if (r(t.taxCredit) > 0) rows.push({ label: 'Tax paid / tax credit', value: r(t.taxCredit), kind: 'muted' });
+
+  const names = (income.trusts ?? []).map(ts => ts.name).filter(Boolean) as string[];
+  return { title: 'Trusts & estates', subtitle: names.length ? names.join(' · ') : undefined, rows };
+}
+
 function cgtSection(income: Sa100Income, c: Sa100Computation): DetailSection | null {
   const rows: DetailRow[] = [];
   const disposals = income.capitalGains?.disposals ?? [];
@@ -414,6 +431,10 @@ export function buildDetailedReport(income: Sa100Income, taxYear = '2025/26'): D
       sections.push({ title: 'Pensions & state benefits', rows });
     }
   }
+
+  // 8b. Trusts & estates
+  const trusts = trustSection(income);
+  if (trusts) sections.push(trusts);
 
   // 9. Reliefs & deductions
   {
