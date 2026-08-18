@@ -9,7 +9,7 @@
 // en-dashes / arrows / × — use '-', 'minus'/'plus', 'x').
 
 import type { Sa100Income } from './types';
-import { computeSa100Full, paymentPlan } from './calc';
+import { computeSa100Full, paymentPlan, trustTotals } from './calc';
 
 export interface Sa302Input {
   clientName: string;
@@ -108,14 +108,26 @@ export async function renderSa302Pdf(input: Sa302Input): Promise<Blob> {
 
   // 1) Income received (before tax taken off)
   heading(st, 'Income received (before tax taken off)');
+  // Trust / estate income is split by tax type inside the computation (savings →
+  // savings total, dividends → dividend total, the rest → other income). Pull the
+  // whole lot back out into one clear "trusts and estates" line so it shows on the
+  // SA302, and net the trust savings/dividends off those lines so the total still
+  // reconciles.
+  const tt = trustTotals(input.income);
+  const trustSav = Math.round(tt.savings);
+  const trustDiv = Math.round(tt.dividend);
+  const trustIncome = Math.round(tt.nonSavings + tt.savings + tt.dividend);
   const parts = [
     { label: 'Pay, benefits and expenses from all employments', amount: c.employmentIncome },
     { label: 'Profit from self-employment', amount: c.tradeProfit },
     { label: 'Profit from partnerships', amount: c.partnershipProfit },
     { label: 'Profit from UK land and property', amount: c.propertyProfit },
-    { label: 'Interest from UK banks, building societies and securities', amount: c.savingsIncome },
-    { label: 'Dividends from UK companies', amount: c.dividendIncome },
-    ...(c.otherIncomeParts.length ? c.otherIncomeParts : (c.otherIncome > 0 ? [{ label: 'Other income', amount: c.otherIncome }] : [])),
+    { label: 'Interest from UK banks, building societies and securities', amount: c.savingsIncome - trustSav },
+    { label: 'Dividends from UK companies', amount: c.dividendIncome - trustDiv },
+    ...(c.otherIncomeParts.length
+      ? c.otherIncomeParts.filter(p => p.label !== 'Trusts & estates')
+      : (c.otherIncome > 0 ? [{ label: 'Other income', amount: c.otherIncome }] : [])),
+    { label: 'Income from trusts and estates', amount: trustIncome },
   ].filter(p => p.amount > 0);
   for (const p of parts) row(st, p.label, gbp2(p.amount), { col: 'b' });
   row(st, 'Total income received', gbp2(c.totalIncome), { bold: true, ruleAbove: true });
