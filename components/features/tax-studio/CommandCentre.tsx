@@ -120,9 +120,6 @@ export default function CommandCentre({
 
   return (
     <div className="space-y-5">
-      {/* Tax service selector */}
-      <TaxServiceTiles active={activeService} onSelect={onSelectService} />
-
       {/* Actions */}
       <div className="flex flex-wrap items-center justify-end gap-2">
         <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 py-1.5 text-[12px] font-semibold text-[var(--text-secondary)]">
@@ -130,6 +127,9 @@ export default function CommandCentre({
         </span>
         <button onClick={onNew} className="btn-primary"><Plus size={16} /> New return</button>
       </div>
+
+      {/* Tax dashboards selector */}
+      <TaxServiceTiles active={activeService} onSelect={onSelectService} />
 
       {/* Buckets */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -371,10 +371,10 @@ function TaxServiceTiles({ active, onSelect }: { active: TaxServiceId; onSelect?
   return (
     <div>
       <div className="mb-2 flex items-baseline gap-2">
-        <p className="text-[13px] font-bold text-[var(--text-primary)]">Tax services</p>
-        <p className="text-[11.5px] text-[var(--text-muted)]">Choose a return type to work in</p>
+        <p className="text-[13px] font-bold text-[var(--text-primary)]">Tax Dashboards</p>
+        <p className="text-[11.5px] text-[var(--text-muted)]">Open a Tax Dashboard</p>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {TAX_SERVICES.map(s => (
           <CategoryTile
             key={s.id}
@@ -400,29 +400,29 @@ function CategoryTile({ title, sub, icon: Icon, active, soon, onClick }: {
       disabled={soon}
       onClick={onClick}
       aria-current={active ? 'true' : undefined}
-      className={`group relative flex w-full flex-col items-start overflow-hidden rounded-[18px] border p-4 text-left transition-all duration-200 ${
+      className={`group relative flex w-full items-center gap-2.5 overflow-hidden rounded-xl border px-2.5 py-2 text-left transition-all duration-200 ${
         active
-          ? 'border-[var(--accent)] bg-[var(--accent)]/[0.05] shadow-[0_10px_30px_rgba(99,102,241,0.16)] ring-1 ring-[var(--accent)]/25'
+          ? 'border-[var(--accent)] bg-[var(--accent)]/[0.05] shadow-[0_6px_18px_rgba(99,102,241,0.14)] ring-1 ring-[var(--accent)]/20'
           : soon
             ? 'cursor-default border-[var(--border)] bg-white/45'
-            : 'border-[var(--border)] bg-white/70 hover:-translate-y-0.5 hover:border-[var(--accent)]/40 hover:shadow-[0_14px_36px_rgba(31,38,88,0.12)]'
+            : 'border-[var(--border)] bg-white/70 hover:border-[var(--accent)]/40 hover:shadow-[0_8px_22px_rgba(31,38,88,0.10)]'
       }`}
     >
+      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'bg-slate-100 text-slate-300'}`}>
+        <Icon size={16} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <h4 className={`truncate text-[11.5px] font-bold leading-tight ${soon ? 'text-slate-400' : 'text-[var(--text-primary)]'}`}>{title}</h4>
+        <p className={`truncate text-[10px] leading-tight ${soon ? 'text-slate-300' : 'text-[var(--text-muted)]'}`}>{sub}</p>
+      </div>
       {soon && (
-        <span className="absolute left-4 top-3 rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400">
-          Soon
-        </span>
+        <span className="shrink-0 rounded bg-slate-100 px-1 py-0.5 text-[8px] font-bold uppercase tracking-[0.06em] text-slate-400">Soon</span>
       )}
       {active && (
-        <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent)] text-white shadow-sm">
-          <Check size={12} strokeWidth={3} />
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-white shadow-sm">
+          <Check size={10} strokeWidth={3} />
         </span>
       )}
-      <div className={`mb-3 mt-4 flex h-11 w-11 items-center justify-center rounded-xl ${active ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'bg-slate-100 text-slate-300'}`}>
-        <Icon size={21} />
-      </div>
-      <h4 className={`text-[14.5px] font-bold leading-tight ${soon ? 'text-slate-400' : 'text-[var(--text-primary)]'}`}>{title}</h4>
-      <p className={`mt-0.5 text-[12px] ${soon ? 'text-slate-300' : 'text-[var(--text-muted)]'}`}>{sub}</p>
     </button>
   );
 }

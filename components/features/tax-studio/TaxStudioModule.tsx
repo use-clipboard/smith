@@ -9,7 +9,10 @@ import ToolLayout from '@/components/ui/ToolLayout';
 import { WorkspaceControls, type SaveState } from './WorkspaceControls';
 import { canAccessTaxStudio } from '@/lib/tax-studio/access';
 import CommandCentre from './CommandCentre';
+import type { TaxServiceId } from './CommandCentre';
+import PersonalTaxDashboard, { type PersonalTaxClient } from './PersonalTaxDashboard';
 import NewReturnWizard from './wizard/NewReturnWizard';
+import type { WizardClient } from './wizard/wizardData';
 import Stepper from './Stepper';
 import AssistantPanel from './AssistantPanel';
 import { ReturnHeader } from './widgets';
@@ -30,6 +33,13 @@ const ACCENT = '#6366F1';
 export default function TaxStudioModule({ activeModules, userName }: { activeModules: string[] | null; userName: string }) {
   const allowed = canAccessTaxStudio(activeModules);
   const [view, setView] = useState<'home' | 'new'>('home');
+  // Which top-level tax service the home dashboard is showing. 'command' = the
+  // service-selector command centre; 'personal' = the Personal Tax (SA100)
+  // client-list sub-dashboard.
+  const [homeService, setHomeService] = useState<'command' | 'personal'>('command');
+  // A client (and tax year) pre-selected for a new return, launched from the
+  // Personal Tax dashboard's "New return" button.
+  const [presetClient, setPresetClient] = useState<{ client: WizardClient; taxYear: string } | null>(null);
   const [items, setItems] = useState<ReturnListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [ret, setRet] = useState<TaxReturn | null>(null);
@@ -158,6 +168,7 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
   async function startNew(built: TaxReturn) {
     const created = await createReturn(built);
     setView('home');
+    setPresetClient(null);
     openReturn(created);
   }
 
@@ -183,18 +194,34 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
   }
 
   // ── Home / New (no open return) ─────────────────────────────────────────────
+  function startNewForClient(client: PersonalTaxClient, taxYear: string) {
+    setPresetClient({ client: client as WizardClient, taxYear });
+    setView('new');
+  }
   if (!ret) {
     if (view === 'new') {
       return (
         <ToolLayout title="Tax Studio" description="Create a new return." icon={Calculator} iconColor={ACCENT} wide>
-          <NewReturnWizard onStart={startNew} onBack={() => setView('home')} />
+          <NewReturnWizard onStart={startNew}
+            onBack={() => { setView('home'); setPresetClient(null); }}
+            initialClient={presetClient?.client ?? null} initialTaxYear={presetClient?.taxYear} />
+        </ToolLayout>
+      );
+    }
+    if (homeService === 'personal') {
+      return (
+        <ToolLayout title="Tax Studio" description="Personal Tax — individuals & sole traders." icon={Calculator} iconColor={ACCENT} wide>
+          <PersonalTaxDashboard onBack={() => setHomeService('command')} onOpen={openReturn} onNewForClient={startNewForClient} />
         </ToolLayout>
       );
     }
     return (
       <ToolLayout title="Tax Studio" description="Your practice-wide tax command centre." icon={Calculator} iconColor={ACCENT} wide>
-        <CommandCentre items={items} loading={loading} userName={userName} onNew={() => setView('new')} onOpen={openReturn}
-          onDelete={async id => { await deleteReturn(id); await refresh(); }} />
+        <CommandCentre items={items} loading={loading} userName={userName}
+          onNew={() => { setPresetClient(null); setView('new'); }} onOpen={openReturn}
+          onDelete={async id => { await deleteReturn(id); await refresh(); }}
+          activeService="personal"
+          onSelectService={(id: TaxServiceId) => { if (id === 'personal') setHomeService('personal'); }} />
       </ToolLayout>
     );
   }

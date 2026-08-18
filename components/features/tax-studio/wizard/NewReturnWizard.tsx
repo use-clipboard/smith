@@ -25,16 +25,21 @@ function initialRoll(): Record<RollKey, boolean> {
 }
 
 export default function NewReturnWizard({
-  onStart, onBack,
+  onStart, onBack, initialClient = null, initialTaxYear,
 }: {
   onStart: (r: TaxReturn) => Promise<void>;
   onBack: () => void;
+  // When launched from a client's row on the Personal Tax dashboard, the client
+  // (and the tax year they were viewing) are pre-selected — the wizard opens on
+  // the tax-year step rather than return-type/client selection.
+  initialClient?: WizardClient | null;
+  initialTaxYear?: string;
 }) {
-  const [step, setStep] = useState(1);
-  const [furthest, setFurthest] = useState(1);
+  const [step, setStep] = useState(initialClient ? 3 : 1);
+  const [furthest, setFurthest] = useState(initialClient ? 3 : 1);
   const [returnTypeId, setReturnTypeId] = useState<ReturnTypeId>('sa100');
-  const [client, setClient] = useState<WizardClient | null>(null);
-  const [taxYear, setTaxYear] = useState(currentFilingSeason().taxYear);
+  const [client, setClient] = useState<WizardClient | null>(initialClient);
+  const [taxYear, setTaxYear] = useState(initialTaxYear || currentFilingSeason().taxYear);
   const [roll, setRoll] = useState<Record<RollKey, boolean>>(initialRoll);
   const [allReturns, setAllReturns] = useState<ReturnListItem[]>([]);
   const [creating, setCreating] = useState(false);
