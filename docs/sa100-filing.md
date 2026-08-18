@@ -1,6 +1,6 @@
 # Legacy SA100 online filing (Tax Studio)
 
-Status: **Phases 1–4 DONE — feature built end to end** (generator → IRmark → gateway → route → UI). Remaining is external: **Phase 0** (HMRC recognition → creds/XSD/TPVS) then **Phase 5** (TPVS test → live). To activate: apply migration `20260790` + set the Gov-Gateway env creds. Target tax year: **2025/26** · Owner: Tax Studio
+Status: **Phases 1–4 DONE — feature built end to end** (generator → IRmark → gateway → route → UI). **Phase 0 IN PROGRESS: SDST recognition email SENT 2026-08-18** (`docs/hmrc-sdst-email.md`) — awaiting HMRC (Vendor ID + 2025/26 SA100 XSD + TPVS access). Then Phase 1 element-name pass → Phase 5 (TPVS test → live). To activate: apply migration `20260790` + set the Gov-Gateway env creds. Target tax year: **2025/26** · Owner: Tax Studio
 
 Tax Studio's Self Assessment section files the **legacy SA100** return to HMRC —
 the traditional Government Gateway route used by TaxCalc/Taxfiler/IRIS, for
