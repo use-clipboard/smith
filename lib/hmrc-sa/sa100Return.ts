@@ -12,6 +12,7 @@
 // lib/companiesHouse/gateway.ts was built and then schema-validated.
 
 import type { TaxReturn } from '@/components/features/tax-studio/types';
+import { computeSa100Full } from '@/components/features/tax-studio/calc';
 import { buildSa100Core } from './pages/sa100Core';
 import { buildSa102 } from './pages/sa102Employment';
 import { buildSa103 } from './pages/sa103SelfEmployment';
@@ -46,6 +47,18 @@ export interface Sa100BuildResult {
  *  are TODO (Phase 1 continuation) — each follows sa102Employment.ts's shape. */
 function buildSupplementaryPages(ret: TaxReturn): string {
   const inc = ret.income;
+  // SA110 boxes 1–5 come from SMITH's own computation (HMRC expects the
+  // software's calc on the tax-calculation summary). box1 = the income-tax side
+  // (total due less CGT) net of tax deducted at source; box2 = the overpayment.
+  const c = computeSa100Full(inc, ret.taxYear);
+  const incomeSide = Math.round(c.totalDue) - c.capitalGainsTax;
+  const sa110Computed = {
+    box1: Math.max(0, incomeSide - c.taxDeductedAtSource),
+    box2: Math.max(0, c.taxDeductedAtSource - incomeSide),
+    studentLoan: c.studentLoan,
+    class4Nic: c.class4Nic,
+    capitalGainsTax: c.capitalGainsTax,
+  };
   return [
     buildSa102(inc.employment),          // Employment
     buildSa103(inc.selfEmployment),      // Self-employment (full/short)
@@ -56,7 +69,7 @@ function buildSupplementaryPages(ret: TaxReturn): string {
     buildSa107(inc.sa107),               // Trusts & estates
     buildSa109(inc.residence),           // Residence / remittance
     buildSa101(inc.additional),          // Additional information
-    buildSa110(inc.sa110),               // Tax calculation summary (⚠ computed boxes 1–6 TODO: wire computeSa100Full)
+    buildSa110(inc.sa110, sa110Computed),// Tax calculation summary (computed boxes 1–5 + user boxes 7–17)
     // "More" schedules (rare, TODO): SA102M / SA102 devolved-legislature / SA103L
   ].join('');
 }
