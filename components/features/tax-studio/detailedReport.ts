@@ -27,6 +27,13 @@ import {
   propertyTaxableShare,
   partnershipTaxableProfit,
   partnershipTaxTakenTotal,
+  foreignTotals,
+  foreignRowIncome,
+  disposalGainLoss,
+  sa108Gains,
+  sa108HasData,
+  CGT_AEA,
+  type Sa100Computation,
 } from './calc';
 
 export interface DetailRow {
@@ -197,9 +204,84 @@ function propertySection(p: PropertySource): DetailSection {
   return { title: `UK property: ${p.address || 'Property'}`, rows };
 }
 
+function foreignSection(income: Sa100Income): DetailSection | null {
+  const t = foreignTotals(income);
+  if (r(t.interest) <= 0 && r(t.dividends) <= 0 && r(t.other) <= 0 && r(t.taxClaimed) <= 0) return null;
+  const sa = income.foreign;
+  const rows: DetailRow[] = [];
+
+  // Foreign interest — itemised per country row where the structured SA106 data
+  // exists, else the category total.
+  const interestRows = (sa?.interest ?? []).filter(x => foreignRowIncome(x) !== 0);
+  if (interestRows.length) {
+    for (const it of interestRows) rows.push({ label: `Interest — ${it.country || 'foreign'}`, value: r(foreignRowIncome(it)), indent: 1 });
+    rows.push({ label: 'Total foreign interest', value: r(t.interest), kind: 'subtotal' });
+  } else if (r(t.interest) > 0) {
+    rows.push({ label: 'Foreign interest', value: r(t.interest) });
+  }
+
+  // Foreign dividends (arising + remitted + income-of-a-person-abroad tables).
+  const dividendRows = [...(sa?.dividends ?? []), ...(sa?.remittedDividends ?? []), ...(sa?.otherDividend ?? [])].filter(x => foreignRowIncome(x) !== 0);
+  if (dividendRows.length) {
+    for (const it of dividendRows) rows.push({ label: `Dividend — ${it.country || 'foreign'}`, value: r(foreignRowIncome(it)), indent: 1 });
+    rows.push({ label: 'Total foreign dividends', value: r(t.dividends), kind: 'subtotal' });
+  } else if (r(t.dividends) > 0) {
+    rows.push({ label: 'Foreign dividends', value: r(t.dividends) });
+  }
+
+  // Pensions, remitted other income, other overseas income and foreign property.
+  if (r(t.other) > 0) rows.push({ label: 'Foreign pensions & other income', value: r(t.other) });
+
+  rows.push({ label: 'Total foreign income', value: r(t.interest + t.dividends + t.other), kind: 'total' });
+  if (r(t.taxClaimed) > 0) rows.push({ label: 'Foreign tax paid (Foreign Tax Credit Relief claimed)', value: r(t.taxClaimed), kind: 'muted' });
+
+  return { title: 'Foreign income', rows };
+}
+
+function cgtSection(income: Sa100Income, c: Sa100Computation): DetailSection | null {
+  const rows: DetailRow[] = [];
+  const disposals = income.capitalGains?.disposals ?? [];
+
+  if (disposals.length) {
+    let gains = 0, losses = 0;
+    for (const d of disposals) {
+      const { gain, loss } = disposalGainLoss(d);
+      gains += gain; losses += loss;
+      const net = gain - loss;
+      rows.push({ label: d.description || 'Disposal', value: r(Math.abs(net)), indent: 1, paren: net < 0 });
+    }
+    rows.push({ label: 'Total gains', value: r(gains), kind: 'subtotal' });
+    if (losses > 0) rows.push({ label: 'Less: in-year losses', value: r(losses), kind: 'subtotal', paren: true });
+    const bf = r(income.capitalGains?.lossesBroughtForward);
+    if (bf > 0) rows.push({ label: 'Less: brought-forward losses used', value: bf, indent: 1, paren: true });
+  } else if (income.sa108 && sa108HasData(income.sa108)) {
+    const g = sa108Gains(income.sa108);
+    if (g.normalGains > 0) rows.push({ label: 'Gains (standard rate)', value: r(g.normalGains), indent: 1 });
+    if (g.badrGains > 0) rows.push({ label: 'Gains qualifying for Business Asset Disposal / Investors’ Relief', value: r(g.badrGains), indent: 1 });
+    rows.push({ label: 'Total gains', value: r(g.normalGains + g.badrGains), kind: 'subtotal' });
+    if (g.inYearLosses > 0) rows.push({ label: 'Less: in-year losses', value: r(g.inYearLosses), kind: 'subtotal', paren: true });
+    if (g.broughtForwardUsed > 0) rows.push({ label: 'Less: brought-forward losses used', value: r(g.broughtForwardUsed), indent: 1, paren: true });
+  } else {
+    const cg = income.capitalGains;
+    const resi = r(cg?.residentialGains), other = r(cg?.otherGains), loss = r(cg?.losses);
+    if (resi <= 0 && other <= 0) return null;
+    if (resi > 0) rows.push({ label: 'Residential property gains', value: resi, indent: 1 });
+    if (other > 0) rows.push({ label: 'Other gains', value: other, indent: 1 });
+    rows.push({ label: 'Total gains', value: resi + other, kind: 'subtotal' });
+    if (loss > 0) rows.push({ label: 'Less: allowable losses', value: loss, kind: 'subtotal', paren: true });
+  }
+
+  // Computed outputs — taxable gains are net of losses and the annual exempt amount.
+  rows.push({ label: `Taxable gains (after £${CGT_AEA.toLocaleString('en-GB')} annual exempt amount)`, value: r(c.taxableGains), kind: 'subtotal' });
+  rows.push({ label: 'Capital Gains Tax', value: r(c.capitalGainsTax), kind: 'total' });
+
+  return { title: 'Capital gains', rows };
+}
+
 // ── Main builder ─────────────────────────────────────────────────────────────
 export function buildDetailedReport(income: Sa100Income, taxYear = '2025/26'): DetailSection[] {
   const sections: DetailSection[] = [];
+  const c = computeSa100Full(income, taxYear);
 
   // 1. Employment
   for (const e of income.employment ?? []) {
@@ -292,6 +374,10 @@ export function buildDetailedReport(income: Sa100Income, taxYear = '2025/26'): D
     }
   }
 
+  // 7b. Foreign income
+  const foreign = foreignSection(income);
+  if (foreign) sections.push(foreign);
+
   // 8. Pensions & state benefits
   {
     const rows: DetailRow[] = [];
@@ -362,9 +448,12 @@ export function buildDetailedReport(income: Sa100Income, taxYear = '2025/26'): D
     if (rows.length) sections.push({ title: 'Reliefs & deductions', rows });
   }
 
+  // 9b. Capital gains
+  const cgt = cgtSection(income, c);
+  if (cgt) sections.push(cgt);
+
   // 10. Allowances & tax summary (always last)
   {
-    const c = computeSa100Full(income, taxYear);
     const rows: DetailRow[] = [];
     rows.push({ label: 'Total income received', value: r(c.totalIncome), kind: 'subtotal' });
     rows.push({ label: 'Personal allowance', value: r(c.personalAllowance), paren: true });
