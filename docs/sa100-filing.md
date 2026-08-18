@@ -105,9 +105,26 @@ MTD/VAT).
 3. **HMRC recognition** — external lead time (Phase 0 starts immediately).
 4. **XSD is year-specific** — mapping + recognition may repeat per year.
 
+## Future / on-hold items
+- **PDF attachments to the HMRC submission — DEFERRED (add only when a real
+  client return needs one).** Unlike a company CT600 (which must attach accounts
+  + computation as iXBRL), an SA100 rarely attaches anything — the boxes + the
+  "Any other information" free-text boxes cover it. Attachments are an edge case
+  for individuals: a CGT computation / valuation, supporting calcs for a claim or
+  election (averaging, certain loss claims, FTCR), or non-standard accounts. Not
+  worth building pre-emptively. **On the Phase 0 checklist:** when we get the
+  2025/26 SA100 XSD, confirm whether/how it carries an attachment (likely a
+  base-64 PDF slot in the body — the same trick `lib/companiesHouse/gateway.ts`
+  uses for iXBRL). If a client ever needs one, it's a small, well-scoped add.
+  (Internal source-doc management — scan/extract/ConnectedImports/Document
+  Vault — is already covered separately.)
+
 ## Decisions
 - 2026-08-18: Target **2025/26** first. Tax Studio SA = **legacy SA100 only**;
   MTD stays in the MTD IT tool. Existing MTD final-declaration code in Tax Studio
   (`lib/tax-studio/hmrc.ts`, `hmrc-calculate`/`hmrc-submit` routes, LiveHmrcCard)
   left intact for now; the MTD card gets retired from the Tax Studio Submit UI at
   Phase 4.
+- 2026-08-18: **Document attachments to the SA100 submission = deferred** (SA edge
+  case; you've never needed it in Capium). Revisit against the XSD in Phase 0. See
+  "Future / on-hold items" above.
