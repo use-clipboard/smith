@@ -6,8 +6,7 @@
 // stick to ASCII in text() (£ is in WinAnsi, so it's fine; avoid en-dashes/arrows).
 
 import type { Sa100Income } from './types';
-import type { Sa100Computation } from './calc';
-import { computeSa100Full, employmentBenefits, employmentExpenses, tradeNetProfit, tradeAdjustedProfit, propertyTaxable, partnershipTaxableProfit, foreignTotals, dividendsTotal, savingsInterestTotal, taxedInterestGross, pensionsBenefitsTotal, otherIncomeNet, lineTotal, giftAidNet } from './calc';
+import { computeSa100Full, paymentPlan, employmentBenefits, employmentExpenses, tradeNetProfit, tradeAdjustedProfit, propertyTaxable, partnershipTaxableProfit, foreignTotals, dividendsTotal, savingsInterestTotal, taxedInterestGross, pensionsBenefitsTotal, otherIncomeNet, lineTotal, giftAidNet } from './calc';
 import { returnType } from './data';
 
 export interface SummaryLine { label: string; value: string; }
@@ -28,23 +27,11 @@ export interface Sa100PackInput {
   income: Sa100Income;
 }
 
-/** The Jan (balancing + first POA) and July (second POA) amounts + due dates. */
-export function paymentSchedule(c: Sa100Computation, taxYear: string) {
-  const startYear = parseInt(taxYear.slice(0, 4), 10);
-  const dueYear = Number.isNaN(startYear) ? 2027 : startYear + 2; // 31 Jan / 31 Jul following the tax year
-  return {
-    balancing: c.balancingPayment,
-    poaEach: c.paymentOnAccount,
-    janTotal: c.balancingPayment + c.paymentOnAccount,
-    julTotal: c.paymentOnAccount,
-    janDate: `31 January ${dueYear}`,
-    julDate: `31 July ${dueYear}`,
-  };
-}
-
 export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blob> {
   const c = computeSa100Full(input.income, input.taxYear);
-  const sched = paymentSchedule(c, input.taxYear);
+  const plan = paymentPlan(input.income, input.taxYear);
+  const janIsRefund = plan.janDue < -0.5;      // rare: overpayment exceeds the next-year 1st POA
+  const janAmount = gbp(Math.abs(plan.janDue));
   const rt = returnType(input.returnTypeId as Parameters<typeof returnType>[0]);
 
   const jsPDF = (await import('jspdf')).default;
@@ -157,7 +144,7 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
   kpiRow(y, [
     { label: 'Total income', value: gbp(c.totalIncome) },
     { label: 'Tax & NIC due', value: gbp(c.totalDue) },
-    { label: `Due ${sched.janDate}`, value: gbp(sched.janTotal) },
+    { label: janIsRefund ? `Refund ${plan.janDate}` : `Due ${plan.janDate}`, value: janAmount },
   ]);
   y += 84;
 
@@ -213,8 +200,8 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
       if (secondDue > 0 || secondPaid > 0) line(st, `Second payment on account (due 31 Jul 2026${secondDue > 0 ? `: ${gbp(secondDue)}` : ''})`, `(${gbp(secondPaid)})`);
       if (otherPaid > 0) line(st, 'Other balancing payments made', `(${gbp(otherPaid)})`);
       line(st, `Total paid towards ${input.taxYear}`, `(${gbp(paidTowards)})`, { rule: true });
-      const position = Math.round(c.balancingPayment - paidTowards); // > 0 owe, < 0 refund
-      if (position > 0) line(st, 'Balancing payment due by 31 January 2027', gbp(position), { bold: true, rule: true });
+      const position = plan.balanceForYear; // single source of truth (nets liability vs POAs paid)
+      if (position > 0) line(st, `Balancing payment due by ${plan.janDate}`, gbp(position), { bold: true, rule: true });
       else if (position < 0) line(st, 'Refund due to you', gbp(-position), { bold: true, rule: true });
       else line(st, 'Nothing further to pay', gbp(0), { bold: true, rule: true });
     }
@@ -261,11 +248,12 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
     for (const l of lines) { text(l, margin + 16, ly, { size: 9, color: COLOR.textMuted }); ly += 14; }
     return yIn + h + 12;
   }
-  const janLines = sched.poaEach > 0
-    ? [`Balancing payment for ${input.taxYear}: ${gbp(sched.balancing)}`, `First payment on account towards next year: ${gbp(sched.poaEach)}`]
-    : [`Balancing payment for ${input.taxYear}: ${gbp(sched.balancing)}`];
-  y = payCard(y, `Due by ${sched.janDate}`, gbp(sched.janTotal), janLines);
-  if (sched.julTotal > 0) y = payCard(y, `Due by ${sched.julDate}`, gbp(sched.julTotal), [`Second payment on account towards next year: ${gbp(sched.poaEach)}`]);
+  const yearLine = plan.isRefund
+    ? `${plan.hasPoaData ? 'Overpaid on account for' : 'Refund for'} ${input.taxYear}: ${gbp(plan.refundAmount)}`
+    : `${plan.hasPoaData ? 'Balancing payment' : 'Tax'} for ${input.taxYear}: ${gbp(plan.balanceForYear)}`;
+  const poaLine = plan.poaApplies ? [`First payment on account towards ${plan.nextTaxYear}: ${gbp(plan.nextPoaEach)}`] : [];
+  y = payCard(y, janIsRefund ? `Refund by ${plan.janDate}` : `Due by ${plan.janDate}`, janAmount, [yearLine, ...poaLine]);
+  if (plan.julDue > 0) y = payCard(y, `Due by ${plan.julDate}`, gbp(plan.julDue), [`Second payment on account towards ${plan.nextTaxYear}: ${gbp(plan.nextPoaEach)}`]);
 
   y += 6;
   text('HOW TO PAY', margin, y, { bold: true, size: 9, color: COLOR.brandInk }); y += 16;
@@ -301,11 +289,12 @@ export async function blobToBase64(blob: Blob): Promise<string> {
 /** Headline summary lines for the approval email body. */
 export function packSummaryLines(income: Sa100Income, taxYear: string): SummaryLine[] {
   const c = computeSa100Full(income, taxYear);
-  const s = paymentSchedule(c, taxYear);
+  const p = paymentPlan(income, taxYear);
+  const janRefund = p.janDue < -0.5;
   return [
     { label: 'Total income', value: gbp(c.totalIncome) },
     { label: 'Total tax & NIC due', value: gbp(c.totalDue) },
-    { label: `Due ${s.janDate}`, value: gbp(s.janTotal) },
-    ...(s.julTotal > 0 ? [{ label: `Due ${s.julDate}`, value: gbp(s.julTotal) }] : []),
+    { label: janRefund ? `Refund ${p.janDate}` : `Due ${p.janDate}`, value: gbp(Math.abs(p.janDue)) },
+    ...(p.julDue > 0 ? [{ label: `Due ${p.julDate}`, value: gbp(p.julDue) }] : []),
   ];
 }

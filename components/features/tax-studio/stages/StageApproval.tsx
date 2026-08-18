@@ -4,8 +4,7 @@ import { useState } from 'react';
 import { Send, CheckCircle2, Clock, FileText, PenLine, Mail, ArrowRight } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { fmtMoney, fmtDateUK } from '../data';
-import { computeSa100Full } from '../calc';
-import { paymentSchedule } from '../approvalPdf';
+import { computeSa100Full, paymentPlan } from '../calc';
 import SendApprovalModal from '../SendApprovalModal';
 import type { TaxReturn } from '../types';
 
@@ -18,7 +17,8 @@ export default function StageApproval({
 }) {
   const [showSend, setShowSend] = useState(false);
   const c = computeSa100Full(ret.income, ret.taxYear);
-  const sched = paymentSchedule(c, ret.taxYear);
+  const plan = paymentPlan(ret.income, ret.taxYear);
+  const janRefund = plan.janDue < -0.5;
   const sent = ret.approvalStatus === 'sent' || ret.approvalStatus === 'approved' || ret.approvalStatus === 'submitted';
   const approved = ret.approvalStatus === 'approved' || ret.approvalStatus === 'submitted';
 
@@ -47,8 +47,8 @@ export default function StageApproval({
           <div className="space-y-1 px-5 py-4">
             <PackRow label="Total income" value={fmtMoney(c.totalIncome)} />
             <PackRow label="Total tax & NIC due" value={fmtMoney(c.totalDue)} />
-            <PackRow label={`Due ${sched.janDate}`} value={fmtMoney(sched.janTotal)} strong />
-            {sched.julTotal > 0 && <PackRow label={`Due ${sched.julDate}`} value={fmtMoney(sched.julTotal)} strong />}
+            <PackRow label={janRefund ? `Refund ${plan.janDate}` : `Due ${plan.janDate}`} value={fmtMoney(Math.abs(plan.janDue))} strong />
+            {plan.julDue > 0 && <PackRow label={`Due ${plan.julDate}`} value={fmtMoney(plan.julDue)} strong />}
           </div>
           <div className="grid grid-cols-3 gap-2 border-t border-black/5 px-5 py-4 text-center">
             {[

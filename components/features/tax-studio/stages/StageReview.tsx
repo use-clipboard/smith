@@ -26,7 +26,7 @@ import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyExpensesTotal, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction, ministerComputed, ministerHasData, assemblyComputed, assemblyHasData, parliamentComputed, parliamentHasData, scottishParliamentComputed, scottishParliamentHasData, welshAssemblyComputed, welshAssemblyHasData, lloydsComputed, lloydsHasData } from '../calc';
+import { computeSa100Full, paymentPlan, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyExpensesTotal, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction, ministerComputed, ministerHasData, assemblyComputed, assemblyHasData, parliamentComputed, parliamentHasData, scottishParliamentComputed, scottishParliamentHasData, welshAssemblyComputed, welshAssemblyHasData, lloydsComputed, lloydsHasData } from '../calc';
 import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, Sa110, Sa101, Sa101GiltItem, Sa101LifeGainItem, Sa101VoidedIsaItem, Sa101AnnualAllowanceItem, Sa101UnauthPaymentItem, Sa101ForeignLumpItem, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
@@ -604,13 +604,14 @@ function TaxCalcPage({ ret, income, setIncome, reveal, onNavigate }: { ret: TaxR
 
       {activeTab === 'Payments on account' && (() => {
         const auto = !!s.automatedPoaCalc;
-        // 2025–26 balancing position (due 31 Jan 2027): the SA liability net of tax
-        // deducted at source, less the amounts actually PAID towards it (the POAs +
-        // any other balancing payment). Positive = still to pay; negative = refund.
-        const netLiability = Math.round(c.totalDue) - c.taxDeductedAtSource + (income.taxRefundedOrSetOff ?? 0);
-        const paidTowards = (s.firstPoaPaid ?? 0) + (s.secondPoaPaid ?? 0) + (s.otherBalancingPayment ?? 0);
-        const position = netLiability - paidTowards; // > 0 owe, < 0 refund
-        const refundDue = position < -0.5;
+        // 2025–26 balancing position (due 31 Jan 2027) + the two dated instalments,
+        // reconciling the year's liability against the payments on account already
+        // made. Single source of truth so the card, SA302 and approval pack agree.
+        const plan = paymentPlan(income, ret.taxYear);
+        const netLiability = plan.netLiability;
+        const paidTowards = plan.poaMadeTotal;
+        const position = plan.balanceForYear; // > 0 owe, < 0 refund
+        const refundDue = plan.isRefund;
         const hasRepayDetails = !!((income.repaySortCode && income.repayAccountNumber) || income.repayNoUkAccount);
         return (
         <StudioCard className={`space-y-3 p-4 ${flashCls}`}>
@@ -649,6 +650,27 @@ function TaxCalcPage({ ret, income, setIncome, reveal, onNavigate }: { ret: TaxR
               <p className={`text-[18px] font-bold ${refundDue ? 'text-emerald-700' : position > 0.5 ? 'text-amber-700' : 'text-[var(--text-primary)]'}`}>
                 {position > 0.5 || refundDue ? fmtMoney(Math.abs(position)) : 'Nothing further to pay'}
               </p>
+            </div>
+            {/* The two dated instalments, taking the balancing position + next-year POAs into account */}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-[var(--border)] bg-white/70 px-3 py-2">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Due {plan.janDate}</p>
+                <p className={`text-[15px] font-bold tabular-nums ${plan.janDue < -0.5 ? 'text-emerald-700' : 'text-[var(--text-primary)]'}`}>
+                  {plan.janDue < -0.5 ? `${fmtMoney(Math.abs(plan.janDue))} refund` : fmtMoney(plan.janDue)}
+                </p>
+                <p className="mt-0.5 text-[10px] leading-tight text-[var(--text-muted)]">
+                  {refundDue
+                    ? `${fmtMoney(plan.refundAmount)} refund${plan.poaApplies ? ` set against 1st payment on account ${fmtMoney(plan.nextPoaEach)}` : ''}`
+                    : `${position > 0.5 ? 'Balancing payment' : 'Nothing further'} ${position > 0.5 ? fmtMoney(position) : ''}${plan.poaApplies ? `${position > 0.5 ? ' +' : ''} 1st payment on account ${fmtMoney(plan.nextPoaEach)}` : ''}`}
+                </p>
+              </div>
+              <div className="rounded-lg border border-[var(--border)] bg-white/70 px-3 py-2">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Due {plan.julDate}</p>
+                <p className="text-[15px] font-bold tabular-nums text-[var(--text-primary)]">{plan.poaApplies ? fmtMoney(plan.julDue) : '—'}</p>
+                <p className="mt-0.5 text-[10px] leading-tight text-[var(--text-muted)]">
+                  {plan.poaApplies ? `2nd payment on account for ${plan.nextTaxYear}` : `No payments on account due for ${plan.nextTaxYear}`}
+                </p>
+              </div>
             </div>
             {refundDue && !hasRepayDetails && (
               <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11.5px] text-rose-800">
@@ -4823,20 +4845,75 @@ function ComputationCard({ ret }: { ret: TaxReturn }) {
       {c.capitalGainsTax > 0 && <Row label={`Capital gains tax (on ${fmtMoney(c.taxableGains)})`} value={fmtMoney(c.capitalGainsTax)} />}
       <Row label="Total liability" value={fmtMoney(c.totalDue)} bold />
       <Row label="Tax deducted at source" value={`(${fmtMoney(c.taxDeductedAtSource)})`} />
-      <div className="mt-2 rounded-xl bg-[var(--accent)]/5 px-3 py-2.5">
-        <div className="flex items-center justify-between">
-          <span className="text-[12px] font-semibold text-[var(--text-primary)]">Balancing payment</span>
-          <span className="text-[17px] font-extrabold text-[var(--accent)]">{fmtMoney(c.balancingPayment)}</span>
-        </div>
-        <div className="mt-1 flex items-center justify-between text-[11px] text-[var(--text-muted)]">
-          <span>Payment on account (×2)</span>
-          <span>{c.poaApplies ? `${fmtMoney(c.paymentOnAccount)} each` : 'None due'}</span>
-        </div>
-        <div className="mt-0.5 flex items-center justify-between text-[11px] text-[var(--text-muted)]">
-          <span>Effective rate</span>
-          <span>{(c.effectiveRate * 100).toFixed(1)}%</span>
-        </div>
-      </div>
+      {(() => {
+        const plan = paymentPlan(ret.income, ret.taxYear);
+        return (
+          <div className="mt-2 space-y-2">
+            {/* Balancing / refund for the year (nets off payments on account made) */}
+            <div className={`rounded-xl px-3 py-2.5 ${plan.isRefund ? 'bg-emerald-50' : 'bg-[var(--accent)]/5'}`}>
+              {plan.hasPoaData ? (
+                <>
+                  <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)]">
+                    <span>{plan.taxYear} liability after tax at source</span>
+                    <span className="tabular-nums">{fmtMoney(plan.netLiability)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)]">
+                    <span>Less: payments on account already made</span>
+                    <span className="tabular-nums">({fmtMoney(plan.poaMadeTotal)})</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between border-t border-black/5 pt-1">
+                    <span className={`text-[12px] font-semibold ${plan.isRefund ? 'text-emerald-700' : 'text-[var(--text-primary)]'}`}>
+                      {plan.isRefund ? `Refund due for ${plan.taxYear}` : `Balancing payment for ${plan.taxYear}`}
+                    </span>
+                    <span className={`text-[17px] font-extrabold ${plan.isRefund ? 'text-emerald-700' : 'text-[var(--accent)]'}`}>
+                      {fmtMoney(Math.abs(plan.balanceForYear))}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] font-semibold text-[var(--text-primary)]">Balancing payment</span>
+                  <span className="text-[17px] font-extrabold text-[var(--accent)]">{fmtMoney(plan.balanceForYear)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* What to pay and when — Jan carries the balancing + 1st POA, Jul the 2nd POA */}
+            <div className="space-y-1.5 rounded-xl border border-[var(--border)] bg-white/60 px-3 py-2.5">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">What to pay and when</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[12px] font-semibold text-[var(--text-primary)]">Due {plan.janDate}</p>
+                  <p className="text-[10px] text-[var(--text-muted)]">
+                    {plan.isRefund
+                      ? `${fmtMoney(plan.refundAmount)} refund${plan.poaApplies ? ` set against 1st payment on account ${fmtMoney(plan.nextPoaEach)}` : ''}`
+                      : `${plan.hasPoaData ? 'Balancing payment' : 'Tax for the year'} ${fmtMoney(plan.balanceForYear)}${plan.poaApplies ? ` + 1st payment on account ${fmtMoney(plan.nextPoaEach)}` : ''}`}
+                  </p>
+                </div>
+                <span className={`text-[15px] font-bold tabular-nums ${plan.janDue < -0.5 ? 'text-emerald-700' : 'text-[var(--text-primary)]'}`}>
+                  {plan.janDue < -0.5 ? `${fmtMoney(Math.abs(plan.janDue))} refund` : fmtMoney(plan.janDue)}
+                </span>
+              </div>
+              {plan.poaApplies ? (
+                <div className="flex items-center justify-between border-t border-black/5 pt-1.5">
+                  <div>
+                    <p className="text-[12px] font-semibold text-[var(--text-primary)]">Due {plan.julDate}</p>
+                    <p className="text-[10px] text-[var(--text-muted)]">2nd payment on account for {plan.nextTaxYear}</p>
+                  </div>
+                  <span className="text-[15px] font-bold tabular-nums text-[var(--text-primary)]">{fmtMoney(plan.julDue)}</span>
+                </div>
+              ) : (
+                <p className="border-t border-black/5 pt-1.5 text-[10px] text-[var(--text-muted)]">No payments on account due for {plan.nextTaxYear} — the year’s tax was under £1,000 or ≥80% was collected at source.</p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between px-1 text-[11px] text-[var(--text-muted)]">
+              <span>Effective rate</span>
+              <span>{(c.effectiveRate * 100).toFixed(1)}%</span>
+            </div>
+          </div>
+        );
+      })()}
       <p className="mt-2 text-[10.5px] text-[var(--text-muted)]">{c.notes[c.notes.length - 1]}</p>
     </StudioCard>
   );

@@ -1471,6 +1471,77 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   };
 }
 
+/**
+ * The full Self Assessment payment schedule, reconciling the year's liability
+ * against the payments on account the taxpayer has already made — and working
+ * out the two dated instalments (31 Jan / 31 Jul).
+ *
+ * How it works (HMRC rules):
+ *  • The year's liability net of tax deducted at source is the "balancing"
+ *    figure. Payments on account already made towards THIS year reduce it.
+ *      balance for the year = net liability − payments on account made
+ *      > 0  → balancing payment due 31 Jan following the year
+ *      < 0  → the year is overpaid → a refund is due
+ *  • Two payments on account towards NEXT year are set at half the current
+ *    year's "relevant amount" (income tax + Class 4 NIC − tax at source; CGT,
+ *    student loan, Class 2 NIC and the HICBC are never included). They are not
+ *    due if that amount is < £1,000 or ≥ 80% of the tax was collected at source.
+ *  • The 31 January instalment therefore carries BOTH the balancing payment (or
+ *    refund) for the year AND the first payment on account for next year; the
+ *    31 July instalment is the second payment on account. A refund for the year
+ *    is set against (nets down) the 31 January instalment.
+ */
+export interface PaymentPlan {
+  taxYear: string;          // e.g. '2025/26'
+  nextTaxYear: string;      // e.g. '2026/27'
+  netLiability: number;     // year's liability net of tax at source (can be < 0 if over-deducted)
+  firstPoaMade: number;     // POA actually paid — 1st instalment (31 Jan in-year)
+  secondPoaMade: number;    // POA actually paid — 2nd instalment (31 Jul)
+  otherPaid: number;        // any other balancing payment made in-year
+  poaMadeTotal: number;     // total already paid towards the year
+  hasPoaData: boolean;      // the user has entered any POA due/paid figures
+  balanceForYear: number;   // netLiability − poaMadeTotal (> 0 owe, < 0 refund)
+  isRefund: boolean;        // the year is overpaid
+  refundAmount: number;     // max(0, −balanceForYear)
+  poaApplies: boolean;      // payments on account are due towards next year
+  nextPoaEach: number;      // each payment on account towards next year
+  janDue: number;           // 31 Jan (following year): balanceForYear + 1st next-year POA (may be < 0 → net repayment)
+  julDue: number;           // 31 Jul: 2nd next-year POA
+  janDate: string;          // '31 January 2027'
+  julDate: string;          // '31 July 2027'
+}
+
+export function paymentPlan(income: Sa100Income, taxYear = '2025/26'): PaymentPlan {
+  const c = computeSa100Full(income, taxYear);
+  const sa = income.sa110 ?? {};
+  const startYear = parseInt(taxYear.slice(0, 4), 10);
+  const yr = Number.isNaN(startYear) ? 2025 : startYear;
+  const dueYear = yr + 2;
+  const nextTaxYear = `${yr + 1}/${String(yr + 2).slice(2)}`;
+  const netLiability = r0(c.totalDue - c.taxDeductedAtSource + (income.taxRefundedOrSetOff || 0));
+  const firstPoaMade = sa.firstPoaPaid ?? 0;
+  const secondPoaMade = sa.secondPoaPaid ?? 0;
+  const otherPaid = sa.otherBalancingPayment ?? 0;
+  const poaMadeTotal = firstPoaMade + secondPoaMade + otherPaid;
+  const hasPoaData = poaMadeTotal > 0 || (sa.firstPoaDue ?? 0) > 0 || (sa.secondPoaDue ?? 0) > 0;
+  const balanceForYear = r0(netLiability - poaMadeTotal);
+  const nextPoaEach = c.poaApplies ? c.paymentOnAccount : 0;
+  return {
+    taxYear, nextTaxYear,
+    netLiability,
+    firstPoaMade, secondPoaMade, otherPaid, poaMadeTotal, hasPoaData,
+    balanceForYear,
+    isRefund: balanceForYear < 0,
+    refundAmount: Math.max(0, -balanceForYear),
+    poaApplies: c.poaApplies,
+    nextPoaEach,
+    janDue: balanceForYear + nextPoaEach,
+    julDue: nextPoaEach,
+    janDate: `31 January ${dueYear}`,
+    julDate: `31 July ${dueYear}`,
+  };
+}
+
 // ── Legacy adapters ──────────────────────────────────────────────────────────
 export function estimateSa100(income: Sa100Income, taxYear = '2025/26'): TaxEstimate {
   const c = computeSa100Full(income, taxYear);
