@@ -602,13 +602,15 @@ function TaxCalcPage({ ret, income, setIncome, reveal }: { ret: TaxReturn; incom
       )}
 
       {activeTab === 'Payments on account' && (() => {
-        // Automated mode: box 11 + the amounts-paid boxes track SMITH's computed
-        // POA live (nothing stored — the box-11 fallback + read-only display do it,
-        // so filing uses computedPoa). Hard-entering box 11 or ticking box 10 drops
-        // out of automated. The amounts-paid boxes are only editable in manual mode.
         const auto = !!s.automatedPoaCalc;
-        const manual = !!s.manualPoaCalc;
-        const poa = (stored: number | undefined) => (auto ? computedPoa : (stored ?? 0));
+        // 2025–26 balancing position (due 31 Jan 2027): the SA liability net of tax
+        // deducted at source, less the amounts actually PAID towards it (the POAs +
+        // any other balancing payment). Positive = still to pay; negative = refund.
+        const netLiability = Math.round(c.totalDue) - c.taxDeductedAtSource + (income.taxRefundedOrSetOff ?? 0);
+        const paidTowards = (s.firstPoaPaid ?? 0) + (s.secondPoaPaid ?? 0) + (s.otherBalancingPayment ?? 0);
+        const position = netLiability - paidTowards; // > 0 owe, < 0 refund
+        const refundDue = position < -0.5;
+        const hasRepayDetails = !!((income.repaySortCode && income.repayAccountNumber) || income.repayNoUkAccount);
         return (
         <StudioCard className={`space-y-3 p-4 ${flashCls}`}>
           <BoxSection title="Payments on account">
@@ -622,17 +624,38 @@ function TaxCalcPage({ ret, income, setIncome, reveal }: { ret: TaxReturn; incom
           </BoxSection>
           <BoxSection title="Payment on account calculation">
             <BoxCheck label="Automated Payment on Account Calculation" checked={auto} onChange={v => set(v ? { automatedPoaCalc: true, manualPoaCalc: false, claimReducePoa: false, firstPoaClaim: undefined } : { automatedPoaCalc: false })} help={TC.automatedPoaCalc} />
-            <BoxCheck label="Manual Payment on Account Calculation" checked={manual} onChange={v => set(v ? { manualPoaCalc: true, automatedPoaCalc: false } : { manualPoaCalc: false })} help={TC.manualPoaCalc} />
+            <BoxCheck label="Manual Payment on Account Calculation" checked={!!s.manualPoaCalc} onChange={v => set(v ? { manualPoaCalc: true, automatedPoaCalc: false } : { manualPoaCalc: false })} help={TC.manualPoaCalc} />
           </BoxSection>
           <BoxSection title="Amounts paid towards 2025–26 tax liability">
-            {auto && <p className="text-[11px] text-[var(--text-muted)]">Calculated from SMITH’s payment-on-account figure. Tick “Manual Payment on Account Calculation” to enter your own amounts.</p>}
-            <BoxNum label="First payment on account (31 Jan 2026) — amount due" value={poa(s.firstPoaDue)} onChange={v => set({ firstPoaDue: v })} readOnly={!manual} help={TC.firstPoaDue} />
-            <BoxNum label="First payment on account (31 Jan 2026) — amount paid" value={poa(s.firstPoaPaid)} onChange={v => set({ firstPoaPaid: v })} readOnly={!manual} help={TC.firstPoaPaid} />
-            <BoxNum label="Second payment on account (31 Jul 2026) — amount due" value={poa(s.secondPoaDue)} onChange={v => set({ secondPoaDue: v })} readOnly={!manual} help={TC.secondPoaDue} />
-            <BoxNum label="Second payment on account (31 Jul 2026) — amount paid" value={poa(s.secondPoaPaid)} onChange={v => set({ secondPoaPaid: v })} readOnly={!manual} help={TC.secondPoaPaid} />
-            <BoxNum label="Other balancing payment made in the year" value={manual ? (s.otherBalancingPayment ?? 0) : 0} onChange={v => set({ otherBalancingPayment: v })} readOnly={!manual} help={TC.otherBalancingPayment} />
+            <p className="text-[11px] text-[var(--text-muted)]">The 2025–26 payments on account (amounts due are from last year’s return; enter what was actually paid) plus any other payment made in the year — used to work out the balancing payment or refund below.</p>
+            <BoxNum label="First payment on account (31 Jan 2026) — amount due" value={s.firstPoaDue ?? 0} onChange={v => set({ firstPoaDue: v })} help={TC.firstPoaDue} />
+            <BoxNum label="First payment on account (31 Jan 2026) — amount paid" value={s.firstPoaPaid ?? 0} onChange={v => set({ firstPoaPaid: v })} help={TC.firstPoaPaid} />
+            <BoxNum label="Second payment on account (31 Jul 2026) — amount due" value={s.secondPoaDue ?? 0} onChange={v => set({ secondPoaDue: v })} help={TC.secondPoaDue} />
+            <BoxNum label="Second payment on account (31 Jul 2026) — amount paid" value={s.secondPoaPaid ?? 0} onChange={v => set({ secondPoaPaid: v })} help={TC.secondPoaPaid} />
+            <BoxNum label="Other balancing payment made in the year" value={s.otherBalancingPayment ?? 0} onChange={v => set({ otherBalancingPayment: v })} help={TC.otherBalancingPayment} />
             <BoxCheck label="Show the Payment on Account Calculation in the SA302 Report" checked={!!s.poaInSa302} onChange={v => set({ poaInSa302: v })} help={TC.poaInSa302} />
           </BoxSection>
+
+          {/* Balancing payment / refund for 2025–26 (due 31 Jan 2027) */}
+          <div className={`rounded-xl border px-4 py-3 ${refundDue ? 'border-emerald-200 bg-emerald-50/70' : position > 0.5 ? 'border-amber-200 bg-amber-50/70' : 'border-[var(--border)] bg-white/60'}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">
+                  {refundDue ? 'Refund due to the client' : position > 0.5 ? 'Balancing payment due by 31 January 2027' : '2025–26 position'}
+                </p>
+                <p className="text-[11px] text-[var(--text-muted)]">Net 2025–26 liability {fmtMoney(netLiability)} less amounts paid {fmtMoney(paidTowards)}.</p>
+              </div>
+              <p className={`text-[18px] font-bold ${refundDue ? 'text-emerald-700' : position > 0.5 ? 'text-amber-700' : 'text-[var(--text-primary)]'}`}>
+                {position > 0.5 || refundDue ? fmtMoney(Math.abs(position)) : 'Nothing further to pay'}
+              </p>
+            </div>
+            {refundDue && !hasRepayDetails && (
+              <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11.5px] text-rose-800">
+                <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                A refund is due but no repayment bank details are entered. Add the client’s bank details in the “If you have paid too much tax” section on the Main Form (Finishing your tax return) so HMRC can pay the refund.
+              </p>
+            )}
+          </div>
         </StudioCard>
         );
       })()}
