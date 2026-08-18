@@ -118,39 +118,61 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       return { ...s, step_key: key };
     });
 
-    await supabase.from('task_template_steps').delete().eq('template_id', params.id);
-    if (dedupedSteps.length > 0) {
-      const { error: stepsInsertError } = await supabase.from('task_template_steps').insert(
-        dedupedSteps.map(s => ({
-          template_id: params.id,
-          step_key: s.step_key,
-          title: s.title,
-          description: s.description ?? null,
-          assignee_role: s.assignee_role ?? 'team_member',
-          default_assignee_id: s.default_assignee_id ?? null,
-          tool_module_id: s.tool_module_id ?? null,
-          email_reminder_enabled: s.email_reminder_enabled ?? false,
-          email_reminder_config: s.email_reminder_config ?? { recipients: [], timing: 'on_assign' },
-          email_reminder_subject: s.email_reminder_subject ?? null,
-          email_reminder_message: s.email_reminder_message ?? null,
-          status_automation: s.status_automation ?? null,
-          client_instructions: s.client_instructions ?? null,
-          client_can_upload: s.client_can_upload ?? false,
-          time_estimate_minutes: s.time_estimate_minutes ?? null,
-          position_x: s.position_x ?? 200,
-          position_y: s.position_y ?? 0,
-          step_type: s.step_type ?? 'regular',
-          start_trigger_config: s.start_trigger_config ?? null,
-          end_config: s.end_config ?? null,
-        }))
-      );
-      if (stepsInsertError) {
-        console.error('PUT /api/tasks/templates/[id] steps', stepsInsertError);
+    // Upsert rather than delete-then-insert. Template steps are referenced by
+    // every live task's task_steps.template_step_id, and that FK blocks deleting
+    // a referenced template step once any task exists — the delete then silently
+    // failed, left the old rows in place, and the re-insert collided on
+    // (template_id, step_key). Upserting on that same key updates existing rows
+    // IN PLACE (ids + created_at preserved, so live tasks stay linked) and
+    // inserts genuinely new steps.
+    const stepRows = dedupedSteps.map(s => ({
+      template_id: params.id,
+      step_key: s.step_key,
+      title: s.title,
+      description: s.description ?? null,
+      assignee_role: s.assignee_role ?? 'team_member',
+      default_assignee_id: s.default_assignee_id ?? null,
+      tool_module_id: s.tool_module_id ?? null,
+      email_reminder_enabled: s.email_reminder_enabled ?? false,
+      email_reminder_config: s.email_reminder_config ?? { recipients: [], timing: 'on_assign' },
+      email_reminder_subject: s.email_reminder_subject ?? null,
+      email_reminder_message: s.email_reminder_message ?? null,
+      status_automation: s.status_automation ?? null,
+      client_instructions: s.client_instructions ?? null,
+      client_can_upload: s.client_can_upload ?? false,
+      time_estimate_minutes: s.time_estimate_minutes ?? null,
+      position_x: s.position_x ?? 200,
+      position_y: s.position_y ?? 0,
+      step_type: s.step_type ?? 'regular',
+      start_trigger_config: s.start_trigger_config ?? null,
+      end_config: s.end_config ?? null,
+    }));
+
+    if (stepRows.length > 0) {
+      const { error: upsertErr } = await supabase
+        .from('task_template_steps')
+        .upsert(stepRows, { onConflict: 'template_id,step_key' });
+      if (upsertErr) {
+        console.error('PUT /api/tasks/templates/[id] steps upsert', upsertErr);
         return NextResponse.json(
-          { error: `Failed to save template steps: ${stepsInsertError.message}` },
+          { error: `Failed to save template steps: ${upsertErr.message}` },
           { status: 500 }
         );
       }
+    }
+
+    // Remove template steps the builder dropped. Null out any live-task
+    // references first so the same FK doesn't block THIS delete.
+    const keepKeys = dedupedSteps.map(s => s.step_key);
+    let staleQuery = supabase.from('task_template_steps').select('id').eq('template_id', params.id);
+    if (keepKeys.length > 0) {
+      staleQuery = staleQuery.not('step_key', 'in', `(${keepKeys.map(k => JSON.stringify(k)).join(',')})`);
+    }
+    const { data: staleRows } = await staleQuery;
+    const staleIds = (staleRows ?? []).map(r => r.id as string);
+    if (staleIds.length > 0) {
+      await supabase.from('task_steps').update({ template_step_id: null }).in('template_step_id', staleIds);
+      await supabase.from('task_template_steps').delete().in('id', staleIds);
     }
   }
 
