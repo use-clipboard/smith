@@ -1,6 +1,6 @@
 # Legacy SA100 online filing (Tax Studio)
 
-Status: **Phase 1 in progress** · Target tax year: **2025/26** · Owner: Tax Studio
+Status: **Phase 1 in progress; IRmark (Phase 2 core) DONE + validated** · Target tax year: **2025/26** · Owner: Tax Studio
 
 Tax Studio's Self Assessment section files the **legacy SA100** return to HMRC —
 the traditional Government Gateway route used by TaxCalc/Taxfiler/IRIS, for
@@ -76,8 +76,11 @@ MTD/VAT).
   which clients have 64-8 authorisation.
 - **Phase 1 — SA100 XML generator (in progress):** `lib/hmrc-sa/` — map the Tax
   Studio return → SA100 XML, page by page; validate against the XSD offline.
-- **Phase 2 — GovTalk envelope + IRmark + auth:** `lib/hmrc-sa/gateway.ts`
-  (modelled on CH) + the IRmark module.
+- **Phase 2 — GovTalk envelope + IRmark + auth:** IRmark **DONE + validated**
+  (`lib/hmrc-sa/irmark.ts` — inclusive C14N via xml-crypto, byte-exact against
+  the W3C c14n rules; deterministic + integrity-sensitive). Remaining:
+  `lib/hmrc-sa/gateway.ts` (GovTalk envelope + Gov-Gateway auth, modelled on the
+  CH gateway).
 - **Phase 3 — Submission route:** `app/api/tax-studio/returns/[id]/sa-submit` —
   build → wrap → IRmark → submit → poll/delete; `tax_studio_sa_submissions`
   receipts table; encrypted Gov-Gateway cred storage.
