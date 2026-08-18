@@ -1,6 +1,6 @@
 # Legacy SA100 online filing (Tax Studio)
 
-Status: **Phase 1 in progress; IRmark (Phase 2 core) DONE + validated** · Target tax year: **2025/26** · Owner: Tax Studio
+Status: **Phase 1 ~half (5 of ~10 pages); Phase 2 (IRmark + gateway) DONE** · Next: remaining pages + Phase 3 submit route · Target tax year: **2025/26** · Owner: Tax Studio
 
 Tax Studio's Self Assessment section files the **legacy SA100** return to HMRC —
 the traditional Government Gateway route used by TaxCalc/Taxfiler/IRIS, for
@@ -74,13 +74,17 @@ MTD/VAT).
   a recognised SA developer; obtain Vendor ID, the **2025/26 SA100 XSD**, test
   scenarios, and TPVS access. Confirm the firm's Gov Gateway SA-agent creds and
   which clients have 64-8 authorisation.
-- **Phase 1 — SA100 XML generator (in progress):** `lib/hmrc-sa/` — map the Tax
-  Studio return → SA100 XML, page by page; validate against the XSD offline.
-- **Phase 2 — GovTalk envelope + IRmark + auth:** IRmark **DONE + validated**
-  (`lib/hmrc-sa/irmark.ts` — inclusive C14N via xml-crypto, byte-exact against
-  the W3C c14n rules; deterministic + integrity-sensitive). Remaining:
-  `lib/hmrc-sa/gateway.ts` (GovTalk envelope + Gov-Gateway auth, modelled on the
-  CH gateway).
+- **Phase 1 — SA100 XML generator (~half):** `lib/hmrc-sa/pages/` — DONE: core
+  SA100 + SA102/103/104/105/108. TODO: SA106 (foreign), SA101 (additional info),
+  SA109 (residence), SA110 (tax calc — needs computed boxes from
+  `computeSa100Full`), SA107 (trusts). Validate against the XSD offline once
+  obtained (Phase 0).
+- **Phase 2 — GovTalk envelope + IRmark + auth: DONE.** `lib/hmrc-sa/irmark.ts`
+  (inclusive C14N via xml-crypto, byte-exact + validated) and
+  `lib/hmrc-sa/gateway.ts` + `config.ts` (GovTalkMessage build, Gov-Gateway clear
+  auth, submit/poll/delete, response parse — modelled on the CH gateway). Full
+  pipeline smoke-tests end to end. Header ordering / auth Role / ChannelRouting
+  shape provisional pending TPVS.
 - **Phase 3 — Submission route:** `app/api/tax-studio/returns/[id]/sa-submit` —
   build → wrap → IRmark → submit → poll/delete; `tax_studio_sa_submissions`
   receipts table; encrypted Gov-Gateway cred storage.
