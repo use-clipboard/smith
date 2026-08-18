@@ -58,7 +58,7 @@ function advisoryReviewPoints(income: Sa100Income): ReviewPoint[] {
   return out;
 }
 
-export default function StageReview({ ret, patch, advance, page, setPage, reveal }: { ret: TaxReturn; patch: Patch; advance: () => void; page: PageId; setPage: (p: PageId) => void; reveal: Reveal | null }) {
+export default function StageReview({ ret, patch, advance, page, setPage, reveal, onNavigate }: { ret: TaxReturn; patch: Patch; advance: () => void; page: PageId; setPage: (p: PageId) => void; reveal: Reveal | null; onNavigate?: (e: { page: PageId; section?: string }) => void }) {
   const openPoints = ret.reviewPoints.filter(p => !p.resolved && p.severity !== 'info').length;
   const advisories = advisoryReviewPoints(ret.income);
   const allPoints = [...ret.reviewPoints, ...advisories];
@@ -71,7 +71,7 @@ export default function StageReview({ ret, patch, advance, page, setPage, reveal
   return (
     <div className="space-y-4">
       {/* Section tabs + panel */}
-      <SectionPanel ret={ret} patch={patch} page={page} setPage={setPage} counts={counts} income={ret.income} setIncome={setIncome} reveal={reveal} />
+      <SectionPanel ret={ret} patch={patch} page={page} setPage={setPage} counts={counts} income={ret.income} setIncome={setIncome} reveal={reveal} onNavigate={onNavigate} />
 
       {/* Live computation (the AI assistant is docked on the right of the workspace) */}
       <ComputationCard ret={ret} />
@@ -407,8 +407,9 @@ function ProvenanceBadge({ id, label, via }: { id?: string; label?: string; via?
 
 /** Tabbed section editor — horizontal tabs (icon · label · entry count · SA code)
  *  above the selected section's fields. */
-function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, reveal }: {
+function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, reveal, onNavigate }: {
   ret: TaxReturn; patch: Patch; page: PageId; setPage: (id: PageId) => void; counts: Record<PageId, number>; income: Sa100Income; setIncome: SetIncome; reveal: Reveal | null;
+  onNavigate?: (e: { page: PageId; section?: string }) => void;
 }) {
   const active = ALL_PAGES.find(p => p.id === page)!;
   const pv = pageValue(page, income);
@@ -502,7 +503,7 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
       {page === 'scottishparliament' && <ScottishParliamentPage ret={ret} income={income} setIncome={setIncome} />}
       {page === 'welshassembly' && <WelshAssemblyPage ret={ret} income={income} setIncome={setIncome} />}
       {page === 'lloyds' && <LloydsPage ret={ret} income={income} setIncome={setIncome} />}
-      {page === 'taxcalc' && <TaxCalcPage ret={ret} income={income} setIncome={setIncome} reveal={reveal} />}
+      {page === 'taxcalc' && <TaxCalcPage ret={ret} income={income} setIncome={setIncome} reveal={reveal} onNavigate={onNavigate} />}
       </div>
     </StudioCard>
   );
@@ -553,7 +554,7 @@ function sa110TabCount(s: Sa110, tab: string): number {
   return 0;
 }
 
-function TaxCalcPage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome; reveal: Reveal | null }) {
+function TaxCalcPage({ ret, income, setIncome, reveal, onNavigate }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome; reveal: Reveal | null; onNavigate?: (e: { page: PageId; section?: string }) => void }) {
   const s: Sa110 = income.sa110 ?? {};
   const set = (u: Partial<Sa110>) => setIncome(i => ({ ...i, sa110: { ...i.sa110, ...u } }));
   const c = computeSa100Full(income, ret.taxYear);
@@ -650,10 +651,22 @@ function TaxCalcPage({ ret, income, setIncome, reveal }: { ret: TaxReturn; incom
               </p>
             </div>
             {refundDue && !hasRepayDetails && (
-              <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11.5px] text-rose-800">
-                <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                A refund is due but no repayment bank details are entered. Add the client’s bank details in the “If you have paid too much tax” section on the Main Form (Finishing your tax return) so HMRC can pay the refund.
-              </p>
+              <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11.5px] text-rose-800">
+                <p className="flex items-start gap-1.5">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                  A refund is due but no repayment bank details are entered. Add the client’s bank details in the “If you have paid too much tax” section on the Main Form (Finishing your tax return) so HMRC can pay the refund.
+                </p>
+                {onNavigate && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate({ page: 'core', section: 'Paid too much tax — repayment details' })}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-rose-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-rose-700 transition-colors hover:bg-rose-100"
+                  >
+                    Enter repayment bank details
+                    <ArrowRight size={12} />
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </StudioCard>

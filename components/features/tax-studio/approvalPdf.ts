@@ -200,6 +200,26 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
   line(st, 'Total income tax and NICs due', gbp(c.totalDue), { bold: true, rule: true });
   if (c.taxDeductedAtSource > 0) line(st, 'Less tax deducted at source', `(${gbp(c.taxDeductedAtSource)})`);
   line(st, 'Balancing payment', gbp(c.balancingPayment), { bold: true, rule: true });
+
+  // ── Payments on account already made (only when opted in via SA110) ──────────
+  const sa110 = input.income.sa110;
+  if (sa110?.poaInSa302) {
+    const firstDue = sa110.firstPoaDue ?? 0, secondDue = sa110.secondPoaDue ?? 0;
+    const firstPaid = sa110.firstPoaPaid ?? 0, secondPaid = sa110.secondPoaPaid ?? 0, otherPaid = sa110.otherBalancingPayment ?? 0;
+    const paidTowards = firstPaid + secondPaid + otherPaid;
+    if (paidTowards > 0 || firstDue > 0 || secondDue > 0) {
+      heading(st, `Payments already made towards ${input.taxYear}`);
+      if (firstDue > 0 || firstPaid > 0) line(st, `First payment on account (due 31 Jan 2026${firstDue > 0 ? `: ${gbp(firstDue)}` : ''})`, `(${gbp(firstPaid)})`);
+      if (secondDue > 0 || secondPaid > 0) line(st, `Second payment on account (due 31 Jul 2026${secondDue > 0 ? `: ${gbp(secondDue)}` : ''})`, `(${gbp(secondPaid)})`);
+      if (otherPaid > 0) line(st, 'Other balancing payments made', `(${gbp(otherPaid)})`);
+      line(st, `Total paid towards ${input.taxYear}`, `(${gbp(paidTowards)})`, { rule: true });
+      const position = Math.round(c.balancingPayment - paidTowards); // > 0 owe, < 0 refund
+      if (position > 0) line(st, 'Balancing payment due by 31 January 2027', gbp(position), { bold: true, rule: true });
+      else if (position < 0) line(st, 'Refund due to you', gbp(-position), { bold: true, rule: true });
+      else line(st, 'Nothing further to pay', gbp(0), { bold: true, rule: true });
+    }
+  }
+
   st.y = ensureSpace(st.y, 20);
   text('This is a computation prepared by your accountant, not an HMRC document. Figures are subject to HMRC processing.', margin, st.y + 4, { size: 8, color: COLOR.textMuted });
 

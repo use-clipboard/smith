@@ -268,7 +268,7 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
             <div className="min-w-0 flex-1">
               {stage === 'setup' && <StageSetup ret={ret} patch={patch} advance={() => advanceFrom('setup')} reveal={setupReveal} />}
               {stage === 'analyse' && <StageAnalyse ret={ret} patch={patch} advance={() => advanceFrom('analyse')} />}
-              {stage === 'review' && <StageReview ret={ret} patch={patch} advance={() => advanceFrom('review')} page={reviewPage} setPage={setReviewPage} reveal={reviewReveal} />}
+              {stage === 'review' && <StageReview ret={ret} patch={patch} advance={() => advanceFrom('review')} page={reviewPage} setPage={setReviewPage} reveal={reviewReveal} onNavigate={goToReview} />}
               {stage === 'approval' && <StageApproval ret={ret} patch={patch} advance={() => advanceFrom('approval')} />}
               {stage === 'submit' && <StageSubmit ret={ret} patch={patch} />}
             </div>
