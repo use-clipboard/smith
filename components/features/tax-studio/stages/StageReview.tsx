@@ -108,7 +108,8 @@ export default function StageReview({ ret, patch, advance, page, setPage, reveal
 
 // ─── "Jump to" search — find a section, field or box number ──────────────────
 // Compact search that lives inline in the working-controls row (next to
-// undo/redo). Focusing it expands the input; the results drop below, right-aligned.
+// undo/redo). Focusing it expands the input; the results drop below, left-aligned
+// so the wider panel opens rightward into the content (not left under the sidebar).
 export function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
@@ -146,7 +147,7 @@ export function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
         {q && <button onClick={() => { setQ(''); setOpen(false); }} aria-label="Clear search" className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><X size={13} /></button>}
       </div>
       {open && results.length > 0 && (
-        <div className="absolute right-0 top-full z-40 mt-1 w-72 overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-xl">
+        <div className="absolute left-0 top-full z-40 mt-1 w-72 overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-xl">
           {results.map((e, i) => (
             <button key={`${e.label}-${i}`} onMouseEnter={() => setActive(i)} onClick={() => pick(e)}
               className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${i === active ? 'bg-[var(--accent)]/[0.07]' : 'hover:bg-black/[0.02]'}`}>
