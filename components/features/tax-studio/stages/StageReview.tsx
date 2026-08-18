@@ -601,27 +601,41 @@ function TaxCalcPage({ ret, income, setIncome, reveal }: { ret: TaxReturn; incom
         </BoxSection></StudioCard>
       )}
 
-      {activeTab === 'Payments on account' && (
+      {activeTab === 'Payments on account' && (() => {
+        // Automated mode: box 11 + the amounts-paid boxes track SMITH's computed
+        // POA live (nothing stored — the box-11 fallback + read-only display do it,
+        // so filing uses computedPoa). Hard-entering box 11 or ticking box 10 drops
+        // out of automated. The amounts-paid boxes are only editable in manual mode.
+        const auto = !!s.automatedPoaCalc;
+        const manual = !!s.manualPoaCalc;
+        const poa = (stored: number | undefined) => (auto ? computedPoa : (stored ?? 0));
+        return (
         <StudioCard className={`space-y-3 p-4 ${flashCls}`}>
           <BoxSection title="Payments on account">
-            <BoxCheck box={10} label="Claiming to reduce your 2026–27 payments on account?" checked={!!s.claimReducePoa} onChange={v => set({ claimReducePoa: v })} help={TC.claimReducePoa} />
-            <BoxNum box={11} label="Your first payment on account for 2026–27" value={s.firstPoaClaim ?? computedPoa} onChange={v => set({ firstPoaClaim: v })} help={TC.firstPoaClaim} />
-            <p className="mt-1 text-[11.5px] text-[var(--text-muted)]">Defaults to the first payment on account SMITH has calculated ({fmtMoney(computedPoa)}). Only change it if you ticked box 10 to claim a reduced amount.</p>
+            <BoxCheck box={10} label="Claiming to reduce your 2026–27 payments on account?" checked={!!s.claimReducePoa} onChange={v => set(v ? { claimReducePoa: true, automatedPoaCalc: false } : { claimReducePoa: false })} help={TC.claimReducePoa} />
+            <BoxNum box={11} label="Your first payment on account for 2026–27" value={auto ? computedPoa : (s.firstPoaClaim ?? computedPoa)} onChange={v => set({ firstPoaClaim: v, automatedPoaCalc: false })} help={TC.firstPoaClaim} />
+            <p className="mt-1 text-[11.5px] text-[var(--text-muted)]">
+              {auto
+                ? <>Automatically set to SMITH’s calculated first payment on account (<b>{fmtMoney(computedPoa)}</b>) and updates with every change. Type a figure or tick box 10 to override — that switches off the automated calculation.</>
+                : <>Defaults to the first payment on account SMITH has calculated (<b>{fmtMoney(computedPoa)}</b>). Only change it if you ticked box 10 to claim a reduced amount, or tick “Automated Payment on Account Calculation” below.</>}
+            </p>
           </BoxSection>
           <BoxSection title="Payment on account calculation">
-            <BoxCheck label="Automated Payment on Account Calculation" checked={!!s.automatedPoaCalc} onChange={v => set(v ? { automatedPoaCalc: true, manualPoaCalc: false } : { automatedPoaCalc: false })} help={TC.automatedPoaCalc} />
-            <BoxCheck label="Manual Payment on Account Calculation" checked={!!s.manualPoaCalc} onChange={v => set(v ? { manualPoaCalc: true, automatedPoaCalc: false } : { manualPoaCalc: false })} help={TC.manualPoaCalc} />
+            <BoxCheck label="Automated Payment on Account Calculation" checked={auto} onChange={v => set(v ? { automatedPoaCalc: true, manualPoaCalc: false, claimReducePoa: false, firstPoaClaim: undefined } : { automatedPoaCalc: false })} help={TC.automatedPoaCalc} />
+            <BoxCheck label="Manual Payment on Account Calculation" checked={manual} onChange={v => set(v ? { manualPoaCalc: true, automatedPoaCalc: false } : { manualPoaCalc: false })} help={TC.manualPoaCalc} />
           </BoxSection>
           <BoxSection title="Amounts paid towards 2025–26 tax liability">
-            <BoxNum label="First payment on account (31 Jan 2026) — amount due" value={s.firstPoaDue ?? 0} onChange={v => set({ firstPoaDue: v })} help={TC.firstPoaDue} />
-            <BoxNum label="First payment on account (31 Jan 2026) — amount paid" value={s.firstPoaPaid ?? 0} onChange={v => set({ firstPoaPaid: v })} help={TC.firstPoaPaid} />
-            <BoxNum label="Second payment on account (31 Jul 2026) — amount due" value={s.secondPoaDue ?? 0} onChange={v => set({ secondPoaDue: v })} help={TC.secondPoaDue} />
-            <BoxNum label="Second payment on account (31 Jul 2026) — amount paid" value={s.secondPoaPaid ?? 0} onChange={v => set({ secondPoaPaid: v })} help={TC.secondPoaPaid} />
-            <BoxNum label="Other balancing payment made in the year" value={s.otherBalancingPayment ?? 0} onChange={v => set({ otherBalancingPayment: v })} help={TC.otherBalancingPayment} />
+            {auto && <p className="text-[11px] text-[var(--text-muted)]">Calculated from SMITH’s payment-on-account figure. Tick “Manual Payment on Account Calculation” to enter your own amounts.</p>}
+            <BoxNum label="First payment on account (31 Jan 2026) — amount due" value={poa(s.firstPoaDue)} onChange={v => set({ firstPoaDue: v })} readOnly={!manual} help={TC.firstPoaDue} />
+            <BoxNum label="First payment on account (31 Jan 2026) — amount paid" value={poa(s.firstPoaPaid)} onChange={v => set({ firstPoaPaid: v })} readOnly={!manual} help={TC.firstPoaPaid} />
+            <BoxNum label="Second payment on account (31 Jul 2026) — amount due" value={poa(s.secondPoaDue)} onChange={v => set({ secondPoaDue: v })} readOnly={!manual} help={TC.secondPoaDue} />
+            <BoxNum label="Second payment on account (31 Jul 2026) — amount paid" value={poa(s.secondPoaPaid)} onChange={v => set({ secondPoaPaid: v })} readOnly={!manual} help={TC.secondPoaPaid} />
+            <BoxNum label="Other balancing payment made in the year" value={manual ? (s.otherBalancingPayment ?? 0) : 0} onChange={v => set({ otherBalancingPayment: v })} readOnly={!manual} help={TC.otherBalancingPayment} />
             <BoxCheck label="Show the Payment on Account Calculation in the SA302 Report" checked={!!s.poaInSa302} onChange={v => set({ poaInSa302: v })} help={TC.poaInSa302} />
           </BoxSection>
         </StudioCard>
-      )}
+        );
+      })()}
 
       {activeTab === 'Surplus allowance' && (
         <StudioCard className={`p-4 ${flashCls}`}><BoxSection title="Blind person’s &amp; married couple’s surplus allowance">
@@ -1150,13 +1164,13 @@ function ShareHint({ value }: { value: number }) {
   );
 }
 
-function BoxNum({ box, label, value, onChange, help, share }: { box?: number | string; label: string; value: number; onChange: (v: number) => void; help?: string; share?: number }) {
+function BoxNum({ box, label, value, onChange, help, share, readOnly }: { box?: number | string; label: string; value: number; onChange: (v: number) => void; help?: string; share?: number; readOnly?: boolean }) {
   return (
     <div>
       <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
         {box != null ? <span data-editbox={box != null ? String(box) : undefined} className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
       </label>
-      <NumIn value={value} onChange={onChange} />
+      <NumIn value={value} onChange={onChange} readOnly={readOnly} />
       {share != null && share < 1 && value !== 0 && <ShareHint value={Math.round(value * share)} />}
     </div>
   );
@@ -4650,8 +4664,10 @@ function DisposalCard({ d, idx, onChange, onRemove }: {
 function TextIn({ value, placeholder, onChange }: { value: string; placeholder?: string; onChange: (v: string) => void }) {
   return <input value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} className="input-base py-1 text-[12.5px]" />;
 }
-function NumIn({ value, label, onChange }: { value: number; label?: string; onChange: (v: number) => void }) {
-  return <input type="number" value={value === 0 ? '' : value} placeholder={label} onChange={e => onChange(Number(e.target.value) || 0)} className="input-base py-1 text-right text-[12.5px]" />;
+function NumIn({ value, label, onChange, readOnly }: { value: number; label?: string; onChange: (v: number) => void; readOnly?: boolean }) {
+  return <input type="number" value={value === 0 ? '' : value} placeholder={label} readOnly={readOnly} tabIndex={readOnly ? -1 : undefined}
+    onChange={e => { if (readOnly) return; onChange(Number(e.target.value) || 0); }}
+    className={`input-base py-1 text-right text-[12.5px]${readOnly ? ' cursor-not-allowed bg-slate-50 text-[var(--text-muted)]' : ''}`} />;
 }
 function LabelledNum({ icon: Icon, box, label, value, onChange, help }: { icon?: typeof PiggyBank; box?: number | string; label: string; value: number; onChange: (v: number) => void; help?: string }) {
   return (
