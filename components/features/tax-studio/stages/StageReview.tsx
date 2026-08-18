@@ -6,7 +6,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight, ArrowUpRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
-  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check, Search, CornerDownLeft, X, ScanText, Link2,
+  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check, Search, CornerDownLeft, X, ScanText, Link2, Download,
   Church, MoreHorizontal, ChevronDown, Building2, Vote, Flag, Umbrella,
 } from 'lucide-react';
 import DocumentExtract from '../DocumentExtract';
@@ -26,6 +26,7 @@ import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
+import { renderSa302Pdf, sa302FileName } from '../sa302Pdf';
 import { computeSa100Full, paymentPlan, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyExpensesTotal, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction, ministerComputed, ministerHasData, assemblyComputed, assemblyHasData, parliamentComputed, parliamentHasData, scottishParliamentComputed, scottishParliamentHasData, welshAssemblyComputed, welshAssemblyHasData, lloydsComputed, lloydsHasData } from '../calc';
 import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, Sa110, Sa101, Sa101GiltItem, Sa101LifeGainItem, Sa101VoidedIsaItem, Sa101AnnualAllowanceItem, Sa101UnauthPaymentItem, Sa101ForeignLumpItem, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
@@ -4787,11 +4788,41 @@ function CheckField({ box, label, checked, onChange, help }: { box?: number | st
 // ─── Computation ─────────────────────────────────────────────────────────────
 function ComputationCard({ ret }: { ret: TaxReturn }) {
   const c = computeSa100Full(ret.income, ret.taxYear);
+  const [downloading, setDownloading] = useState(false);
+
+  async function downloadSa302() {
+    setDownloading(true);
+    try {
+      const blob = await renderSa302Pdf({
+        clientName: ret.clientName, clientRef: ret.clientRef, utr: ret.utr,
+        taxYear: ret.taxYear, income: ret.income, preparedBy: ret.preparedBy,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = sa302FileName(ret.clientName, ret.taxYear);
+      document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    } finally { setDownloading(false); }
+  }
+
   return (
     <StudioCard className="p-5">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="text-[15px] font-bold text-[var(--text-primary)]">Tax computation</h3>
-        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{c.taxYear}</span>
+        <div className="flex items-center gap-2">
+          <Tooltip label="Download the SA302 tax calculation as a PDF">
+            <button
+              type="button"
+              onClick={downloadSa302}
+              disabled={downloading}
+              aria-label="Download SA302 tax calculation as PDF"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1 text-[11px] font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--accent)]/5 hover:text-[var(--accent)] disabled:opacity-60"
+            >
+              {downloading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+              Download SA302
+            </button>
+          </Tooltip>
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{c.taxYear}</span>
+        </div>
       </div>
       <Row label="Total income" value={fmtMoney(c.totalIncome)} />
       {(() => {
