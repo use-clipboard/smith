@@ -44,6 +44,9 @@ const CreateTaskSchema = z.object({
     due_date: z.string().optional().nullable(),
     position_x: z.number().optional(),
     position_y: z.number().optional(),
+    step_type: z.enum(['regular', 'start', 'end']).optional(),
+    start_trigger_config: z.any().optional().nullable(),
+    end_config: z.any().optional().nullable(),
   })).optional(),
   edges: z.array(z.object({
     from_step_key: z.string(),
@@ -342,6 +345,9 @@ export async function POST(req: NextRequest) {
         due_date: s.due_date ?? null,
         position_x: s.position_x ?? 200,
         position_y: s.position_y ?? 0,
+        step_type: s.step_type ?? 'regular',
+        start_trigger_config: s.start_trigger_config ?? null,
+        end_config: s.end_config ?? null,
         status: 'not_started',
       }))
     ).select('id, step_key, is_client_step');

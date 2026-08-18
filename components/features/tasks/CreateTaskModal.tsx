@@ -63,7 +63,7 @@ interface StepInput {
   end_config?: object | null;
 }
 
-interface EdgeInput { from_step_key: string; to_step_key: string; label?: string | null; condition_type?: string | null; source_handle?: string | null; target_handle?: string | null }
+interface EdgeInput { from_step_key: string; to_step_key: string; label?: string | null; condition_type?: string | null; condition_config?: object | null; source_handle?: string | null; target_handle?: string | null }
 
 type Step = 'template' | 'details' | 'assignees' | 'preview';
 
@@ -440,6 +440,8 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
       from_step_key: e.from_step_key,
       to_step_key: e.to_step_key,
       label: e.label ?? null,
+      condition_type: 'condition_type' in e ? (e.condition_type as string | null) : null,
+      condition_config: 'condition_config' in e ? (e.condition_config as object | null) : null,
       source_handle: 'source_handle' in e ? (e.source_handle as string | null) : null,
       target_handle: 'target_handle' in e ? (e.target_handle as string | null) : null,
     }));

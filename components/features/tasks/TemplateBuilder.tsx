@@ -1036,6 +1036,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
           to_step_key:    e.to_step_key,
           label:          e.label ?? null,
           condition_type: e.condition_type,
+          condition_config: e.condition_config ?? null,
           source_handle:  e.source_handle,
           target_handle:  e.target_handle,
         }));
@@ -1073,6 +1074,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
           to_step_key:    e.to_step_key,
           label:          e.label ?? null,
           condition_type: e.condition_type,
+          condition_config: e.condition_config ?? null,
           source_handle:  e.source_handle,
           target_handle:  e.target_handle,
         }));
