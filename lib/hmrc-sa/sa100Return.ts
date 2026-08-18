@@ -14,6 +14,10 @@
 import type { TaxReturn } from '@/components/features/tax-studio/types';
 import { buildSa100Core } from './pages/sa100Core';
 import { buildSa102 } from './pages/sa102Employment';
+import { buildSa103 } from './pages/sa103SelfEmployment';
+import { buildSa104 } from './pages/sa104Partnership';
+import { buildSa105 } from './pages/sa105Property';
+import { buildSa108 } from './pages/sa108CapitalGains';
 import { el, group } from './xml';
 
 // ⚠ Confirm against the XSD: the SA schema namespace + version for 2025/26.
@@ -38,16 +42,16 @@ export interface Sa100BuildResult {
 function buildSupplementaryPages(ret: TaxReturn): string {
   const inc = ret.income;
   return [
-    buildSa102(inc.employment),
-    // TODO(phase1): buildSa103(inc.selfEmployment)   — Self-employment (full/short)
-    // TODO(phase1): buildSa104(inc.partnerships)     — Partnership
-    // TODO(phase1): buildSa105(inc.property, inc)     — UK property (+ return-level boxes 1–4)
-    // TODO(phase1): buildSa106(inc.foreign)           — Foreign
-    // TODO(phase1): buildSa108(inc.sa108, inc.cgtCalc)— Capital gains
-    // TODO(phase1): buildSa109(inc.residence)         — Residence / remittance
-    // TODO(phase1): buildSa101(inc.additional)        — Additional information
-    // TODO(phase1): buildSa110(inc.sa110, calc)       — Tax calculation summary
-    // TODO(phase1): buildSa107(inc.sa107)             — Trusts & estates
+    buildSa102(inc.employment),          // Employment
+    buildSa103(inc.selfEmployment),      // Self-employment (full/short)
+    buildSa104(inc.partnerships),        // Partnership
+    buildSa105(inc.property, inc),       // UK property (+ return-level boxes 1–4)
+    buildSa108(inc.sa108),               // Capital gains
+    // TODO(phase1): buildSa106(inc.foreign)      — Foreign
+    // TODO(phase1): buildSa109(inc.residence)    — Residence / remittance
+    // TODO(phase1): buildSa101(inc.additional)   — Additional information
+    // TODO(phase1): buildSa110(inc.sa110, calc)  — Tax calculation summary (computed boxes)
+    // TODO(phase1): buildSa107(inc.sa107)        — Trusts & estates
     // "More" schedules (rare): SA102M / SA102 devolved-legislature / SA103L
   ].join('');
 }
