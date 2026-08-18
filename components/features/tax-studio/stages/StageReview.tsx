@@ -6,7 +6,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight, ArrowUpRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
-  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check, Search, CornerDownLeft, X, ScanText, Link2, Download,
+  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check, Search, CornerDownLeft, X, ScanText, Link2, Download, ClipboardList,
   Church, MoreHorizontal, ChevronDown, Building2, Vote, Flag, Umbrella,
 } from 'lucide-react';
 import DocumentExtract from '../DocumentExtract';
@@ -27,6 +27,8 @@ import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
 import { renderSa302Pdf, sa302FileName } from '../sa302Pdf';
+import { buildDetailedReport, detailedReportFileName, type DetailRow } from '../detailedReport';
+import { renderDetailedReportPdf } from '../detailedReportPdf';
 import { computeSa100Full, paymentPlan, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyExpensesTotal, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction, ministerComputed, ministerHasData, assemblyComputed, assemblyHasData, parliamentComputed, parliamentHasData, scottishParliamentComputed, scottishParliamentHasData, welshAssemblyComputed, welshAssemblyHasData, lloydsComputed, lloydsHasData } from '../calc';
 import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, Sa110, Sa101, Sa101GiltItem, Sa101LifeGainItem, Sa101VoidedIsaItem, Sa101AnnualAllowanceItem, Sa101UnauthPaymentItem, Sa101ForeignLumpItem, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
@@ -170,7 +172,7 @@ export function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
 
 // ─── Income editor — tabbed SA-page shell ────────────────────────────────────
 export type SetIncome = (u: (i: Sa100Income) => Sa100Income) => void;
-export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional' | 'minister' | 'niassembly' | 'parliament' | 'scottishparliament' | 'welshassembly' | 'lloyds' | 'taxcalc';
+export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional' | 'minister' | 'niassembly' | 'parliament' | 'scottishparliament' | 'welshassembly' | 'lloyds' | 'taxcalc' | 'detailed';
 
 const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'core',        label: 'Main Form', code: 'SA100', icon: PiggyBank },
@@ -196,7 +198,9 @@ const MORE_PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[
 ];
 // Tax Calculation summary (SA110) — sits on its own tab after the "More" overflow.
 const TAXCALC_PAGE = { id: 'taxcalc' as PageId, label: 'Tax Calculation', code: 'SA110', icon: Calculator };
-const ALL_PAGES = [...PAGES, ...MORE_PAGES, TAXCALC_PAGE];
+// Detailed Report — a per-source schedule; sits on its own tab after Tax Calculation.
+const DETAILED_PAGE = { id: 'detailed' as PageId, label: 'Detailed Report', code: 'DTL', icon: ClipboardList };
+const ALL_PAGES = [...PAGES, ...MORE_PAGES, TAXCALC_PAGE, DETAILED_PAGE];
 
 /** The headline figure a page contributes to income — shown in the page header. */
 function pageValue(id: PageId, income: Sa100Income): { value: number; label: string } | null {
@@ -263,6 +267,7 @@ function pageCounts(income: Sa100Income): Record<PageId, number> {
     welshassembly: income.welshAssembly ? WELSH_TABS.reduce((acc, t) => acc + welshSectionCount(income.welshAssembly!, t), 0) : 0,
     lloyds: income.lloyds ? LLOYDS_TABS.reduce((acc, t) => acc + lloydsSectionCount(income.lloyds!, t), 0) : 0,
     taxcalc: income.sa110 ? sa110Count(income.sa110) : 0,
+    detailed: 0,
   };
 }
 
@@ -471,6 +476,18 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
             </button>
           );
         })()}
+        {/* Detailed Report — per-source schedule, its own tab after Tax Calculation */}
+        {(() => {
+          const on = page === DETAILED_PAGE.id; const Icon = DETAILED_PAGE.icon;
+          return (
+            <button onClick={() => setPage(DETAILED_PAGE.id)}
+              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${on ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)]/30 hover:text-[var(--text-secondary)]'}`}>
+              <Icon size={13} className="shrink-0" />
+              {DETAILED_PAGE.label}
+              <span className={`text-[9px] font-bold uppercase tracking-wide ${on ? 'text-[var(--accent)]/70' : 'text-slate-400'}`}>{DETAILED_PAGE.code}</span>
+            </button>
+          );
+        })()}
       </div>
 
       <div className="p-5">
@@ -480,11 +497,13 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
         {pv && pv.value > 0 && (
           <span className="ml-auto text-[12px] text-[var(--text-muted)]">{pv.label} <span className="font-bold text-[var(--text-primary)]">{fmtMoney(pv.value)}</span></span>
         )}
-        <Tooltip label="Scan a P60, dividend voucher, etc. — figures are added to this return">
-          <button onClick={() => setScanOpen(true)} className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1 text-[11.5px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/[0.06] ${pv && pv.value > 0 ? '' : 'ml-auto'}`}>
-            <ScanText size={13} /> Scan a document
-          </button>
-        </Tooltip>
+        {page !== 'detailed' && (
+          <Tooltip label="Scan a P60, dividend voucher, etc. — figures are added to this return">
+            <button onClick={() => setScanOpen(true)} className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1 text-[11.5px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/[0.06] ${pv && pv.value > 0 ? '' : 'ml-auto'}`}>
+              <ScanText size={13} /> Scan a document
+            </button>
+          </Tooltip>
+        )}
       </div>
       {scanOpen && <ScanDocumentsModal ret={ret} patch={patch} onClose={() => setScanOpen(false)} />}
 
@@ -505,6 +524,7 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
       {page === 'welshassembly' && <WelshAssemblyPage ret={ret} income={income} setIncome={setIncome} />}
       {page === 'lloyds' && <LloydsPage ret={ret} income={income} setIncome={setIncome} />}
       {page === 'taxcalc' && <TaxCalcPage ret={ret} income={income} setIncome={setIncome} reveal={reveal} onNavigate={onNavigate} />}
+      {page === 'detailed' && <DetailedReportPage ret={ret} />}
       </div>
     </StudioCard>
   );
@@ -4947,6 +4967,76 @@ function ComputationCard({ ret }: { ret: TaxReturn }) {
       })()}
       <p className="mt-2 text-[10.5px] text-[var(--text-muted)]">{c.notes[c.notes.length - 1]}</p>
     </StudioCard>
+  );
+}
+
+// ─── Detailed Report ─────────────────────────────────────────────────────────
+// A per-source schedule expanding every grouped figure on the calculation, plus
+// a Download-as-PDF button. Renders the shared buildDetailedReport() model.
+function DetailedReportPage({ ret }: { ret: TaxReturn }) {
+  const sections = buildDetailedReport(ret.income, ret.taxYear);
+  const [downloading, setDownloading] = useState(false);
+
+  async function download() {
+    setDownloading(true);
+    try {
+      const blob = await renderDetailedReportPdf({
+        clientName: ret.clientName, clientRef: ret.clientRef, utr: ret.utr,
+        taxYear: ret.taxYear, income: ret.income, preparedBy: ret.preparedBy,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = detailedReportFileName(ret.clientName, ret.taxYear);
+      document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    } finally { setDownloading(false); }
+  }
+
+  const rowVal = (r: DetailRow) => (r.value == null ? null : r.paren ? `(${fmtMoney(Math.abs(r.value))})` : fmtMoney(r.value));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h4 className="text-[14px] font-bold text-[var(--text-primary)]">Detailed schedule</h4>
+          <p className="text-[11.5px] text-[var(--text-muted)]">Every grouped figure on the calculation, expanded by source — for the year ended 5 April 20{ret.taxYear.slice(-2)}.</p>
+        </div>
+        <Tooltip label="Download the detailed schedule as a PDF">
+          <button type="button" onClick={download} disabled={downloading} aria-label="Download detailed report as PDF"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 py-1.5 text-[12px] font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--accent)]/5 hover:text-[var(--accent)] disabled:opacity-60">
+            {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Download PDF
+          </button>
+        </Tooltip>
+      </div>
+
+      {!sections.length && (
+        <div className="rounded-xl border border-dashed border-[var(--border)] bg-white/50 px-4 py-8 text-center text-[12px] text-[var(--text-muted)]">
+          No figures have been entered on this return yet.
+        </div>
+      )}
+
+      {sections.map((s, si) => (
+        <StudioCard key={si} className="p-4">
+          <div className="mb-2 border-b border-black/5 pb-2">
+            <h5 className="text-[13px] font-bold text-[var(--text-primary)]">{s.title}</h5>
+            {s.subtitle && <p className="text-[11px] text-[var(--text-muted)]">{s.subtitle}</p>}
+          </div>
+          <div className="space-y-0.5">
+            {s.rows.map((r, ri) => {
+              const bold = r.kind === 'total' || r.kind === 'subtotal';
+              const muted = r.kind === 'muted';
+              const v = rowVal(r);
+              const tone = bold ? 'font-bold text-[var(--text-primary)]' : muted ? 'text-[var(--text-muted)]' : 'text-[var(--text-secondary)]';
+              return (
+                <div key={ri} className={`flex items-baseline justify-between gap-3 ${r.kind === 'total' ? 'mt-1 border-t border-black/10 pt-1.5' : ''}`} style={{ paddingLeft: (r.indent ?? 0) * 14 }}>
+                  <span className={`text-[12px] ${tone}`}>{r.label}</span>
+                  {v != null && <span className={`shrink-0 tabular-nums text-[12px] ${tone}`}>{v}</span>}
+                </div>
+              );
+            })}
+          </div>
+        </StudioCard>
+      ))}
+    </div>
   );
 }
 
