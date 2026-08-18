@@ -1081,8 +1081,9 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
         await onSave(templateData);
       }
       onClose();
-    } catch {
-      setError(isEditTaskMode ? 'Failed to save workflow. Please try again.' : isTaskMode ? 'Failed to create task. Please try again.' : 'Failed to save template. Please try again.');
+    } catch (err) {
+      const fallback = isEditTaskMode ? 'Failed to save workflow. Please try again.' : isTaskMode ? 'Failed to create task. Please try again.' : 'Failed to save template. Please try again.';
+      setError(err instanceof Error && err.message ? err.message : fallback);
     } finally {
       setSaving(false);
     }

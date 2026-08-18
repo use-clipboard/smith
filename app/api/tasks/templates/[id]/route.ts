@@ -208,7 +208,12 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         }
       }
 
-      // For each task: update matching steps, add missing ones, never delete
+      // Pass 1 — pure JS, no DB calls: group every matching live step by its
+      // template step, and collect brand-new steps to insert. Grouping is what
+      // lets Pass 2 issue ONE update per template step (~10) instead of one per
+      // live step (potentially thousands) — the previous per-step await loop
+      // timed out the request on templates with hundreds of active tasks.
+      const idsByTemplateStep = new Map<string, string[]>();
       const insertRows: Array<Record<string, unknown>> = [];
       for (const taskId of taskIds) {
         const taskSteps = existingByTask.get(taskId) ?? [];
@@ -220,21 +225,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           if (!tpl) tpl = templateStepsByKey.get(ts.step_key);
           if (!tpl) continue; // task has a custom step the template doesn't know about — leave alone
           matchedTemplateStepIds.add(tpl.id);
-          await supabase.from('task_steps').update({
-            title: tpl.title,
-            description: tpl.description,
-            tool_module_id: tpl.tool_module_id,
-            email_reminder_enabled: tpl.email_reminder_enabled,
-            email_reminder_config: tpl.email_reminder_config,
-            email_reminder_subject: tpl.email_reminder_subject,
-            email_reminder_message: tpl.email_reminder_message,
-            status_automation: tpl.status_automation,
-            client_instructions: tpl.client_instructions,
-            client_can_upload: tpl.client_can_upload,
-            template_step_id: tpl.id,
-            updated_at: new Date().toISOString(),
-          }).eq('id', ts.id);
-          propagation.updatedSteps++;
+          const arr = idsByTemplateStep.get(tpl.id) ?? [];
+          arr.push(ts.id);
+          idsByTemplateStep.set(tpl.id, arr);
         }
 
         // Any template step not matched yet → add it to this task
@@ -274,10 +267,46 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         propagation.updatedTasks++;
       }
 
+      // Pass 2 — one batched update per template step, covering every live step
+      // that maps to it (they all get the same values). Chunked so the id filter
+      // stays within URL limits.
+      const propagatedAt = new Date().toISOString();
+      for (const tpl of (freshSteps ?? [])) {
+        const ids = idsByTemplateStep.get(tpl.id);
+        if (!ids || ids.length === 0) continue;
+        const patch = {
+          title: tpl.title,
+          description: tpl.description,
+          tool_module_id: tpl.tool_module_id,
+          email_reminder_enabled: tpl.email_reminder_enabled,
+          email_reminder_config: tpl.email_reminder_config,
+          email_reminder_subject: tpl.email_reminder_subject,
+          email_reminder_message: tpl.email_reminder_message,
+          status_automation: tpl.status_automation,
+          client_instructions: tpl.client_instructions,
+          client_can_upload: tpl.client_can_upload,
+          template_step_id: tpl.id,
+          updated_at: propagatedAt,
+        };
+        for (let i = 0; i < ids.length; i += 100) {
+          const chunk = ids.slice(i, i + 100);
+          const { error: updErr } = await supabase.from('task_steps').update(patch).in('id', chunk);
+          if (updErr) {
+            console.error('PUT /api/tasks/templates/[id] propagate update', updErr);
+            return NextResponse.json({ error: `Template saved, but applying it to existing tasks failed: ${updErr.message}` }, { status: 500 });
+          }
+          propagation.updatedSteps += chunk.length;
+        }
+      }
+
       if (insertRows.length > 0) {
         // Insert in chunks of 500 to avoid payload bloat
         for (let i = 0; i < insertRows.length; i += 500) {
-          await supabase.from('task_steps').insert(insertRows.slice(i, i + 500));
+          const { error: insErr } = await supabase.from('task_steps').insert(insertRows.slice(i, i + 500));
+          if (insErr) {
+            console.error('PUT /api/tasks/templates/[id] propagate insert', insErr);
+            return NextResponse.json({ error: `Template saved, but adding new steps to existing tasks failed: ${insErr.message}` }, { status: 500 });
+          }
         }
         propagation.addedSteps = insertRows.length;
       }
