@@ -6,8 +6,10 @@ before sending. See `docs/sa100-filing.md` for the wider plan.
 
 **Placeholders to fill:**
 - `[SMITH legal entity name]` — the registered company/entity that owns SMITH.
-- `[developer reference / Developer Hub org or application name]` — from
-  developer.service.hmrc.gov.uk (also your `HMRC_CLIENT_ID` application).
+- Developer Hub: application is named **SMITH**, account holder **Christos
+  Marneros** (no separate "reference number" exists — optionally quote the app's
+  Client ID from developer.service.hmrc.gov.uk → SMITH → Manage credentials,
+  which is also your `HMRC_CLIENT_ID`).
 - `[Your name]`, `[role]`, `[contact email]`, `[phone]`.
 - `[Firm legal name]`, `[firm agent reference]` — your accountancy practice, the
   first filing agent.
@@ -20,7 +22,7 @@ before sending. See `docs/sa100-filing.md` for the wider plan.
 
 Dear Software Developers Support Team,
 
-We are an existing HMRC software developer — **SMITH** ([SMITH legal entity name], smithforaccountants.co.uk) — already registered and integrated for **Making Tax Digital for Income Tax (ITSA)** and **Making Tax Digital for VAT**. For reference, our recent correspondence with HMRC includes MTD ITSA ref **2026-DRG358** and VAT fraud-prevention-headers case **CMQAA-827**, and our developer account on the HMRC Developer Hub is **[developer reference / Developer Hub org or application name]**.
+We are an existing HMRC software developer — **SMITH** ([SMITH legal entity name], smithforaccountants.co.uk) — already registered and integrated for **Making Tax Digital for Income Tax (ITSA)** and **Making Tax Digital for VAT**. For reference, our recent correspondence with HMRC includes MTD ITSA ref **2026-DRG358** and VAT fraud-prevention-headers case **CMQAA-827**. Our application on the HMRC Developer Hub is named **SMITH** (account holder: Christos Marneros).
 
 We would like to **add Self Assessment (SA100) individual return online filing** — the legacy Transaction Engine / GovTalk route — to our existing developer account, for the **2025–26** tax year, to serve clients who are not within Making Tax Digital for Income Tax.
 
