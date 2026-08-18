@@ -1,6 +1,6 @@
 # Legacy SA100 online filing (Tax Studio)
 
-Status: **Phases 1–3 DONE** (full XML generator + IRmark + gateway + submit route) · Blocked on Phase 0 (creds/XSD/TPVS) for testing · Next: Phase 4 UI · Target tax year: **2025/26** · Owner: Tax Studio
+Status: **Phases 1–4 DONE — feature built end to end** (generator → IRmark → gateway → route → UI). Remaining is external: **Phase 0** (HMRC recognition → creds/XSD/TPVS) then **Phase 5** (TPVS test → live). To activate: apply migration `20260790` + set the Gov-Gateway env creds. Target tax year: **2025/26** · Owner: Tax Studio
 
 Tax Studio's Self Assessment section files the **legacy SA100** return to HMRC —
 the traditional Government Gateway route used by TaxCalc/Taxfiler/IRIS, for
@@ -90,9 +90,10 @@ MTD/VAT).
   mark-submitted + audit. Migration `20260790_tax_studio_sa_submissions`
   (⚠ needs applying to the live DB). TODOs: cron poll fallback for slow
   responses; per-firm encrypted Gov-Gateway cred storage (env-only for now).
-- **Phase 4 — StageSubmit UI:** "File SA100 online with HMRC" card (preview →
-  submit → progress → receipt); make legacy SA the primary path; retire the MTD
-  card from Tax Studio (MTD lives in the MTD IT tool).
+- **Phase 4 — StageSubmit UI: DONE.** `SaFilingCard` in `StageSubmit.tsx` —
+  "File SA100 online with HMRC" (confirm → POST sa-submit → accepted/pending/
+  rejected → IRmark receipt); now the primary path. MTD `LiveHmrcCard` retired
+  from Tax Studio (its lib/routes stay; MTD lives in the MTD IT tool).
 - **Phase 5 — TPVS → recognition → live:** iterate against TPVS test scenarios
   (first response is the oracle for business rules, as with CH), get recognition,
   then production creds + a pilot on our own firm (**first live submit is
