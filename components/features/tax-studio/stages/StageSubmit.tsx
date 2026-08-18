@@ -3,13 +3,10 @@
 import { useState } from 'react';
 import {
   Send, CheckCircle2, Loader2, ShieldCheck, Archive, Lock, FileCheck2,
-  Landmark, Sparkles, AlertTriangle, ChevronDown, PenLine,
+  Landmark, AlertTriangle, ChevronDown, PenLine,
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
-import { fmtDateUK, fmtMoney } from '../data';
-import { computeSa100Full } from '../calc';
-import { collectFraudData } from '@/lib/hmrc/clientFraudData';
-import { hmrcCalculate, hmrcSubmitFinal, type HmrcCalcResponse } from '../persistence';
+import { fmtDateUK } from '../data';
 import { requiredFieldIssues, type FieldIssue } from '../validation';
 import type { TaxReturn } from '../types';
 
@@ -25,7 +22,7 @@ export default function StageSubmit({ ret, patch }: { ret: TaxReturn; patch: Pat
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <ReadinessCard ret={ret} approved={approved} issues={issues} />
-      <LiveHmrcCard ret={ret} patch={patch} approved={approved} issues={issues} />
+      <SaFilingCard ret={ret} patch={patch} approved={approved} issues={issues} />
       <ManualCard patch={patch} approved={approved} issues={issues} taxYear={ret.taxYear} id={ret.id} />
     </div>
   );
@@ -66,44 +63,36 @@ function ReadinessCard({ ret, approved, issues }: { ret: TaxReturn; approved: bo
   );
 }
 
-// ─── Live HMRC (MTD ITSA final declaration) ──────────────────────────────────
-function LiveHmrcCard({ ret, patch, approved, issues }: { ret: TaxReturn; patch: Patch; approved: boolean; issues: FieldIssue[] }) {
-  const canFile = approved && issues.length === 0;
-  const [phase, setPhase] = useState<'idle' | 'calculating' | 'submitting'>('idle');
-  const [calc, setCalc] = useState<HmrcCalcResponse | null>(null);
-  const [error, setError] = useState('');
+// ─── Legacy SA100 online filing (GovTalk / Transaction Engine) ───────────────
+// MTD-ITSA lives in the MTD IT tool; Tax Studio files the legacy SA100 return.
+function SaFilingCard({ ret, patch, approved, issues }: { ret: TaxReturn; patch: Patch; approved: boolean; issues: FieldIssue[] }) {
+  const canFile = approved && issues.length === 0 && !!ret.utr;
+  const [phase, setPhase] = useState<'idle' | 'filing'>('idle');
   const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState('');
+  const [pending, setPending] = useState<{ irmark: string; message: string } | null>(null);
+  const [isTest, setIsTest] = useState(true);
 
-  const ours = computeSa100Full(ret.income, ret.taxYear);
-
-  async function runCalc() {
-    setPhase('calculating'); setError(''); setCalc(null); setConfirming(false);
+  async function file() {
+    setPhase('filing'); setError(''); setPending(null);
     try {
-      const fd = await collectFraudData();
-      setCalc(await hmrcCalculate(ret.id, fd));
+      const res = await fetch(`/api/tax-studio/returns/${ret.id}/sa-submit`, { method: 'POST' });
+      const json = await res.json().catch(() => ({} as Record<string, unknown>));
+      if (typeof json.isTest === 'boolean') setIsTest(json.isTest);
+      if (!res.ok) throw new Error((json.error as string) || 'HMRC rejected the return.');
+      if (json.accepted) {
+        patch(r => ({
+          ...r,
+          approvalStatus: 'submitted', submittedAt: json.submittedAt as string, submissionRef: json.irmark as string,
+          timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: json.submittedAt as string, kind: 'filed', label: `Filed SA100 to HMRC${json.isTest ? ' (TPVS test)' : ''} — IRmark ${json.irmark}` }],
+        }));
+      } else if (json.pending) {
+        setPending({ irmark: json.irmark as string, message: (json.message as string) || 'Submitted — HMRC is still processing.' });
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'HMRC calculation failed.');
+      setError(e instanceof Error ? e.message : 'Filing failed.');
     } finally {
-      setPhase('idle');
-    }
-  }
-
-  async function submitDeclaration() {
-    if (!calc?.calculationId) return;
-    setPhase('submitting'); setError('');
-    try {
-      const fd = await collectFraudData();
-      const res = await hmrcSubmitFinal(ret.id, calc.calculationId, fd);
-      patch(r => ({
-        ...r,
-        approvalStatus: 'submitted', submittedAt: res.submittedAt, submissionRef: res.submissionRef,
-        timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: res.submittedAt, kind: 'filed', label: `Filed final declaration to HMRC${res.isTest ? ' (sandbox)' : ''} — ${res.submissionRef}` }],
-      }));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'HMRC final declaration failed.');
-      setConfirming(false);
-    } finally {
-      setPhase('idle');
+      setPhase('idle'); setConfirming(false);
     }
   }
 
@@ -112,10 +101,10 @@ function LiveHmrcCard({ ret, patch, approved, issues }: { ret: TaxReturn; patch:
       <div className="flex items-center gap-2.5 border-b border-black/5 px-5 py-3.5">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><Landmark size={18} /></div>
         <div className="flex-1">
-          <p className="text-[13.5px] font-bold text-[var(--text-primary)]">File with HMRC (Making Tax Digital)</p>
-          <p className="text-[11.5px] text-[var(--text-muted)]">Trigger HMRC’s calculation, review it, then submit the final declaration.</p>
+          <p className="text-[13.5px] font-bold text-[var(--text-primary)]">File SA100 online with HMRC</p>
+          <p className="text-[11.5px] text-[var(--text-muted)]">Submit the full SA100 return to HMRC’s online filing service.</p>
         </div>
-        {calc?.isTest && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700">Sandbox</span>}
+        {isTest && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700">Test</span>}
       </div>
 
       <div className="px-5 py-4">
@@ -125,75 +114,42 @@ function LiveHmrcCard({ ret, patch, approved, issues }: { ret: TaxReturn; patch:
             <AlertTriangle size={13} /> Record client approval before filing.
           </p>
         )}
+        {!ret.utr && (
+          <p className="mb-3 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] text-amber-700">
+            <AlertTriangle size={13} /> A UTR is required before the SA100 can be filed.
+          </p>
+        )}
 
-        {/* Step 1 — calculate */}
-        {!calc ? (
-          <button onClick={runCalc} disabled={!canFile || phase === 'calculating'} className="btn-primary w-full justify-center disabled:opacity-40">
-            {phase === 'calculating' ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-            {phase === 'calculating' ? 'Asking HMRC…' : 'Calculate with HMRC'}
+        {pending ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+            <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-amber-800"><Loader2 size={14} className="animate-spin" /> Submitted — awaiting HMRC</p>
+            <p className="mt-0.5 text-[11.5px] text-amber-700">{pending.message}</p>
+            <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">IRmark {pending.irmark}</p>
+          </div>
+        ) : !confirming ? (
+          <button onClick={() => setConfirming(true)} disabled={!canFile} className="btn-primary w-full justify-center disabled:opacity-40">
+            <Send size={15} /> File SA100 to HMRC
           </button>
         ) : (
-          <>
-            {/* HMRC vs our figures */}
-            <div className="grid grid-cols-2 gap-3">
-              <FigureCol title="HMRC calculation" rows={[
-                ['Total income tax & NIC', calc.summary?.totalIncomeTaxAndNicsDue],
-                ['Income tax', calc.summary?.incomeTaxDue],
-                ['Class 4 NIC', calc.summary?.class4NicDue],
-              ]} accent />
-              <FigureCol title="Our computation" rows={[
-                ['Total income tax & NIC', ours.incomeTax + ours.class4Nic],
-                ['Income tax', ours.incomeTax],
-                ['Class 4 NIC', ours.class4Nic],
-              ]} />
+          <div className="rounded-xl border border-rose-200 bg-rose-50/60 px-4 py-3">
+            <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-rose-800"><AlertTriangle size={14} /> This files {ret.clientName}’s {ret.taxYear} SA100 with HMRC.</p>
+            <p className="mt-0.5 text-[11.5px] text-rose-700">A live submission cannot be undone{isTest ? ' (currently in TPVS test mode — no real filing)' : ''}.</p>
+            <div className="mt-2 flex items-center gap-2">
+              <button onClick={() => setConfirming(false)} className="btn-secondary bg-white">Cancel</button>
+              <button onClick={file} disabled={phase === 'filing'} className="btn-primary flex-1 justify-center">
+                {phase === 'filing' ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Confirm &amp; file
+              </button>
             </div>
-            {!calc.retrieved && (
-              <p className="mt-2 text-[11px] text-amber-700">HMRC accepted the request but the calculation is still processing — re-run to refresh the figures.</p>
-            )}
-            <p className="mt-2 text-[10.5px] text-[var(--text-muted)]">HMRC calc id: {calc.calculationId}</p>
-
-            {/* Step 2 — final declaration */}
-            {!confirming ? (
-              <div className="mt-3 flex items-center gap-2">
-                <button onClick={runCalc} disabled={phase === 'calculating'} className="btn-secondary">{phase === 'calculating' ? <Loader2 size={14} className="animate-spin" /> : null} Recalculate</button>
-                <button onClick={() => setConfirming(true)} className="btn-primary flex-1 justify-center"><Send size={15} /> Submit final declaration</button>
-              </div>
-            ) : (
-              <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50/60 px-4 py-3">
-                <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-rose-800"><AlertTriangle size={14} /> This is the final, legally-binding declaration.</p>
-                <p className="mt-0.5 text-[11.5px] text-rose-700">Submitting crystallises {ret.clientName}’s {ret.taxYear} liability with HMRC and cannot be undone{calc.isTest ? ' (sandbox — no real filing)' : ''}.</p>
-                <div className="mt-2 flex items-center gap-2">
-                  <button onClick={() => setConfirming(false)} className="btn-secondary bg-white">Cancel</button>
-                  <button onClick={submitDeclaration} disabled={phase === 'submitting'} className="btn-primary flex-1 justify-center">
-                    {phase === 'submitting' ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Confirm &amp; file
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
+          </div>
         )}
 
         {error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-[12px] text-rose-700">{error}</p>}
 
         <p className="mt-3 text-[10.5px] text-[var(--text-muted)]">
-          Reuses your HMRC Income Tax (MTD) connection. Requires the client to be signed up for MTD for Income Tax with a valid NINO, and their quarterly &amp; annual updates already submitted. Uses Individual Calculations API v8.0 (intent-to-finalise → final declaration); confirm the calculation response fields against the HMRC sandbox before a live filing.
+          Files the SA100 (with any supplementary pages) to HMRC’s Transaction Engine as a GovTalk submission, signed with an IRmark. Requires the firm’s Government Gateway SA-agent credentials and the client’s 64-8 authorisation. Currently in TPVS test mode until HMRC recognition is granted. For clients on Making Tax Digital, use the MTD IT tool instead.
         </p>
       </div>
     </StudioCard>
-  );
-}
-
-function FigureCol({ title, rows, accent }: { title: string; rows: [string, number | null | undefined][]; accent?: boolean }) {
-  return (
-    <div className={`rounded-xl border px-3 py-2.5 ${accent ? 'border-[var(--accent)]/40 bg-[var(--accent)]/[0.04]' : 'border-[var(--border)] bg-white/60'}`}>
-      <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">{title}</p>
-      {rows.map(([label, val], i) => (
-        <div key={i} className="flex items-center justify-between py-0.5">
-          <span className="text-[11.5px] text-[var(--text-muted)]">{label}</span>
-          <span className={`text-[12px] font-semibold ${i === 0 ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{val == null ? '—' : fmtMoney(val)}</span>
-        </div>
-      ))}
-    </div>
   );
 }
 
