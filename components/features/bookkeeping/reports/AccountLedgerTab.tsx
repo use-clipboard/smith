@@ -16,7 +16,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import PeriodSelector, { type DateRange } from './PeriodSelector';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
-import { TxnRefLink } from '../book/BookNavigationContext';
+import { TxnRefLink, useBookNavigation } from '../book/BookNavigationContext';
 import { isYearEnd, YearEndChip, YearEndBoundaryRow, YEAR_END_ROW_CLASS } from '../book/YearEndMarker';
 import { AccountCodeTag } from '@/lib/bookkeeping/useAccountCodes';
 import type { Transaction } from '@/types/bookkeeping';
@@ -54,6 +54,7 @@ interface LedgerRow {
 }
 
 export default function AccountLedgerTab({ bookId, accountId, accountName, accountLedger, accountCode }: Props) {
+  const nav = useBookNavigation();
   const [period, setPeriod] = useState<DateRange>({ from: null, to: null });
   const [openingBalance, setOpeningBalance] = useState(0);
   const [periodTxns, setPeriodTxns] = useState<Transaction[]>([]);
@@ -255,7 +256,14 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
                   // P&L year-end close — a boundary between years, not a
                   // movement. The balance either side is that year's trading.
                   if (yearEndMarker) {
-                    return <YearEndBoundaryRow key={txn.id} colSpan={6} dateLabel={formatDateUk(txn.date)} />;
+                    return (
+                      <YearEndBoundaryRow
+                        key={txn.id}
+                        colSpan={6}
+                        dateLabel={formatDateUk(txn.date)}
+                        onClick={nav ? () => nav.openTypeList('YET', txn.id) : undefined}
+                      />
+                    );
                   }
                   const rp = rowActions.rowProps(txn);
                   const yearEnd = isYearEnd(txn.type);

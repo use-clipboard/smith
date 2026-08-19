@@ -21,6 +21,7 @@
  */
 
 import { CalendarCheck2 } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 
 /** True for a year-end transaction, by type or by reference ("YET 000001"). */
 export function isYearEnd(typeOrRef: string | null | undefined): boolean {
@@ -40,18 +41,42 @@ export function YearEndChip() {
 
 /**
  * A labelled rule marking the end of a financial year, rendered as its own
- * table row. Only worth drawing when entries follow it — in a single-year view
- * the YET is the last row and "Balance carried forward" already says as much.
+ * table row.
+ *
+ * Pass `onClick` to make the label open the year-end transaction itself. The
+ * rule is where a user notices the close happened, so it's exactly where
+ * they'll want to ask "what did it post?" — the alternative is hunting for the
+ * YET in the transaction list.
  */
-export function YearEndBoundaryRow({ colSpan, dateLabel }: { colSpan: number; dateLabel: string }) {
+export function YearEndBoundaryRow({
+  colSpan, dateLabel, onClick,
+}: {
+  colSpan: number;
+  dateLabel: string;
+  onClick?: () => void;
+}) {
+  const label = `Year ended ${dateLabel} · closed`;
   return (
     <tr className="border-t border-slate-300">
       <td colSpan={colSpan} className="px-3 py-1">
-        <div className="flex items-center gap-2" aria-label={`Year ended ${dateLabel}`}>
+        <div className="flex items-center gap-2">
           <span className="h-px flex-1 bg-slate-200" />
-          <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400 whitespace-nowrap">
-            Year ended {dateLabel} · closed
-          </span>
+          {onClick ? (
+            <Tooltip label="Open the year-end transaction">
+              <button
+                type="button"
+                onClick={onClick}
+                aria-label={`${label} — open the year-end transaction`}
+                className="text-[9px] font-semibold uppercase tracking-wide text-slate-400 whitespace-nowrap hover:text-indigo-700 hover:underline transition-colors"
+              >
+                {label}
+              </button>
+            </Tooltip>
+          ) : (
+            <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400 whitespace-nowrap">
+              {label}
+            </span>
+          )}
           <span className="h-px flex-1 bg-slate-200" />
         </div>
       </td>

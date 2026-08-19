@@ -229,26 +229,54 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
     !['Suppliers', 'Customers', 'Bank'].includes(ledger),
   );
 
+  // Declared up here (rather than beside the entries state below) because
+  // loadAccounts needs the active financial year to scope P&L balances.
+  const nav = useBookNavigation();
+  const activePeriod = nav?.activePeriod;
+  const fyStartIso = activePeriod?.fyStartIso ?? null;
+  const fyEndIso   = activePeriod?.fyEndIso   ?? null;
+
   // Load accounts + their balances on mount.
   const loadAccounts = useCallback(async () => {
     setLoadingAccounts(true);
     try {
-      const [accountsRes, balancesRes] = await Promise.all([
+      // Two views of the same book, because the two halves of it mean
+      // different things in a list of account balances:
+      //
+      //  • Balance sheet — cumulative, all time, year-end close included. The
+      //    transfer into reserves IS part of the reserve.
+      //  • Profit & loss — the CURRENT YEAR's trading, with the year-end close
+      //    excluded. Cumulative-with-the-close reads 0.00 on every closed
+      //    nominal, which is the "balance after closing" and useless in a list
+      //    you're scanning to find where the money went. Mirrors what the P&L
+      //    report does (it passes exclude_types=YET too) and what the ledger
+      //    beside it now shows.
+      const plParams = new URLSearchParams({ include_zero: 'true', exclude_types: 'YET' });
+      if (fyStartIso) plParams.set('from', fyStartIso);
+      if (fyEndIso)   plParams.set('to',   fyEndIso);
+
+      const [accountsRes, balancesRes, plBalancesRes] = await Promise.all([
         fetch(`/api/bookkeeping/books/${bookId}/accounts?ledger=${encodeURIComponent(ledger)}`),
         fetch(`/api/bookkeeping/books/${bookId}/balances?include_zero=true`),
+        fetch(`/api/bookkeeping/books/${bookId}/balances?${plParams}`),
       ]);
       const accountsBody  = accountsRes.ok  ? await accountsRes.json()  : { accounts: [] };
       const balancesBody  = balancesRes.ok  ? await balancesRes.json()  : { accounts: [] };
+      const plBody        = plBalancesRes.ok ? await plBalancesRes.json() : { accounts: [] };
 
       type BalanceRow = { id: string; balance: number; debit_total: number; credit_total: number };
       const balById = new Map<string, BalanceRow>(
         (balancesBody.accounts as BalanceRow[]).map((b: BalanceRow) => [b.id, b]),
       );
+      const plById = new Map<string, BalanceRow>(
+        (plBody.accounts as BalanceRow[]).map((b: BalanceRow) => [b.id, b]),
+      );
       const merged: AccountSummary[] = (accountsBody.accounts as Array<{
         id: string; name: string; ledger: string | null; account_type: string;
         inactive?: boolean; notes?: string | null; code?: string | null;
       }>).map(a => {
-        const b = balById.get(a.id);
+        const isPl = a.account_type === 'income' || a.account_type === 'expense';
+        const b = (isPl ? plById.get(a.id) : balById.get(a.id)) ?? balById.get(a.id);
         return {
           ...a,
           balance:      displayBalance(a.account_type, b?.balance ?? 0),
@@ -272,7 +300,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
       setLoadingAccounts(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, ledger]);
+  }, [bookId, ledger, fyStartIso, fyEndIso]);
 
   useEffect(() => { void loadAccounts(); }, [loadAccounts]);
 
@@ -318,11 +346,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
   // FY-aware default: when the book has a year-end set we land on "Current
   // year" by default; otherwise on "All entries". Bank ledgers keep the
   // legacy "open" default since their three-tab strip is unchanged.
-  const nav = useBookNavigation();
-  const activePeriod = nav?.activePeriod;
   const fyReady = !!activePeriod?.ready;
-  const fyStartIso = activePeriod?.fyStartIso ?? null;
-  const fyEndIso   = activePeriod?.fyEndIso   ?? null;
   const isBankLedger = ledger === 'Bank';
   const isFaLedger = isFixedAssetLedger(ledger);
 
@@ -1210,6 +1234,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                             key={e.split_id}
                             colSpan={8}
                             dateLabel={formatDateUk(e.date)}
+                            onClick={nav ? () => nav.openTypeList('YET', e.transaction_id) : undefined}
                           />
                         );
                       }
