@@ -210,7 +210,7 @@ export default function PersonalTaxDashboard({ onBack, onOpen, onNewForClient }:
         onClick={onBack}
         className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
       >
-        <ArrowLeft size={14} /> Back to Tax Studio
+        <ArrowLeft size={14} /> Back
       </button>
 
       {/* Title + tax-year picker */}
