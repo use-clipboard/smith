@@ -190,12 +190,30 @@ async function splitMultiInvoiceDocs(
 
 // Table cell that truncates its text and reveals the full value in the standard
 // dark tooltip on hover — so nothing on the review table stays permanently
-// hidden behind an ellipsis.
+// hidden behind an ellipsis. In the fixed-layout resizable table the column
+// width comes from the <colgroup>, so any max-w-[…] in the class is stripped
+// (it would otherwise cap the cell below a widened column).
 function TruncCell({ text, className = '' }: { text: string | null | undefined; className?: string }) {
   const t = text ?? '';
+  const cls = className.replace(/\bmax-w-\[[^\]]+\]/g, '').replace(/\s+/g, ' ').trim();
   const body = <span className="block truncate">{t}</span>;
-  return <td className={className}>{t ? <Tooltip label={t} side="top">{body}</Tooltip> : body}</td>;
+  return <td className={cls}>{t ? <Tooltip label={t} side="top">{body}</Tooltip> : body}</td>;
 }
+
+// Ordered columns per software (matches the header + body cell order). Drives
+// the resizable <colgroup> and the default widths. `key` is the resize key
+// (= a SortTH's sortKey, or 'select' / 'description-ish' / 'actions').
+const CAPTURE_COLUMNS: Record<TargetSoftware, { key: string; w: number }[]> = {
+  smith:      [{ key: 'select', w: 40 }, { key: 'fileName', w: 150 }, { key: 'date', w: 105 }, { key: 'type', w: 70 }, { key: 'contactName', w: 150 }, { key: 'description', w: 240 }, { key: 'analysisAccount', w: 150 }, { key: 'netAmount', w: 95 }, { key: 'vatAmount', w: 95 }, { key: 'grossAmount', w: 100 }, { key: 'actions', w: 90 }],
+  vt:         [{ key: 'select', w: 40 }, { key: 'fileName', w: 150 }, { key: 'date', w: 105 }, { key: 'type', w: 70 }, { key: 'primaryAccount', w: 150 }, { key: 'details', w: 240 }, { key: 'total', w: 95 }, { key: 'vat', w: 95 }, { key: 'analysis', w: 95 }, { key: 'analysisAccount', w: 150 }, { key: 'actions', w: 90 }],
+  capium:     [{ key: 'select', w: 40 }, { key: 'fileName', w: 150 }, { key: 'invoicedate', w: 105 }, { key: 'contactname', w: 150 }, { key: 'description', w: 240 }, { key: 'accountname', w: 150 }, { key: 'amount', w: 95 }, { key: 'vatamount', w: 95 }, { key: 'netAmount', w: 95 }, { key: 'actions', w: 90 }],
+  xero:       [{ key: 'select', w: 40 }, { key: 'fileName', w: 150 }, { key: 'invoiceDate', w: 105 }, { key: 'contactName', w: 150 }, { key: 'invoiceNumber', w: 120 }, { key: 'description', w: 240 }, { key: 'unitAmount', w: 95 }, { key: 'grossAmount', w: 100 }, { key: 'accountName', w: 150 }, { key: 'taxType', w: 110 }, { key: 'actions', w: 90 }],
+  quickbooks: [{ key: 'select', w: 40 }, { key: 'fileName', w: 150 }, { key: 'invoiceDate', w: 105 }, { key: 'supplier', w: 150 }, { key: 'invoiceNo', w: 120 }, { key: 'description', w: 240 }, { key: 'unitAmount', w: 95 }, { key: 'vatAmount', w: 95 }, { key: 'grossAmount', w: 100 }, { key: 'accountName', w: 150 }, { key: 'actions', w: 90 }],
+  freeagent:  [{ key: 'select', w: 40 }, { key: 'fileName', w: 150 }, { key: 'date', w: 105 }, { key: 'amount', w: 110 }, { key: 'description', w: 280 }, { key: 'actions', w: 90 }],
+  sage:       [{ key: 'select', w: 40 }, { key: 'fileName', w: 130 }, { key: 'DATE', w: 105 }, { key: 'TYPE', w: 60 }, { key: 'ACCOUNT_REF', w: 110 }, { key: 'NOMINAL_CODE', w: 110 }, { key: 'DETAILS', w: 200 }, { key: 'NET_AMOUNT', w: 95 }, { key: 'TAX_CODE', w: 90 }, { key: 'TAX_AMOUNT', w: 95 }, { key: 'actions', w: 90 }],
+  general:    [{ key: 'select', w: 40 }, { key: 'fileName', w: 130 }, { key: 'date', w: 105 }, { key: 'supplier', w: 150 }, { key: 'invoiceNumber', w: 120 }, { key: 'description', w: 200 }, { key: 'netAmount', w: 95 }, { key: 'vatAmount', w: 95 }, { key: 'grossAmount', w: 100 }, { key: 'category', w: 120 }, { key: 'actions', w: 90 }],
+};
+const COL_WIDTHS_STORAGE_KEY = 'smith.capture.colwidths';
 
 // ─── Setup wizard helpers ───────────────────────────────────────────────────────
 
@@ -499,6 +517,11 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
 
   // ─── Sort & selection state ───────────────────────────────────────────────
   const [sort, setSort] = useState<SortState | null>(null);
+  // Resizable review-table columns: width per `${software}:${colKey}`, persisted.
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  useEffect(() => {
+    try { const raw = localStorage.getItem(COL_WIDTHS_STORAGE_KEY); if (raw) setColumnWidths(JSON.parse(raw)); } catch { /* ignore */ }
+  }, []);
   const [selectedValid, setSelectedValid] = useState<Set<number>>(new Set());
   const [selectedFlagged, setSelectedFlagged] = useState<Set<number>>(new Set());
   const [bulkMode, setBulkMode] = useState<'account' | 'flag' | null>(null);
@@ -1177,21 +1200,60 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
   const handleSort = (key: string) =>
     setSort(prev => prev?.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
 
+  // ── Resizable columns ────────────────────────────────────────────────────────
+  const activeColumns = CAPTURE_COLUMNS[targetSoftware];
+  const colStorageKey = (colKey: string) => `${targetSoftware}:${colKey}`;
+  const colWidth = (colKey: string) =>
+    columnWidths[colStorageKey(colKey)] ?? activeColumns.find(c => c.key === colKey)?.w ?? 120;
+
+  const startColResize = (e: React.MouseEvent, colKey: string) => {
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX;
+    const startW = colWidth(colKey);
+    const key = colStorageKey(colKey);
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.max(48, Math.round(startW + (ev.clientX - startX)));
+      setColumnWidths(prev => ({ ...prev, [key]: w }));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+      setColumnWidths(prev => { try { localStorage.setItem(COL_WIDTHS_STORAGE_KEY, JSON.stringify(prev)); } catch { /* ignore */ } return prev; });
+    };
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  // A thin drag strip on a header cell's right edge. Sits above the sort click
+  // (stops propagation) so dragging never re-sorts the column.
+  const ColResizeHandle = ({ colKey }: { colKey: string }) => (
+    <span
+      onMouseDown={e => startColResize(e, colKey)}
+      onClick={e => e.stopPropagation()}
+      role="separator"
+      aria-label="Resize column"
+      className="absolute top-0 right-0 z-10 h-full w-1.5 cursor-col-resize select-none hover:bg-[var(--accent)]/50"
+    />
+  );
+
   const SortTH = ({ children, sortKey, right }: { children?: React.ReactNode; sortKey: string; right?: boolean }) => {
     const active = sort?.key === sortKey;
     const Icon = active ? (sort!.dir === 'asc' ? ChevronUp : ChevronDown) : ChevronsUpDown;
     return (
       <th onClick={() => handleSort(sortKey)}
-        className={`px-3 py-3 text-xs font-semibold uppercase tracking-wide cursor-pointer select-none transition-colors ${active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'} ${right ? 'text-right' : 'text-left'}`}>
-        <div className={`flex items-center gap-1 ${right ? 'justify-end' : ''}`}>
-          {children}<Icon size={11} className={active ? 'text-[var(--accent)]' : 'opacity-40'} />
+        className={`relative px-3 py-3 text-xs font-semibold uppercase tracking-wide cursor-pointer select-none transition-colors ${active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'} ${right ? 'text-right' : 'text-left'}`}>
+        <div className={`flex items-center gap-1 overflow-hidden ${right ? 'justify-end' : ''}`}>
+          <span className="truncate">{children}</span><Icon size={11} className={`shrink-0 ${active ? 'text-[var(--accent)]' : 'opacity-40'}`} />
         </div>
+        <ColResizeHandle colKey={sortKey} />
       </th>
     );
   };
 
   const CheckTH = ({ allSel, someSel, onToggle }: { allSel: boolean; someSel: boolean; onToggle: () => void }) => (
-    <th className="px-3 py-3 w-10">
+    <th className="px-3 py-3">
       <input type="checkbox" checked={allSel}
         ref={el => { if (el) el.indeterminate = someSel && !allSel; }}
         onChange={onToggle}
@@ -1199,8 +1261,11 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     </th>
   );
 
-  const TH = ({ children }: { children?: React.ReactNode }) => (
-    <th className="px-3 py-3 text-left text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">{children}</th>
+  const TH = ({ children, colKey }: { children?: React.ReactNode; colKey?: string }) => (
+    <th className="relative px-3 py-3 text-left text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">
+      <span className="block truncate">{children}</span>
+      {colKey && <ColResizeHandle colKey={colKey} />}
+    </th>
   );
 
   const EditBtn = ({ onClick }: { onClick: () => void }) => (
@@ -1653,7 +1718,13 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
             <div className="space-y-2">
               <BulkBarValid />
               <div className="bg-white/[0.78] backdrop-blur-md rounded-xl overflow-x-auto">
-                <table className="w-full text-sm">
+                {/* Fixed layout + colgroup = drag-resizable columns (widths from
+                    state, persisted). [&_td]:truncate keeps every cell to its
+                    column; the hover pill (TruncCell) reveals the full text. */}
+                <table className="text-sm [&_td]:truncate" style={{ tableLayout: 'fixed', width: activeColumns.reduce((s, c) => s + colWidth(c.key), 0), minWidth: '100%' }}>
+                  <colgroup>
+                    {activeColumns.map(c => <col key={c.key} style={{ width: colWidth(c.key) }} />)}
+                  </colgroup>
                   <thead className="border-b border-[var(--border)]">
                     <tr>
                       <CheckTH allSel={allValidSelected} someSel={someValidSelected}
@@ -1661,14 +1732,14 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                           if (allValidSelected) setSelectedValid(new Set());
                           else setSelectedValid(new Set(inRangeWithIndices.map(x => x.origIndex)));
                         }} />
-                      {targetSoftware === 'smith' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="date">Date</SortTH><SortTH sortKey="type">Type</SortTH><SortTH sortKey="contactName">Contact</SortTH><TH>Description</TH><SortTH sortKey="analysisAccount">Account</SortTH><SortTH sortKey="netAmount" right>Net</SortTH><SortTH sortKey="vatAmount" right>VAT</SortTH><SortTH sortKey="grossAmount" right>Gross</SortTH><TH></TH></>}
-                      {targetSoftware === 'vt' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="date">Date</SortTH><SortTH sortKey="type">Type</SortTH><SortTH sortKey="primaryAccount">Account</SortTH><TH>Details</TH><SortTH sortKey="total" right>Total</SortTH><SortTH sortKey="vat" right>VAT</SortTH><SortTH sortKey="analysis" right>Net</SortTH><SortTH sortKey="analysisAccount">Analysis Account</SortTH><TH></TH></>}
-                      {targetSoftware === 'capium' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="invoicedate">Date</SortTH><SortTH sortKey="contactname">Contact</SortTH><TH>Description</TH><SortTH sortKey="accountname">Account</SortTH><SortTH sortKey="amount" right>Gross</SortTH><SortTH sortKey="vatamount" right>VAT</SortTH><SortTH sortKey="netAmount" right>Net</SortTH><TH></TH></>}
-                      {targetSoftware === 'xero' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="invoiceDate">Date</SortTH><SortTH sortKey="contactName">Contact</SortTH><SortTH sortKey="invoiceNumber">Invoice No</SortTH><TH>Description</TH><SortTH sortKey="unitAmount" right>Net</SortTH><SortTH sortKey="grossAmount" right>Gross</SortTH><SortTH sortKey="accountName">Account</SortTH><SortTH sortKey="taxType">Tax</SortTH><TH></TH></>}
-                      {targetSoftware === 'quickbooks' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="invoiceDate">Date</SortTH><SortTH sortKey="supplier">Supplier</SortTH><SortTH sortKey="invoiceNo">Invoice No</SortTH><TH>Description</TH><SortTH sortKey="unitAmount" right>Net</SortTH><SortTH sortKey="vatAmount" right>VAT</SortTH><SortTH sortKey="grossAmount" right>Gross</SortTH><SortTH sortKey="accountName">Account</SortTH><TH></TH></>}
-                      {targetSoftware === 'freeagent' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="date">Date</SortTH><SortTH sortKey="amount" right>Amount</SortTH><TH>Description</TH><TH></TH></>}
-                      {targetSoftware === 'sage' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="DATE">Date</SortTH><SortTH sortKey="TYPE">Type</SortTH><SortTH sortKey="ACCOUNT_REF">Acct Ref</SortTH><SortTH sortKey="NOMINAL_CODE">Nominal</SortTH><TH>Details</TH><SortTH sortKey="NET_AMOUNT" right>Net</SortTH><SortTH sortKey="TAX_CODE">Tax</SortTH><SortTH sortKey="TAX_AMOUNT" right>Tax Amt</SortTH><TH></TH></>}
-                      {targetSoftware === 'general' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="date">Date</SortTH><SortTH sortKey="supplier">Supplier</SortTH><SortTH sortKey="invoiceNumber">Invoice No</SortTH><TH>Description</TH><SortTH sortKey="netAmount" right>Net</SortTH><SortTH sortKey="vatAmount" right>VAT</SortTH><SortTH sortKey="grossAmount" right>Gross</SortTH><SortTH sortKey="category">Category</SortTH><TH></TH></>}
+                      {targetSoftware === 'smith' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="date">Date</SortTH><SortTH sortKey="type">Type</SortTH><SortTH sortKey="contactName">Contact</SortTH><TH colKey="description">Description</TH><SortTH sortKey="analysisAccount">Account</SortTH><SortTH sortKey="netAmount" right>Net</SortTH><SortTH sortKey="vatAmount" right>VAT</SortTH><SortTH sortKey="grossAmount" right>Gross</SortTH><TH></TH></>}
+                      {targetSoftware === 'vt' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="date">Date</SortTH><SortTH sortKey="type">Type</SortTH><SortTH sortKey="primaryAccount">Account</SortTH><TH colKey="details">Details</TH><SortTH sortKey="total" right>Total</SortTH><SortTH sortKey="vat" right>VAT</SortTH><SortTH sortKey="analysis" right>Net</SortTH><SortTH sortKey="analysisAccount">Analysis Account</SortTH><TH></TH></>}
+                      {targetSoftware === 'capium' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="invoicedate">Date</SortTH><SortTH sortKey="contactname">Contact</SortTH><TH colKey="description">Description</TH><SortTH sortKey="accountname">Account</SortTH><SortTH sortKey="amount" right>Gross</SortTH><SortTH sortKey="vatamount" right>VAT</SortTH><SortTH sortKey="netAmount" right>Net</SortTH><TH></TH></>}
+                      {targetSoftware === 'xero' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="invoiceDate">Date</SortTH><SortTH sortKey="contactName">Contact</SortTH><SortTH sortKey="invoiceNumber">Invoice No</SortTH><TH colKey="description">Description</TH><SortTH sortKey="unitAmount" right>Net</SortTH><SortTH sortKey="grossAmount" right>Gross</SortTH><SortTH sortKey="accountName">Account</SortTH><SortTH sortKey="taxType">Tax</SortTH><TH></TH></>}
+                      {targetSoftware === 'quickbooks' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="invoiceDate">Date</SortTH><SortTH sortKey="supplier">Supplier</SortTH><SortTH sortKey="invoiceNo">Invoice No</SortTH><TH colKey="description">Description</TH><SortTH sortKey="unitAmount" right>Net</SortTH><SortTH sortKey="vatAmount" right>VAT</SortTH><SortTH sortKey="grossAmount" right>Gross</SortTH><SortTH sortKey="accountName">Account</SortTH><TH></TH></>}
+                      {targetSoftware === 'freeagent' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="date">Date</SortTH><SortTH sortKey="amount" right>Amount</SortTH><TH colKey="description">Description</TH><TH></TH></>}
+                      {targetSoftware === 'sage' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="DATE">Date</SortTH><SortTH sortKey="TYPE">Type</SortTH><SortTH sortKey="ACCOUNT_REF">Acct Ref</SortTH><SortTH sortKey="NOMINAL_CODE">Nominal</SortTH><TH colKey="DETAILS">Details</TH><SortTH sortKey="NET_AMOUNT" right>Net</SortTH><SortTH sortKey="TAX_CODE">Tax</SortTH><SortTH sortKey="TAX_AMOUNT" right>Tax Amt</SortTH><TH></TH></>}
+                      {targetSoftware === 'general' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="date">Date</SortTH><SortTH sortKey="supplier">Supplier</SortTH><SortTH sortKey="invoiceNumber">Invoice No</SortTH><TH colKey="description">Description</TH><SortTH sortKey="netAmount" right>Net</SortTH><SortTH sortKey="vatAmount" right>VAT</SortTH><SortTH sortKey="grossAmount" right>Gross</SortTH><SortTH sortKey="category">Category</SortTH><TH></TH></>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border)]">

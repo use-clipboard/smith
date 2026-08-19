@@ -24,6 +24,14 @@ const VAT_TREATMENT_LABELS: Record<string, string> = {
   outside_scope: 'Outside the scope of VAT',
 };
 
+// Plain-English labels for Sage's cryptic tax codes (code kept for the pros).
+const SAGE_TAX_CODE_LABELS: Record<string, string> = {
+  T0: 'T0 — Zero rated (0%)',
+  T1: 'T1 — Standard rated (20%)',
+  T5: 'T5 — Reduced rated (5%)',
+  T9: 'T9 — Outside scope / No VAT',
+};
+
 const SOFTWARE_FIELDS: Record<TargetSoftware, FieldConfig[]> = {
   smith: [
     { key: 'date', label: 'Date', type: 'date' },
@@ -98,7 +106,7 @@ const SOFTWARE_FIELDS: Record<TargetSoftware, FieldConfig[]> = {
     { key: 'REFERENCE', label: 'Reference', type: 'text' },
     { key: 'DETAILS', label: 'Details', type: 'text' },
     { key: 'NET_AMOUNT', label: 'Net Amount (£)', type: 'number' },
-    { key: 'TAX_CODE', label: 'Tax Code', type: 'select', options: ['T0', 'T1', 'T5', 'T9'] },
+    { key: 'TAX_CODE', label: 'Tax Code', type: 'select', options: ['T0', 'T1', 'T5', 'T9'], optionLabels: SAGE_TAX_CODE_LABELS },
     { key: 'TAX_AMOUNT', label: 'Tax Amount (£)', type: 'number' },
   ],
   general: [
