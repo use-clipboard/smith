@@ -188,6 +188,15 @@ async function splitMultiInvoiceDocs(
   return { results: updated, newFiles, replacedOriginals };
 }
 
+// Table cell that truncates its text and reveals the full value in the standard
+// dark tooltip on hover — so nothing on the review table stays permanently
+// hidden behind an ellipsis.
+function TruncCell({ text, className = '' }: { text: string | null | undefined; className?: string }) {
+  const t = text ?? '';
+  const body = <span className="block truncate">{t}</span>;
+  return <td className={className}>{t ? <Tooltip label={t} side="top">{body}</Tooltip> : body}</td>;
+}
+
 // ─── Setup wizard helpers ───────────────────────────────────────────────────────
 
 const WIZARD_STEPS = [
@@ -1685,11 +1694,11 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                         const m = tx as SmithTransaction;
                         return <tr key={origIndex} className={rowCls} onClick={toggleRow}>
                           {checkTd}
-                          <td className="px-3 py-2.5 text-[var(--text-muted)] truncate max-w-[120px]">{m.fileName}</td>
+                          <TruncCell text={m.fileName} className="px-3 py-2.5 text-[var(--text-muted)] max-w-[120px]" />
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{m.date}</td>
                           <td className="px-3 py-2.5 font-medium text-[var(--text-primary)]">{m.type}</td>
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{m.contactName}</td>
-                          <td className="px-3 py-2.5 truncate max-w-[160px] text-[var(--text-secondary)]">{m.description}</td>
+                          <TruncCell text={m.description} className="px-3 py-2.5 max-w-[160px] text-[var(--text-secondary)]" />
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{m.analysisAccount}</td>
                           <td className="px-3 py-2.5 text-right text-[var(--text-secondary)]">£{m.netAmount?.toFixed(2)}</td>
                           <td className="px-3 py-2.5 text-right text-[var(--text-secondary)]">£{m.vatAmount?.toFixed(2)}</td>
@@ -1702,11 +1711,11 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                         const v = tx as VTTransaction;
                         return <tr key={origIndex} className={rowCls} onClick={toggleRow}>
                           {checkTd}
-                          <td className="px-3 py-2.5 text-[var(--text-muted)] truncate max-w-[120px]">{v.fileName}</td>
+                          <TruncCell text={v.fileName} className="px-3 py-2.5 text-[var(--text-muted)] max-w-[120px]" />
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{v.date}</td>
                           <td className="px-3 py-2.5 font-medium text-[var(--text-primary)]">{v.type}</td>
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{v.primaryAccount}</td>
-                          <td className="px-3 py-2.5 truncate max-w-[160px] text-[var(--text-secondary)]">{v.details}</td>
+                          <TruncCell text={v.details} className="px-3 py-2.5 max-w-[160px] text-[var(--text-secondary)]" />
                           <td className="px-3 py-2.5 text-right font-medium text-[var(--text-primary)]">£{v.total?.toFixed(2)}</td>
                           <td className="px-3 py-2.5 text-right text-[var(--text-secondary)]">£{v.vat?.toFixed(2)}</td>
                           <td className="px-3 py-2.5 text-right text-[var(--text-secondary)]">£{v.analysis?.toFixed(2)}</td>
@@ -1718,10 +1727,10 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                         const c = tx as CapiumTransaction;
                         return <tr key={origIndex} className={rowCls} onClick={toggleRow}>
                           {checkTd}
-                          <td className="px-3 py-2.5 text-[var(--text-muted)] truncate max-w-[120px]">{c.fileName}</td>
+                          <TruncCell text={c.fileName} className="px-3 py-2.5 text-[var(--text-muted)] max-w-[120px]" />
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{c.invoicedate}</td>
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{c.contactname}</td>
-                          <td className="px-3 py-2.5 truncate max-w-[160px] text-[var(--text-secondary)]">{c.description}</td>
+                          <TruncCell text={c.description} className="px-3 py-2.5 max-w-[160px] text-[var(--text-secondary)]" />
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{c.accountname}</td>
                           <td className="px-3 py-2.5 text-right font-medium text-[var(--text-primary)]">£{c.amount?.toFixed(2)}</td>
                           <td className="px-3 py-2.5 text-right text-[var(--text-secondary)]">£{c.vatamount?.toFixed(2)}</td>
@@ -1733,11 +1742,11 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                         const x = tx as XeroTransaction;
                         return <tr key={origIndex} className={rowCls} onClick={toggleRow}>
                           {checkTd}
-                          <td className="px-3 py-2.5 text-[var(--text-muted)] truncate max-w-[120px]">{x.fileName}</td>
+                          <TruncCell text={x.fileName} className="px-3 py-2.5 text-[var(--text-muted)] max-w-[120px]" />
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{x.invoiceDate}</td>
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{x.contactName}</td>
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{x.invoiceNumber}</td>
-                          <td className="px-3 py-2.5 truncate max-w-[160px] text-[var(--text-secondary)]">{x.description}</td>
+                          <TruncCell text={x.description} className="px-3 py-2.5 max-w-[160px] text-[var(--text-secondary)]" />
                           <td className="px-3 py-2.5 text-right text-[var(--text-secondary)]">£{x.unitAmount?.toFixed(2)}</td>
                           <td className="px-3 py-2.5 text-right font-medium text-[var(--text-primary)]">£{x.grossAmount?.toFixed(2)}</td>
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{x.accountName}</td>
@@ -1749,11 +1758,11 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                         const q = tx as QuickBooksTransaction;
                         return <tr key={origIndex} className={rowCls} onClick={toggleRow}>
                           {checkTd}
-                          <td className="px-3 py-2.5 text-[var(--text-muted)] truncate max-w-[120px]">{q.fileName}</td>
+                          <TruncCell text={q.fileName} className="px-3 py-2.5 text-[var(--text-muted)] max-w-[120px]" />
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{q.invoiceDate}</td>
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{q.supplier}</td>
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{q.invoiceNo}</td>
-                          <td className="px-3 py-2.5 truncate max-w-[160px] text-[var(--text-secondary)]">{q.description}</td>
+                          <TruncCell text={q.description} className="px-3 py-2.5 max-w-[160px] text-[var(--text-secondary)]" />
                           <td className="px-3 py-2.5 text-right text-[var(--text-secondary)]">£{q.unitAmount?.toFixed(2)}</td>
                           <td className="px-3 py-2.5 text-right text-[var(--text-secondary)]">£{q.vatAmount?.toFixed(2)}</td>
                           <td className="px-3 py-2.5 text-right font-medium text-[var(--text-primary)]">£{q.grossAmount?.toFixed(2)}</td>
@@ -1765,10 +1774,10 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                         const f = tx as FreeAgentTransaction;
                         return <tr key={origIndex} className={rowCls} onClick={toggleRow}>
                           {checkTd}
-                          <td className="px-3 py-2.5 text-[var(--text-muted)] truncate max-w-[120px]">{f.fileName}</td>
+                          <TruncCell text={f.fileName} className="px-3 py-2.5 text-[var(--text-muted)] max-w-[120px]" />
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{f.date}</td>
                           <td className={`px-3 py-2.5 text-right font-medium ${f.amount < 0 ? 'text-red-500' : 'text-emerald-600'}`}>£{f.amount?.toFixed(2)}</td>
-                          <td className="px-3 py-2.5 truncate max-w-[200px] text-[var(--text-secondary)]">{f.description}</td>
+                          <TruncCell text={f.description} className="px-3 py-2.5 max-w-[200px] text-[var(--text-secondary)]" />
                           {editTd}
                         </tr>;
                       }
@@ -1776,12 +1785,12 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                         const s = tx as SageTransaction;
                         return <tr key={origIndex} className={rowCls} onClick={toggleRow}>
                           {checkTd}
-                          <td className="px-3 py-2.5 text-[var(--text-muted)] truncate max-w-[100px]">{s.fileName}</td>
+                          <TruncCell text={s.fileName} className="px-3 py-2.5 text-[var(--text-muted)] max-w-[100px]" />
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{s.DATE}</td>
                           <td className="px-3 py-2.5 font-medium text-[var(--text-primary)]">{s.TYPE}</td>
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{s.ACCOUNT_REF}</td>
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{s.NOMINAL_CODE}</td>
-                          <td className="px-3 py-2.5 truncate max-w-[140px] text-[var(--text-secondary)]">{s.DETAILS}</td>
+                          <TruncCell text={s.DETAILS} className="px-3 py-2.5 max-w-[140px] text-[var(--text-secondary)]" />
                           <td className="px-3 py-2.5 text-right font-medium text-[var(--text-primary)]">£{s.NET_AMOUNT?.toFixed(2)}</td>
                           <td className="px-3 py-2.5 text-[var(--text-secondary)]">{s.TAX_CODE}</td>
                           <td className="px-3 py-2.5 text-right text-[var(--text-secondary)]">£{s.TAX_AMOUNT?.toFixed(2)}</td>
@@ -1792,15 +1801,15 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                       const g = tx as GeneralTransaction;
                       return <tr key={origIndex} className={rowCls} onClick={toggleRow}>
                         {checkTd}
-                        <td className="px-3 py-2.5 text-[var(--text-muted)] truncate max-w-[100px]">{g.fileName}</td>
+                        <TruncCell text={g.fileName} className="px-3 py-2.5 text-[var(--text-muted)] max-w-[100px]" />
                         <td className="px-3 py-2.5 text-[var(--text-secondary)]">{g.date}</td>
                         <td className="px-3 py-2.5 text-[var(--text-secondary)]">{g.supplier}</td>
                         <td className="px-3 py-2.5 text-[var(--text-secondary)]">{g.invoiceNumber}</td>
-                        <td className="px-3 py-2.5 truncate max-w-[140px] text-[var(--text-secondary)]">{g.description}</td>
+                        <TruncCell text={g.description} className="px-3 py-2.5 max-w-[140px] text-[var(--text-secondary)]" />
                         <td className="px-3 py-2.5 text-right text-[var(--text-secondary)]">£{g.netAmount?.toFixed(2)}</td>
                         <td className="px-3 py-2.5 text-right text-[var(--text-secondary)]">£{g.vatAmount?.toFixed(2)}</td>
                         <td className="px-3 py-2.5 text-right font-medium text-[var(--text-primary)]">£{g.grossAmount?.toFixed(2)}</td>
-                        <td className="px-3 py-2.5 text-[var(--text-secondary)] truncate max-w-[100px]">{g.category}</td>
+                        <TruncCell text={g.category} className="px-3 py-2.5 text-[var(--text-secondary)] max-w-[100px]" />
                         {editTd}
                       </tr>;
                     })}

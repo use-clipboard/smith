@@ -11,7 +11,18 @@ import type {
 // ─── Field configuration ──────────────────────────────────────────────────────
 
 type FieldType = 'text' | 'number' | 'date' | 'select' | 'textarea';
-interface FieldConfig { key: string; label: string; type: FieldType; options?: string[] }
+interface FieldConfig { key: string; label: string; type: FieldType; options?: string[]; optionLabels?: Record<string, string> }
+
+// Plain-English labels for the SMITH VAT treatment codes (the stored value stays
+// the code; only the dropdown text changes).
+const VAT_TREATMENT_LABELS: Record<string, string> = {
+  no_vat:        'No VAT',
+  standard_20:   'Standard rated (20%)',
+  reduced_5:     'Reduced rated (5%)',
+  zero:          'Zero rated (0%)',
+  exempt:        'Exempt from VAT',
+  outside_scope: 'Outside the scope of VAT',
+};
 
 const SOFTWARE_FIELDS: Record<TargetSoftware, FieldConfig[]> = {
   smith: [
@@ -24,7 +35,7 @@ const SOFTWARE_FIELDS: Record<TargetSoftware, FieldConfig[]> = {
     { key: 'netAmount', label: 'Net (£)', type: 'number' },
     { key: 'vatAmount', label: 'VAT (£)', type: 'number' },
     { key: 'grossAmount', label: 'Gross (£)', type: 'number' },
-    { key: 'vatTreatment', label: 'VAT Treatment', type: 'select', options: ['no_vat', 'standard_20', 'reduced_5', 'zero', 'exempt', 'outside_scope'] },
+    { key: 'vatTreatment', label: 'VAT Treatment', type: 'select', options: ['no_vat', 'standard_20', 'reduced_5', 'zero', 'exempt', 'outside_scope'], optionLabels: VAT_TREATMENT_LABELS },
   ],
   vt: [
     { key: 'date', label: 'Date', type: 'date' },
@@ -432,7 +443,7 @@ export default function TransactionEditModal({
                           onChange={e => setField(field.key, e.target.value)}
                           className="input-base text-sm w-full"
                         >
-                          {(field.options ?? []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          {(field.options ?? []).map(opt => <option key={opt} value={opt}>{field.optionLabels?.[opt] ?? opt}</option>)}
                         </select>
                       ) : field.type === 'textarea' ? (
                         <textarea
