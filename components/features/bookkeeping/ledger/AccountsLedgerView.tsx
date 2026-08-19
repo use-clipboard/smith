@@ -18,12 +18,12 @@
  * entries get a ✓ icon and are hidden from the Open entries view.
  */
 
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { Fragment, useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   Search, Loader2, Link2, Unlink, Check, X, AlertCircle,
   Users, Building2, ChevronDown, ChevronUp,
   Wallet, ReceiptText, Layers, FileBadge, Coins, Boxes, FolderTree, ShoppingCart,
-  Lock, CheckSquare, ArrowRightLeft,
+  CheckSquare, ArrowRightLeft,
 } from 'lucide-react';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
 import { TxnRefLink, useBookNavigation } from '../book/BookNavigationContext';
@@ -33,6 +33,7 @@ import BankRecHistoryTab from './BankRecHistoryTab';
 import BankRecDetailModal from './BankRecDetailModal';
 import DepreciationTab from './DepreciationTab';
 import { isFixedAssetLedger, depreciationNoun } from '@/lib/bookkeeping/fixedAssets';
+import { isYearEnd, YearEndChip, YearEndBoundaryRow, YEAR_END_ROW_CLASS } from '../book/YearEndMarker';
 import { AccountCodeTag } from '@/lib/bookkeeping/useAccountCodes';
 void BankRecPanel; // retained for fallback / future reference — superseded by BankReconcileTab in the period-first model
 import { useAccountContextMenu } from './AccountContextMenu';
@@ -1195,7 +1196,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                   </thead>
                   <tbody>
                     {hasOpening && bfwdRow}
-                    {entries.map(e => {
+                    {entries.map((e, idx) => {
                       const matched = e.match_id !== null;
                       const recCleared = e.cleared_in_rec_id !== null;
                       // Treat reconciled splits as a "group" for the same
@@ -1210,9 +1211,10 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                         (matched && e.match_id !== null && siblingHighlightMatchIds.has(e.match_id)) ||
                         (recCleared && e.cleared_in_rec_id !== null && siblingHighlightRecIds.has(e.cleared_in_rec_id))
                       );
+                      const yearEnd = isYearEnd(e.ref_no);
                       return (
+                        <Fragment key={e.split_id}>
                         <tr
-                          key={e.split_id}
                           onClick={(ev) => handleRowClick(e, ev)}
                           onContextMenu={ev => {
                             const t = ev.target as HTMLElement;
@@ -1236,6 +1238,8 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                               ? 'bg-amber-50 hover:bg-amber-100 ring-1 ring-amber-200'
                               : grouped
                               ? 'opacity-70 hover:bg-slate-50'
+                              : yearEnd
+                              ? YEAR_END_ROW_CLASS
                               : 'hover:bg-slate-50'
                           }`}
                         >
@@ -1273,6 +1277,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                           <td className="px-3 py-1.5 text-slate-700 tabular-nums">{formatDateUk(e.date)}</td>
                           <td className="px-3 py-1.5 text-xs">
                             <TxnRefLink txn={entryAsTxnStub(e)} className="text-xs" />
+                            {yearEnd && <YearEndChip />}
                           </td>
                           <td className="px-3 py-1.5 max-w-[300px]">
                             <div className="text-slate-900 truncate">{e.details ?? ''}</div>
@@ -1343,6 +1348,12 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                             {fmt(e.running_balance)}
                           </td>
                         </tr>
+                        {/* Only when entries follow — otherwise "Balance
+                            carried forward" is already the boundary. */}
+                        {yearEnd && idx < entries.length - 1 && (
+                          <YearEndBoundaryRow colSpan={8} dateLabel={formatDateUk(e.date)} />
+                        )}
+                        </Fragment>
                       );
                     })}
                   </tbody>

@@ -12,11 +12,12 @@
  * its own sub-window.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import PeriodSelector, { type DateRange } from './PeriodSelector';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
 import { TxnRefLink } from '../book/BookNavigationContext';
+import { isYearEnd, YearEndChip, YearEndBoundaryRow, YEAR_END_ROW_CLASS } from '../book/YearEndMarker';
 import { AccountCodeTag } from '@/lib/bookkeeping/useAccountCodes';
 import type { Transaction } from '@/types/bookkeeping';
 
@@ -214,17 +215,28 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
                   </td>
                 </tr>
               ) : (
-                rows.map(({ txn, debit, credit, balance }) => {
+                rows.map(({ txn, debit, credit, balance }, i) => {
                   const rp = rowActions.rowProps(txn);
+                  const yearEnd = isYearEnd(txn.type);
                   return (
-                    <tr key={txn.id} {...rp} className={`border-t border-gray-100 hover:bg-indigo-50/30 ${rp.className}`}>
-                      <td className="px-2 py-1.5 text-gray-700 tabular-nums">{formatDateUk(txn.date)}</td>
-                      <td className="px-2 py-1.5 text-xs"><TxnRefLink txn={txn} className="text-xs" /></td>
-                      <td className="px-2 py-1.5 text-gray-900 truncate max-w-[400px]">{txn.details ?? ''}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{fmt(debit)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-red-700">{fmt(credit)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtBalance(balance)}</td>
-                    </tr>
+                    <Fragment key={txn.id}>
+                      <tr {...rp} className={`border-t border-gray-100 ${yearEnd ? YEAR_END_ROW_CLASS : 'hover:bg-indigo-50/30'} ${rp.className}`}>
+                        <td className="px-2 py-1.5 text-gray-700 tabular-nums">{formatDateUk(txn.date)}</td>
+                        <td className="px-2 py-1.5 text-xs">
+                          <TxnRefLink txn={txn} className="text-xs" />
+                          {yearEnd && <YearEndChip />}
+                        </td>
+                        <td className="px-2 py-1.5 text-gray-900 truncate max-w-[400px]">{txn.details ?? ''}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{fmt(debit)}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums text-red-700">{fmt(credit)}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtBalance(balance)}</td>
+                      </tr>
+                      {/* Only when entries follow — otherwise "Balance carried
+                          forward" is already the boundary. */}
+                      {yearEnd && i < rows.length - 1 && (
+                        <YearEndBoundaryRow colSpan={6} dateLabel={formatDateUk(txn.date)} />
+                      )}
+                    </Fragment>
                   );
                 })
               )}

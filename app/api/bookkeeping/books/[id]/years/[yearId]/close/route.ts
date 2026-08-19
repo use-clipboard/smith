@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getBookkeepingContext } from '@/lib/bookkeeping/server';
+import { runPreCloseChecks } from '@/lib/bookkeeping/preCloseChecks';
 
 // ── POST /api/bookkeeping/books/[id]/years/[yearId]/close ────────────────────
 // Formally close a financial year (VT-style). Posts ONE year-end journal (YET)
@@ -51,7 +52,7 @@ export async function POST(
   // Book + RE pointer.
   const { data: book, error: bookErr } = await supabase
     .from('bookkeeping_books')
-    .select('id, firm_id, admin_locked, period_lock_date, retained_earnings_account_id')
+    .select('id, firm_id, admin_locked, period_lock_date, retained_earnings_account_id, vat_registered')
     .eq('id', params.id)
     .eq('firm_id', ctx.firmId)
     .single();
@@ -272,14 +273,29 @@ export async function POST(
     // Detect any YET already dated within this FY — a strong signal the year
     // was closed in previous software and an imported year-end transfer is
     // already present, so posting another would double-count.
-    const { data: yets } = await supabase
-      .from('bookkeeping_transactions')
-      .select('id, ref_no, date, total')
-      .eq('book_id', params.id)
-      .eq('type', 'YET')
-      .gte('date', fy.start_date)
-      .lte('date', fy.end_date)
-      .order('date', { ascending: true });
+    const [{ data: yets }, checks] = await Promise.all([
+      supabase
+        .from('bookkeeping_transactions')
+        .select('id, ref_no, date, total')
+        .eq('book_id', params.id)
+        .eq('type', 'YET')
+        .gte('date', fy.start_date)
+        .lte('date', fy.end_date)
+        .order('date', { ascending: true }),
+      // Advisory year-end checks — never block the close, just surface what an
+      // accountant would want to have looked at first.
+      runPreCloseChecks(
+        supabase,
+        params.id,
+        { start_date: fy.start_date, end_date: fy.end_date },
+        { id: params.id, vat_registered: book.vat_registered as boolean | null },
+        allAccounts,
+      ).catch(err => {
+        // A failed check must never stop someone closing their year.
+        console.error('[bookkeeping] pre-close checks failed', err);
+        return [];
+      }),
+    ]);
     const existingYets = (yets ?? []).map(y => ({
       id: y.id, ref_no: y.ref_no, date: y.date, total: Number(y.total),
     }));
@@ -292,6 +308,7 @@ export async function POST(
       net_profit: netProfit,
       nil_profit: nilProfit,
       existing_yets: existingYets,
+      checks,
       retained_earnings: { id: retainedEarningsId, name: reName, ledger: reLedger },
       total: round2(allSplits.reduce((s, x) => s + x.debit, 0)),
       lines: allSplits.map(s => ({

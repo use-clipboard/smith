@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { X, Loader2, Lock, Unlock, Check, AlertTriangle, CalendarClock, CalendarRange, FileText } from 'lucide-react';
+import { X, Loader2, Lock, Unlock, Check, AlertTriangle, CalendarClock, CalendarRange, FileText, Info } from 'lucide-react';
 import type { FinancialYear } from '@/types/bookkeeping';
 import DateInput, { fromIso, toIso } from '../input/DateInput';
 import Tooltip from '@/components/ui/Tooltip';
@@ -28,11 +28,19 @@ interface ExistingYet {
   date: string;
   total: number;
 }
+interface PreCloseCheck {
+  id: string;
+  severity: 'warn' | 'info';
+  title: string;
+  detail: string;
+}
 interface ClosePreview {
   period: { from: string; to: string };
   net_profit: number;
   nil_profit: boolean;
   existing_yets?: ExistingYet[];
+  /** Advisory year-end checks — never block the close. */
+  checks?: PreCloseCheck[];
   retained_earnings: { id: string; name: string; ledger: string | null };
   total: number;
   lines: ClosePreviewLine[];
@@ -407,6 +415,12 @@ export default function YearEndsDialog({ bookId, isAdmin, onClose, onChanged }: 
                     the period. Review before approving.
                   </p>
 
+                  {/* ── Before you close ──────────────────────────────────────
+                      Advisory only. These are the things an accountant would
+                      want to have looked at before the period locks — never a
+                      gate on the button. */}
+                  <PreCloseChecklist checks={preview.checks ?? []} />
+
                   {(preview.existing_yets?.length ?? 0) > 0 && (
                     <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 flex items-start gap-2">
                       <AlertTriangle size={13} className="mt-0.5 shrink-0" />
@@ -648,6 +662,52 @@ export default function YearEndsDialog({ bookId, isAdmin, onClose, onChanged }: 
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * "Before you close" — the year-end routine in front of the year-end button.
+ *
+ * Advisory throughout: an accountant may have perfectly good reasons to close
+ * over any of these, so nothing here disables Approve. Warnings (things that
+ * distort the accounts) sort above informational items; an empty list is worth
+ * saying out loud, because silence would look like the checks hadn't run.
+ */
+function PreCloseChecklist({ checks }: { checks: PreCloseCheck[] }) {
+  const warnings = checks.filter(c => c.severity === 'warn').length;
+
+  if (checks.length === 0) {
+    return (
+      <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-3 flex items-center gap-2">
+        <Check size={13} className="shrink-0" />
+        Year-end checks all clear — no drafts, suspense balances or unposted depreciation.
+      </div>
+    );
+  }
+
+  return (
+    <div className={`rounded-lg border mb-3 overflow-hidden ${warnings > 0 ? 'border-amber-200' : 'border-slate-200'}`}>
+      <div className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1.5 ${
+        warnings > 0 ? 'bg-amber-50 text-amber-800' : 'bg-slate-50 text-slate-500'
+      }`}>
+        <AlertTriangle size={11} />
+        Before you close — {checks.length} thing{checks.length === 1 ? '' : 's'} to look at
+        <span className="ml-auto font-normal normal-case tracking-normal opacity-70">none of these block the close</span>
+      </div>
+      <ul className="divide-y divide-slate-100 bg-white">
+        {checks.map(c => (
+          <li key={c.id} className="px-3 py-2 flex items-start gap-2">
+            <span className={`mt-0.5 shrink-0 ${c.severity === 'warn' ? 'text-amber-600' : 'text-slate-400'}`}>
+              {c.severity === 'warn' ? <AlertTriangle size={12} /> : <Info size={12} />}
+            </span>
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold text-slate-800">{c.title}</div>
+              <p className="text-[11px] text-slate-500 leading-snug">{c.detail}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
