@@ -33,7 +33,7 @@ interface BucketView { label: string; tint: string; icon: typeof Layers; rows: R
 export type TaxServiceId = 'personal' | 'company' | 'partnership' | 'trust' | 'cgt' | 'nonresident';
 export const TAX_SERVICES: { id: TaxServiceId; title: string; sub: string; icon: LucideIcon; available: boolean }[] = [
   { id: 'personal',    title: 'Personal Tax (SA100)', sub: 'Individuals & sole traders', icon: User,       available: true },
-  { id: 'company',     title: 'Company Tax (CT600)',  sub: 'Limited companies',          icon: Building2,  available: false },
+  { id: 'company',     title: 'Company Tax (CT600)',  sub: 'Limited companies',          icon: Building2,  available: true },
   { id: 'partnership', title: 'Partnership (SA800)',  sub: 'Partnerships & LLPs',         icon: Users,      available: false },
   { id: 'trust',       title: 'Trust & Estate (SA900)', sub: 'Trusts & estates',         icon: Landmark,   available: false },
   { id: 'cgt',         title: 'Capital Gains (CGT)',  sub: 'Standalone CGT reporting',    icon: TrendingUp, available: false },

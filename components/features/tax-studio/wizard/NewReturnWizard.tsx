@@ -41,19 +41,20 @@ function initialRoll(): Record<RollKey, boolean> {
 }
 
 export default function NewReturnWizard({
-  onStart, onBack, initialClient = null, initialTaxYear,
+  onStart, onBack, initialClient = null, initialTaxYear, initialReturnType,
 }: {
   onStart: (r: TaxReturn) => Promise<void>;
   onBack: () => void;
-  // When launched from a client's row on the Personal Tax dashboard, the client
-  // (and the tax year they were viewing) are pre-selected — the wizard opens on
-  // the tax-year step rather than return-type/client selection.
+  // When launched from a service dashboard's "New return", the client (and its
+  // return type + tax year) are pre-selected — the wizard opens on the
+  // tax-year / accounting-period step rather than return-type/client selection.
   initialClient?: WizardClient | null;
   initialTaxYear?: string;
+  initialReturnType?: ReturnTypeId;
 }) {
   const [step, setStep] = useState(initialClient ? 3 : 1);
   const [furthest, setFurthest] = useState(initialClient ? 3 : 1);
-  const [returnTypeId, setReturnTypeId] = useState<ReturnTypeId>('sa100');
+  const [returnTypeId, setReturnTypeId] = useState<ReturnTypeId>(initialReturnType ?? 'sa100');
   const [client, setClient] = useState<WizardClient | null>(initialClient);
   const [taxYear, setTaxYear] = useState(initialTaxYear || currentFilingSeason().taxYear);
   // CT600 accounting period (companies file per period, not tax year).

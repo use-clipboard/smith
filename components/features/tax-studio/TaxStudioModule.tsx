@@ -11,6 +11,7 @@ import { canAccessTaxStudio } from '@/lib/tax-studio/access';
 import CommandCentre from './CommandCentre';
 import type { TaxServiceId } from './CommandCentre';
 import PersonalTaxDashboard, { type PersonalTaxClient } from './PersonalTaxDashboard';
+import CompanyTaxDashboard, { type CompanyTaxClient } from './CompanyTaxDashboard';
 import NewReturnWizard from './wizard/NewReturnWizard';
 import type { WizardClient } from './wizard/wizardData';
 import Stepper from './Stepper';
@@ -37,10 +38,10 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
   // Which top-level tax service the home dashboard is showing. 'command' = the
   // service-selector command centre; 'personal' = the Personal Tax (SA100)
   // client-list sub-dashboard.
-  const [homeService, setHomeService] = useState<'command' | 'personal'>('command');
-  // A client (and tax year) pre-selected for a new return, launched from the
-  // Personal Tax dashboard's "New return" button.
-  const [presetClient, setPresetClient] = useState<{ client: WizardClient; taxYear: string } | null>(null);
+  const [homeService, setHomeService] = useState<'command' | 'personal' | 'company'>('command');
+  // A client (+ optional tax year / return type) pre-selected for a new return,
+  // launched from a service dashboard's "New return" button.
+  const [presetClient, setPresetClient] = useState<{ client: WizardClient; taxYear?: string; returnType?: 'sa100' | 'ct600' } | null>(null);
   const [items, setItems] = useState<ReturnListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [ret, setRet] = useState<TaxReturn | null>(null);
@@ -196,7 +197,12 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
 
   // ── Home / New (no open return) ─────────────────────────────────────────────
   function startNewForClient(client: PersonalTaxClient, taxYear: string) {
-    setPresetClient({ client: client as WizardClient, taxYear });
+    setPresetClient({ client: client as WizardClient, taxYear, returnType: 'sa100' });
+    setView('new');
+  }
+  function startNewForCompany(client: CompanyTaxClient) {
+    // Companies collect the accounting period in the wizard — no tax year here.
+    setPresetClient({ client: client as WizardClient, returnType: 'ct600' });
     setView('new');
   }
   if (!ret) {
@@ -205,7 +211,8 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
         <ToolLayout title="Tax Studio" description="Create a new return." icon={Calculator} iconColor={ACCENT} wide>
           <NewReturnWizard onStart={startNew}
             onBack={() => { setView('home'); setPresetClient(null); }}
-            initialClient={presetClient?.client ?? null} initialTaxYear={presetClient?.taxYear} />
+            initialClient={presetClient?.client ?? null} initialTaxYear={presetClient?.taxYear}
+            initialReturnType={presetClient?.returnType} />
         </ToolLayout>
       );
     }
@@ -216,13 +223,20 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
         </ToolLayout>
       );
     }
+    if (homeService === 'company') {
+      return (
+        <ToolLayout title="Tax Studio" description="Company Tax — limited companies." icon={Calculator} iconColor={ACCENT} wide>
+          <CompanyTaxDashboard onBack={() => setHomeService('command')} onOpen={openReturn} onNewForClient={startNewForCompany} />
+        </ToolLayout>
+      );
+    }
     return (
       <ToolLayout title="Tax Studio" description="Your practice-wide tax command centre." icon={Calculator} iconColor={ACCENT} wide>
         <CommandCentre items={items} loading={loading} userName={userName}
           onNew={() => { setPresetClient(null); setView('new'); }} onOpen={openReturn}
           onDelete={async id => { await deleteReturn(id); await refresh(); }}
           activeService="personal"
-          onSelectService={(id: TaxServiceId) => { if (id === 'personal') setHomeService('personal'); }} />
+          onSelectService={(id: TaxServiceId) => { if (id === 'personal') setHomeService('personal'); else if (id === 'company') setHomeService('company'); }} />
       </ToolLayout>
     );
   }
