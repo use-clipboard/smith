@@ -79,6 +79,10 @@ interface Entry {
   running_balance: number;
   match_id: string | null;
   match_status: 'full' | 'partial' | 'write_off' | null;
+  /** Set by the server on a year-end close sitting in a P&L ledger: a period
+   *  boundary rather than a movement, carrying no amounts and leaving the
+   *  running balance alone. Rendered as a rule, not a row. */
+  year_end_marker?: boolean;
   /** Period-first bank-rec clearing. Independent from match_id — a split
    *  can be cleared by being ticked off in a reconciliation even when no
    *  formal match record exists. */
@@ -1196,7 +1200,19 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                   </thead>
                   <tbody>
                     {hasOpening && bfwdRow}
-                    {entries.map((e, idx) => {
+                    {entries.map(e => {
+                      // P&L year-end close — a boundary between years, not a
+                      // movement. Drawn as a rule; the balance either side is
+                      // that year's own trading.
+                      if (e.year_end_marker) {
+                        return (
+                          <YearEndBoundaryRow
+                            key={e.split_id}
+                            colSpan={8}
+                            dateLabel={formatDateUk(e.date)}
+                          />
+                        );
+                      }
                       const matched = e.match_id !== null;
                       const recCleared = e.cleared_in_rec_id !== null;
                       // Treat reconciled splits as a "group" for the same
@@ -1348,11 +1364,6 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                             {fmt(e.running_balance)}
                           </td>
                         </tr>
-                        {/* Only when entries follow — otherwise "Balance
-                            carried forward" is already the boundary. */}
-                        {yearEnd && idx < entries.length - 1 && (
-                          <YearEndBoundaryRow colSpan={8} dateLabel={formatDateUk(e.date)} />
-                        )}
                         </Fragment>
                       );
                     })}
@@ -1461,7 +1472,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                   ? 'Completed & abandoned reconciliations'
                   : statusFilter === 'depreciation'
                   ? `${depreciationNoun(ledger)} schedule & posting`
-                  : `${entries.length} ${statusFilter === 'open' || statusFilter === 'openAtYearEnd' ? 'open' : 'total'}`}
+                  : `${entries.filter(e => !e.year_end_marker).length} ${statusFilter === 'open' || statusFilter === 'openAtYearEnd' ? 'open' : 'total'}`}
               </span>
             </div>
           </>

@@ -204,17 +204,75 @@ export async function GET(
     bank_rec_status: 'pending' | 'in_progress' | 'reconciled' | 'abandoned' | null;
     /** Human label for the rec — used in the tick's tooltip. */
     bank_rec_label: string | null;
+    /** Year-end close on a P&L account: a period BOUNDARY, not a movement.
+     *  Carries no amounts and doesn't move the running balance — the UI draws
+     *  it as a rule rather than a ledger row. See the note below. */
+    year_end_marker?: boolean;
   };
+
+  // ── How the year-end close behaves in a ledger ──────────────────────────────
+  // On a P&L account the YET is mechanical: its only job is to flatten the
+  // nominal so the next year starts clean. Treating it as a movement makes a
+  // year that genuinely traded £4,605.80 show a closing balance of 0.00 —
+  // arithmetically "the balance after closing", but not the number anyone
+  // opening the Sales ledger for 2024 wants to see.
+  //
+  // So on income/expense accounts the close RESETS the running balance instead
+  // of moving it, and is emitted as a boundary marker carrying no amounts.
+  // That gives the right answer at both ends:
+  //   • viewing the closed year   → closing balance is the year's trading
+  //   • viewing the year after    → opening balance is nil, because the reset
+  //                                 happened while we walked past it
+  //   • viewing all entries       → each year's activity reads on its own,
+  //                                 rather than accumulating across years
+  //
+  // On balance-sheet accounts the YET is a real entry — the credit into
+  // reserves IS the movement — so it's left completely alone.
+  const isPlAccount = account.account_type === 'income' || account.account_type === 'expense';
+  const isYearEndRef = (refNo: string | null | undefined) =>
+    (refNo ?? '').trim().toUpperCase().startsWith('YET');
 
   let runningBalance = 0;
   let openingBalance = 0;
-  let closingBalance = 0;
+  // Null until an in-period row sets it, so a period containing no movement
+  // (or only the year-end marker) reports its opening balance as the closing
+  // one rather than a misleading zero.
+  let closingBalance: number | null = null;
   const entries: Entry[] = [];
 
   for (const r of rows) {
     if (!r.transaction) continue;
     const debit  = Number(r.debit);
     const credit = Number(r.credit);
+    const plYearEnd = isPlAccount && isYearEndRef(r.transaction.ref_no);
+
+    if (plYearEnd) {
+      runningBalance = 0;
+      if (dateFrom && r.transaction.date < dateFrom) { openingBalance = 0; continue; }
+      if (dateTo && r.transaction.date > dateTo) continue;
+      entries.push({
+        split_id: r.id,
+        transaction_id: r.transaction.id,
+        ref_no: r.transaction.ref_no,
+        date: r.transaction.date,
+        details: r.transaction.details,
+        entry_details: null,
+        due_date: null,
+        debit: 0,
+        credit: 0,
+        running_balance: 0,
+        match_id: null,
+        match_status: null,
+        cleared_in_rec_id: null,
+        bank_rec_status: null,
+        bank_rec_label: null,
+        year_end_marker: true,
+      });
+      // Deliberately does NOT touch closingBalance — the year's trading is the
+      // figure to carry forward on screen, not the post-close nil.
+      continue;
+    }
+
     runningBalance = +(runningBalance + debit - credit).toFixed(2);
 
     if (dateFrom && r.transaction.date < dateFrom) {
@@ -256,8 +314,10 @@ export async function GET(
   // mechanisms are independent (legacy match-based vs period-first rec).
   // Without the cleared_in_rec_id check, splits that have been reconciled
   // via a bank import would keep appearing in the Open tab and look unmatched.
+  // The year-end marker isn't an open item — it's a rule drawn between years —
+  // so it never survives the Open filter.
   const filtered = statusFilter === 'open'
-    ? entries.filter(e => e.match_id === null && e.cleared_in_rec_id === null)
+    ? entries.filter(e => !e.year_end_marker && e.match_id === null && e.cleared_in_rec_id === null)
     : entries;
 
   return NextResponse.json({
@@ -267,7 +327,7 @@ export async function GET(
       ledger: account.ledger,
       account_type: account.account_type,
       opening_balance: openingBalance,
-      closing_balance: closingBalance,
+      closing_balance: closingBalance ?? openingBalance,
     },
     entries: filtered,
   });

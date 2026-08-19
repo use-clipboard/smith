@@ -12,7 +12,7 @@
  * its own sub-window.
  */
 
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import PeriodSelector, { type DateRange } from './PeriodSelector';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
@@ -48,6 +48,9 @@ interface LedgerRow {
   debit: number;
   credit: number;
   balance: number;        // running
+  /** Year-end close on a P&L account — drawn as a boundary rule rather than a
+   *  ledger row, and excluded from the carried-forward figure. */
+  yearEndMarker?: boolean;
 }
 
 export default function AccountLedgerTab({ bookId, accountId, accountName, accountLedger, accountCode }: Props) {
@@ -84,6 +87,27 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
     vatLockDate: bookVatInfo.vatLockDate,
     onChanged: () => setRefreshKey(k => k + 1),
   });
+
+  // The year-end close only behaves as a boundary on P&L accounts — on a
+  // balance-sheet account it's a real movement. The tab isn't handed the
+  // account type (the dynamic-tab descriptor predates this), so resolve it
+  // once per account. Until it lands we treat the account as balance-sheet,
+  // which is the no-op behaviour.
+  const [accountType, setAccountType] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch(`/api/bookkeeping/books/${bookId}/accounts`);
+        if (!r.ok) return;
+        const d = await r.json();
+        const a = (d.accounts ?? []).find((x: { id: string }) => x.id === accountId);
+        if (!cancelled) setAccountType(a?.account_type ?? null);
+      } catch { /* non-fatal — the ledger still renders */ }
+    })();
+    return () => { cancelled = true; };
+  }, [bookId, accountId]);
+  const isPlAccount = accountType === 'income' || accountType === 'expense';
 
   // ── Fetch opening balance + period transactions ──────────────────────────
   useEffect(() => {
@@ -137,6 +161,15 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
     let bal = openingBalance;
     const out: LedgerRow[] = [];
     for (const txn of periodTxns) {
+      // On a P&L account the year-end close is a period boundary, not a
+      // movement: it exists to flatten the nominal for the next year. Counting
+      // it here would report a year that genuinely traded as closing at nil.
+      // It resets the running balance and renders as a rule instead.
+      if (isPlAccount && isYearEnd(txn.type)) {
+        bal = 0;
+        out.push({ txn, debit: 0, credit: 0, balance: 0, yearEndMarker: true });
+        continue;
+      }
       // Sum across all splits touching this account on this transaction
       // (rare but possible — a journal could have two lines for one account).
       const splits = (txn.splits ?? []).filter(s => s.account_id === accountId);
@@ -146,9 +179,12 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
       out.push({ txn, debit, credit, balance: bal });
     }
     return out;
-  }, [openingBalance, periodTxns, accountId]);
+  }, [openingBalance, periodTxns, accountId, isPlAccount]);
 
-  const closingBalance = rows.length > 0 ? rows[rows.length - 1].balance : openingBalance;
+  // The carried-forward figure is the last REAL balance — a trailing year-end
+  // marker must not drag it to nil.
+  const realRows = rows.filter(r => !r.yearEndMarker);
+  const closingBalance = realRows.length > 0 ? realRows[realRows.length - 1].balance : openingBalance;
   const periodMovement = +(closingBalance - openingBalance).toFixed(2);
 
   // Always render with thousands separators for parity with the other reports.
@@ -215,28 +251,26 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
                   </td>
                 </tr>
               ) : (
-                rows.map(({ txn, debit, credit, balance }, i) => {
+                rows.map(({ txn, debit, credit, balance, yearEndMarker }) => {
+                  // P&L year-end close — a boundary between years, not a
+                  // movement. The balance either side is that year's trading.
+                  if (yearEndMarker) {
+                    return <YearEndBoundaryRow key={txn.id} colSpan={6} dateLabel={formatDateUk(txn.date)} />;
+                  }
                   const rp = rowActions.rowProps(txn);
                   const yearEnd = isYearEnd(txn.type);
                   return (
-                    <Fragment key={txn.id}>
-                      <tr {...rp} className={`border-t border-gray-100 ${yearEnd ? YEAR_END_ROW_CLASS : 'hover:bg-indigo-50/30'} ${rp.className}`}>
-                        <td className="px-2 py-1.5 text-gray-700 tabular-nums">{formatDateUk(txn.date)}</td>
-                        <td className="px-2 py-1.5 text-xs">
-                          <TxnRefLink txn={txn} className="text-xs" />
-                          {yearEnd && <YearEndChip />}
-                        </td>
-                        <td className="px-2 py-1.5 text-gray-900 truncate max-w-[400px]">{txn.details ?? ''}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">{fmt(debit)}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums text-red-700">{fmt(credit)}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtBalance(balance)}</td>
-                      </tr>
-                      {/* Only when entries follow — otherwise "Balance carried
-                          forward" is already the boundary. */}
-                      {yearEnd && i < rows.length - 1 && (
-                        <YearEndBoundaryRow colSpan={6} dateLabel={formatDateUk(txn.date)} />
-                      )}
-                    </Fragment>
+                    <tr key={txn.id} {...rp} className={`border-t border-gray-100 ${yearEnd ? YEAR_END_ROW_CLASS : 'hover:bg-indigo-50/30'} ${rp.className}`}>
+                      <td className="px-2 py-1.5 text-gray-700 tabular-nums">{formatDateUk(txn.date)}</td>
+                      <td className="px-2 py-1.5 text-xs">
+                        <TxnRefLink txn={txn} className="text-xs" />
+                        {yearEnd && <YearEndChip />}
+                      </td>
+                      <td className="px-2 py-1.5 text-gray-900 truncate max-w-[400px]">{txn.details ?? ''}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmt(debit)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-red-700">{fmt(credit)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtBalance(balance)}</td>
+                    </tr>
                   );
                 })
               )}
