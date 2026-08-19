@@ -32,18 +32,55 @@ const estimateEncodedSize = (bytes: number) => Math.ceil(bytes / 3) * 4;
 /** A file for /api/documents/upload — either inline (base64) or staged (stagePath). */
 export type DriveUploadFile = { name: string; mimeType: string; base64?: string; stagePath?: string };
 
-/** Upload one File to the transient staging bucket; returns its object path. */
+/**
+ * Retry a transient network failure ("Failed to fetch" — an offline blip, a
+ * dropped connection or an edge reset) a couple of times before giving up.
+ * Only network-level TypeErrors are retried; a real HTTP error response is
+ * returned as-is for the caller to handle (readUploadError). This is what makes
+ * "the Drive save sometimes fails with Failed to fetch" recover on its own.
+ */
+function isTransientNetworkError(err: unknown): boolean {
+  return err instanceof TypeError; // fetch() rejects with a TypeError on network failure
+}
+
+export async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit, attempts = 3): Promise<Response> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fetch(input, init);
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientNetworkError(err) || i === attempts - 1) break;
+      await new Promise(r => setTimeout(r, 400 * (i + 1)));
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('Network request failed');
+}
+
+/** Upload one File to the transient staging bucket; returns its object path.
+ *  Retries transient network failures — the browser→Storage upload is the other
+ *  place a "Failed to fetch" can strike for a large scan. */
 async function stageFileToBucket(file: File): Promise<string> {
   const supabase = createBrowserSupabase();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not signed in');
   const safeName = file.name.replace(/[^\w.\-]+/g, '_').slice(-120);
   const path = `${user.id}/${crypto.randomUUID()}-${safeName}`;
-  const { error } = await supabase.storage
-    .from(STAGING_BUCKET)
-    .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
-  if (error) throw new Error(error.message);
-  return path;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const { error } = await supabase.storage
+        .from(STAGING_BUCKET)
+        .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: true });
+      if (error) throw new Error(error.message);
+      return path;
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientNetworkError(err) || attempt === 2) break;
+      await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('Could not stage the file for upload');
 }
 
 /**

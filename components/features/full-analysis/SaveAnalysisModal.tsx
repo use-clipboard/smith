@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Download, FolderOpen, Check, Loader2, X, Link2, AlertTriangle, Lock, Settings } from 'lucide-react';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import { exportToCsv } from '@/utils/fileUtils';
-import { encodeFilesForDriveUpload, readUploadError } from '@/lib/driveUploadClient';
+import { encodeFilesForDriveUpload, readUploadError, fetchWithRetry } from '@/lib/driveUploadClient';
 import { useModules } from '@/components/ui/ModulesProvider';
 import type { Transaction, TargetSoftware, FlaggedEntry } from '@/types';
 
@@ -75,7 +75,7 @@ export default function SaveAnalysisModal({
 
     const dateStr = new Date().toISOString().slice(0, 10);
     const filename = `${targetSoftware}_analysis_${dateStr}.csv`;
-    let driveUrlMap: Record<string, string> = {};
+    const driveUrlMap: Record<string, string> = {};
 
     if (useDrive) {
       try {
@@ -83,7 +83,9 @@ export default function SaveAnalysisModal({
         // Storage so the request body stays small; small files go inline. Either
         // way the route ends up with the full original file.
         const encodedFiles = await encodeFilesForDriveUpload(documentFiles);
-        const res = await fetch('/api/documents/upload', {
+        // fetchWithRetry recovers transient "Failed to fetch" network blips
+        // (dropped connection / edge reset) that were failing the save outright.
+        const res = await fetchWithRetry('/api/documents/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -94,7 +96,9 @@ export default function SaveAnalysisModal({
           }),
         });
         if (!res.ok) throw new Error(await readUploadError(res));
-        const result = await res.json();
+        const result = await res.json().catch(() => {
+          throw new Error('Your session may have expired. Please refresh the page, sign in again, then re-save.');
+        });
         const uploadedFiles: { name: string; driveUrl: string; driveFileId: string }[] = result.uploadedFiles ?? [];
         uploadedFiles.forEach(f => { driveUrlMap[f.name] = f.driveUrl; });
         setDriveCount(uploadedFiles.length);

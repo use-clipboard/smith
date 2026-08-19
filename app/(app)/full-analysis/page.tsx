@@ -12,7 +12,7 @@ import TransactionEditModal from '@/components/features/full-analysis/Transactio
 import SaveAnalysisModal from '@/components/features/full-analysis/SaveAnalysisModal';
 import FullAnalysisHistory, { type SeedAnalysis } from '@/components/features/full-analysis/FullAnalysisHistory';
 import CaptureReviewChat from '@/components/features/full-analysis/CaptureReviewChat';
-import { applyCaptureEdit, flaggedKey, type CaptureEdit } from '@/components/features/full-analysis/captureChat';
+import { applyCaptureEdit, captureRowKey, flaggedKey, type CaptureEdit } from '@/components/features/full-analysis/captureChat';
 import { canAccessCaptureChat } from '@/lib/full-analysis/access';
 import { FileSearch, Download, Undo2, Redo2, AlertTriangle, Pencil, ChevronUp, ChevronDown, ChevronsUpDown, CheckCheck, ChevronRight, ArrowLeft, Sparkles, Check, ArrowRight, UploadCloud, Users, FileOutput, SlidersHorizontal, Zap, Trash2, BookCopy, Loader2, FilePlus } from 'lucide-react';
 import type { Transaction, FlaggedEntry, TargetSoftware, LedgerAccount, VTTransaction, CapiumTransaction, XeroTransaction, QuickBooksTransaction, FreeAgentTransaction, SageTransaction, GeneralTransaction, SmithTransaction, DocumentScanResult } from '@/types';
@@ -672,7 +672,22 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
       return { ...tx, ledgerValidation: { status: 'no-match' as const, originalAiSuggestion: { name: aiName } } };
     }) : validTxs;
 
-    return { validated, flagged: [...rawFlagged, ...calcFlagged] };
+    // Guard against a document landing in BOTH sections (or a valid row
+    // appearing twice). The AI's duplicate handling occasionally returns the
+    // same transaction in validTransactions AND flaggedEntries, which surfaced
+    // as a flagged entry "duplicated" into the valid table. Flagged wins (it's
+    // flagged for a reason); identical valid rows are collapsed. Content-keyed
+    // (fileName|page|gross|label) so only genuine same-doc dupes are removed.
+    const flagged = [...rawFlagged, ...calcFlagged];
+    const flaggedContentKeys = new Set(flagged.map(e => flaggedKey(e, targetSoftware).slice(2)));
+    const seenValid = new Set<string>();
+    const dedupedValidated = validated.filter(tx => {
+      const key = captureRowKey(tx, targetSoftware);
+      if (flaggedContentKeys.has(key) || seenValid.has(key)) return false;
+      seenValid.add(key);
+      return true;
+    });
+    return { validated: dedupedValidated, flagged };
   }, [targetSoftware, isVatRegistered]);
 
   const applyValidationAndProceed = useCallback((results: DocumentScanResult[]) => {

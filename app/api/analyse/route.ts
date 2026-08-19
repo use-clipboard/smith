@@ -48,6 +48,38 @@ interface BatchResult {
   outputTokens: number;
 }
 
+// Robustly pull the JSON object out of the model's reply. The model is asked
+// for JSON only, but it occasionally wraps it in a code fence or a sentence of
+// prose ("Here is the extracted data: { … }"). A naive JSON.parse then throws
+// and the whole document gets mislabelled "too complex" (it usually isn't).
+// Strategy: strip a code fence if present, try a direct parse, then fall back
+// to the widest {…} slice. Throws only when there's genuinely no JSON.
+function extractResultJson(text: string): { validTransactions: unknown[]; flaggedEntries: unknown[] } {
+  let t = text.trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) t = fence[1].trim();
+
+  const tryParse = (s: string): Record<string, unknown> | null => {
+    try {
+      const v = JSON.parse(s);
+      return v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+    } catch { return null; }
+  };
+
+  let obj = tryParse(t);
+  if (!obj) {
+    const first = t.indexOf('{');
+    const last = t.lastIndexOf('}');
+    if (first >= 0 && last > first) obj = tryParse(t.slice(first, last + 1));
+  }
+  if (!obj) throw new Error('AI_JSON_PARSE');
+
+  return {
+    validTransactions: Array.isArray(obj.validTransactions) ? obj.validTransactions : [],
+    flaggedEntries: Array.isArray(obj.flaggedEntries) ? obj.flaggedEntries : [],
+  };
+}
+
 async function runBatch(
   batchFiles: ParsedFile[],
   staticInstructions: string,
@@ -114,15 +146,19 @@ async function runBatch(
   const textContent = response.content.find(c => c.type === 'text');
   if (!textContent || textContent.type !== 'text') throw new Error('No text response from AI');
 
-  let jsonText = textContent.text.trim();
-  if (jsonText.startsWith('```json')) jsonText = jsonText.substring(7).trim();
-  if (jsonText.startsWith('```')) jsonText = jsonText.substring(3).trim();
-  if (jsonText.endsWith('```')) jsonText = jsonText.substring(0, jsonText.length - 3).trim();
+  let parsed: { validTransactions: unknown[]; flaggedEntries: unknown[] };
+  try {
+    parsed = extractResultJson(textContent.text);
+  } catch {
+    // A response cut off at the token limit is a distinct, actionable case
+    // (too much detail for one pass) — don't blame it on a "complex" document.
+    if (response.stop_reason === 'max_tokens') throw new Error('AI_TRUNCATED');
+    throw new Error('AI_JSON_PARSE');
+  }
 
-  const parsed = JSON.parse(jsonText);
   return {
-    validTransactions: parsed.validTransactions || [],
-    flaggedEntries: parsed.flaggedEntries || [],
+    validTransactions: parsed.validTransactions,
+    flaggedEntries: parsed.flaggedEntries,
     inputTokens: response.usage.input_tokens,
     outputTokens: response.usage.output_tokens,
   };
@@ -223,8 +259,11 @@ export async function POST(req: NextRequest) {
     if (message.includes('authentication') || message.includes('401') || message.includes('API key')) {
       return NextResponse.json({ error: 'The AI service could not be reached due to an authentication issue. Please contact your system administrator to check the API key configuration.', code: 'AUTH_ERROR' }, { status: 500 });
     }
-    if (message.includes('JSON') || message.includes('Unexpected token') || message.includes('parse')) {
-      return NextResponse.json({ error: 'The AI returned a response that could not be parsed. This can happen with very complex or unusual documents. Try removing any problematic files and re-running the analysis.', code: 'PARSE_ERROR' }, { status: 500 });
+    if (message === 'AI_TRUNCATED') {
+      return NextResponse.json({ error: 'This document produced more detail than fits in a single pass. Try switching to Thorough mode, or split it into fewer pages, then re-run.', code: 'RESPONSE_TRUNCATED' }, { status: 422 });
+    }
+    if (message === 'AI_JSON_PARSE' || message.includes('JSON') || message.includes('Unexpected token') || message.includes('parse')) {
+      return NextResponse.json({ error: 'The AI’s response for this document couldn’t be read. This is usually a temporary glitch — re-scan the document and it often works on the second try.', code: 'PARSE_ERROR' }, { status: 500 });
     }
 
     return NextResponse.json({ error: 'Processing failed unexpectedly. Please try again. If the problem persists, try uploading fewer files or contact support.', code: 'UNKNOWN' }, { status: 500 });
