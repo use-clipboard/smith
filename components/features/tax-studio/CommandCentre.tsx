@@ -5,7 +5,7 @@ import {
   Plus, Sparkles, ArrowRight, LayoutGrid, List as ListIcon, Loader2,
   TrendingUp, Layers, ClipboardCheck, AlertCircle, CheckCircle2, FileCheck2,
   Clock3, CalendarClock, Mail, PiggyBank, Activity, ChevronRight, X, Trash2, AlertTriangle,
-  User, Building2, Users, Landmark, Globe2, Check, type LucideIcon,
+  User, Building2, Users, Landmark, Globe2, type LucideIcon,
 } from 'lucide-react';
 import { StudioCard, StatusBadge } from './primitives';
 import {
@@ -401,27 +401,24 @@ function CategoryTile({ title, sub, icon: Icon, active, soon, onClick }: {
       onClick={onClick}
       aria-current={active ? 'true' : undefined}
       className={`group relative flex w-full items-center gap-2.5 overflow-hidden rounded-xl border px-2.5 py-2 text-left transition-all duration-200 ${
-        active
-          ? 'border-[var(--accent)] bg-[var(--accent)]/[0.05] shadow-[0_6px_18px_rgba(99,102,241,0.14)] ring-1 ring-[var(--accent)]/20'
-          : soon
-            ? 'cursor-default border-[var(--border)] bg-white/45'
-            : 'border-[var(--border)] bg-white/70 hover:border-[var(--accent)]/40 hover:shadow-[0_8px_22px_rgba(31,38,88,0.10)]'
+        soon
+          ? 'cursor-default border-[var(--border)] bg-white/45'
+          : 'cursor-pointer border-[var(--border)] bg-white/70 hover:-translate-y-0.5 hover:border-[var(--accent)]/50 hover:bg-white hover:shadow-[0_10px_26px_rgba(99,102,241,0.18)] active:translate-y-0 active:shadow-[0_4px_14px_rgba(99,102,241,0.12)]'
       }`}
     >
-      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'bg-slate-100 text-slate-300'}`}>
+      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-200 ${
+        soon ? 'bg-slate-100 text-slate-300' : 'bg-[var(--accent)]/10 text-[var(--accent)] group-hover:bg-[var(--accent)] group-hover:text-white'
+      }`}>
         <Icon size={16} />
       </div>
       <div className="min-w-0 flex-1">
         <h4 className={`truncate text-[11.5px] font-bold leading-tight ${soon ? 'text-slate-400' : 'text-[var(--text-primary)]'}`}>{title}</h4>
         <p className={`truncate text-[10px] leading-tight ${soon ? 'text-slate-300' : 'text-[var(--text-muted)]'}`}>{sub}</p>
       </div>
-      {soon && (
+      {soon ? (
         <span className="shrink-0 rounded bg-slate-100 px-1 py-0.5 text-[8px] font-bold uppercase tracking-[0.06em] text-slate-400">Soon</span>
-      )}
-      {active && (
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-white shadow-sm">
-          <Check size={10} strokeWidth={3} />
-        </span>
+      ) : (
+        <ArrowRight size={14} className="shrink-0 -translate-x-1 text-[var(--text-muted)] opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:text-[var(--accent)] group-hover:opacity-100" />
       )}
     </button>
   );
