@@ -1493,6 +1493,83 @@ export interface ConnectedSource {
 
 export type ApprovalStatus = 'sent' | 'approved' | 'rejected' | 'submitted';
 
+// ─── CT600 — Corporation Tax return (limited companies) ──────────────────────
+// Mirrors Capium's CT600 data-entry panels. Box numbers in comments reference
+// the HMRC CT600 form. Calculator-fed boxes hold the total (the sub-calculators
+// themselves — capital allowances, R&D/films — are separate later modules).
+
+/** CT600 "Trading and Professional Profits" panel. */
+export interface Ct600Trading {
+  turnover?: number;                    // Turnover
+  profitPerAccount?: number;            // Profit/(loss) per account
+  addBack?: number;                     // Add Back (calculator)
+  adjustments?: number;                 // Adjustments (calculator)
+  disallowableExpenses?: number;        // Disallowable Expenses (calculator)
+  rdOrFilmsExpenditure?: number;        // R&D or Films Expenditure (calculator)
+  incomeNotCredited?: number;           // Income not credited to profit but assessable under trading profits
+  balancingCharges?: number;            // Balancing Charges (calculator)
+  rdec?: number;                        // Taxable R&D Expenditure Credit (RDEC)
+  avec?: number;                        // Taxable Audio Visual Expenditure Credit (AVEC)
+  vgec?: number;                        // Taxable Video Games Expenditure Credit (VGEC)
+  incomeNotAssessed?: number;           // Income/(deficit) not assessed under trading profits
+  expenditureNotInAccounts?: number;    // Expenditure not in accounts but allowable for taxation purposes
+  rdOrFilmsRelief?: number;             // R&D or Films Relief (calculator)
+  capitalAllowances?: number;           // Capital Allowances (calculator)
+  rdFilmsTaxCreditSurrender?: number;   // R&D/Films Tax Credit — amount to surrender for conversion
+}
+
+/** The recurring five-column loss "stream" used across the Losses tabs. */
+export interface Ct600LossStream {
+  broughtForward?: number;              // Loss brought forward
+  incomeArising?: number;               // Income arising in this period (losses entered as negative)
+  utilised?: number;                    // Loss utilised in this period
+  groupRelief?: number;                 // Surrender as group relief
+  carriedForward?: number;              // Loss carried forward (usually computed)
+  carriedBack?: number;                 // Loss carried back to a previous AP
+}
+
+/** CT600 "Losses & Excess Amount" panel — one object per tab. */
+export interface Ct600Losses {
+  // Trading profit/losses
+  trading: Ct600LossStream & {
+    incomeBefore2017?: number; incomeAfter2017?: number;     // arising before / on-or-after 1 Apr 2017
+    cfBefore2017?: number; cfAfter2017?: number;             // carried forward before / on-or-after 1 Apr 2017
+    broughtBackFromFuture?: number;                          // loss brought back from a future AP
+    bfSetTradingProfits?: number;   // Box 160 — trading losses b/f set against trading profits s45(4)
+    bfSetInvestmentIncome?: number; // Box 225 — investment income
+    cfClaimedTotalProfits?: number; // Box 285 — trading loss c/f claimed against total profits s45A(6)
+    bfSurrenderedGroupRelief?: number; // Surrendered for group relief
+  };
+  // Non-trading loan relationship profits/deficits
+  ntlr: Ct600LossStream & {
+    bfSetNonTradeProfits?: number;  // Box 230 — non-trade profits
+    bfSetTotalProfits?: number;     // Box 263 — total profits
+    incomeLoanRelationships?: number;   // Box 170 — loan relationships & derivative contracts
+    incomeNonLoanDerivatives?: number;  // Box 175 — non-loan relationships derivative contracts
+    includesCarriedBackFuture?: boolean; // Box 172 — 170 includes carried-back loss from a future AP
+  };
+  // Property business income/losses (UK land & buildings — formerly Schedule A)
+  property: Ct600LossStream & {
+    lossesCurrentPeriod?: number;
+    lossesBroughtForwardUtil?: number;
+  };
+  overseasTrading: Ct600LossStream;      // Overseas trading losses (Box 790)
+  overseasProperty: Ct600LossStream;     // Overseas land & property (Box 815)
+  // Non-trading losses on intangibles & Chargeable gains/losses
+  intangibles: Ct600LossStream;          // Box 195 / 265
+  otherIncome: Ct600LossStream;          // Box 205
+  chargeableGains: Ct600LossStream;      // Box 210 / 215
+  // Management expenses & interest distributions
+  managementExpenses: Ct600LossStream;   // Box 245
+  interestDistributions: Ct600LossStream;
+}
+
+/** The full CT600 return data (limited companies). */
+export interface Ct600Data {
+  trading: Ct600Trading;
+  losses: Ct600Losses;
+}
+
 export interface TaxReturn {
   id: string;
   clientId: string | null;
@@ -1521,6 +1598,9 @@ export interface TaxReturn {
   stageStatus: Record<StageId, StageState>;
 
   income: Sa100Income;
+  /** CT600 (Corporation Tax) data — present on limited-company returns. SA100
+   *  returns keep `income`; CT600 returns keep an empty `income` and use this. */
+  ct600?: Ct600Data;
   reviewPoints: ReviewPoint[];
   suggestions: TaxSuggestion[];
   scenarios: Scenario[];

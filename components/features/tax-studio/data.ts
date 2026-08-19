@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import type {
   TaxReturn, ReturnTypeId, StageId, StageState, ReturnStatus,
-  Sa100Income, ConnectedSource, TaxSuggestion, ReviewPoint,
+  Sa100Income, ConnectedSource, TaxSuggestion, ReviewPoint, Ct600Data,
 } from './types';
 import { estimateSa100, employmentBenefits, dividendsTotal } from './calc';
 
@@ -14,7 +14,7 @@ export const RETURN_TYPES: {
   icon: LucideIcon; entityLabel: string; enabled: boolean;
 }[] = [
   { id: 'sa100',        form: 'SA100', label: 'Personal Tax',     blurb: 'Individuals & sole traders',   icon: User,      entityLabel: 'Individual',        enabled: true },
-  { id: 'ct600',        form: 'CT600', label: 'Company Tax',      blurb: 'Limited companies',            icon: Building2, entityLabel: 'Limited company',   enabled: false },
+  { id: 'ct600',        form: 'CT600', label: 'Company Tax',      blurb: 'Limited companies',            icon: Building2, entityLabel: 'Limited company',   enabled: true },
   { id: 'sa800',        form: 'SA800', label: 'Partnership',      blurb: 'Partnerships & LLPs',          icon: Users,     entityLabel: 'Partnership',       enabled: false },
   { id: 'sa900',        form: 'SA900', label: 'Trust & Estate',   blurb: 'Trusts & estates',             icon: Landmark,  entityLabel: 'Trust',             enabled: false },
   { id: 'cgt',          form: 'CGT',   label: 'Capital Gains',    blurb: 'Standalone CGT reporting',     icon: TrendingUp,entityLabel: 'Individual',        enabled: false },
@@ -164,6 +164,19 @@ export function emptyIncome(): Sa100Income {
   };
 }
 
+/** A blank CT600 data object — one empty stream per Losses & Excess Amount tab. */
+export function emptyCt600(): Ct600Data {
+  return {
+    trading: {},
+    losses: {
+      trading: {}, ntlr: {}, property: {},
+      overseasTrading: {}, overseasProperty: {},
+      intangibles: {}, otherIncome: {}, chargeableGains: {},
+      managementExpenses: {}, interestDistributions: {},
+    },
+  };
+}
+
 // ─── Return factory ──────────────────────────────────────────────────────────
 export interface NewReturnInput {
   clientId: string | null;
@@ -197,6 +210,7 @@ export function buildReturn(input: NewReturnInput): TaxReturn {
     status: 'not-started',
     stageStatus: freshStageStatus('setup'),
     income: emptyIncome(),
+    ...(input.returnType === 'ct600' ? { ct600: emptyCt600() } : {}),
     reviewPoints: [],
     suggestions: [],
     scenarios: [],

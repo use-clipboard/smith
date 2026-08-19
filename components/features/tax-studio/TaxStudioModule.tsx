@@ -20,6 +20,7 @@ import SandboxView from './sandbox/SandboxView';
 import StageSetup from './stages/StageSetup';
 import StageAnalyse from './stages/StageAnalyse';
 import StageReview, { ReviewSearch, ReturnSectionEditor, type PageId, type Reveal } from './stages/StageReview';
+import StageReviewCt600 from './stages/StageReviewCt600';
 import StageApproval from './stages/StageApproval';
 import StageSubmit from './stages/StageSubmit';
 import FilingPreview from './filing/FilingPreview';
@@ -272,8 +273,8 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
               <p className="text-[13px] text-[var(--text-muted)]">{stageMeta.blurb}</p>
             </div>
             <div className="flex items-center gap-2">
-              {stage === 'review' && <ReviewSearch onGo={goToReview} />}
-              {stage === 'review' && (
+              {stage === 'review' && ret.returnType !== 'ct600' && <ReviewSearch onGo={goToReview} />}
+              {stage === 'review' && ret.returnType !== 'ct600' && (
                 <button onClick={() => setPreviewOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90">
                   <FileText size={14} /> Tax Return Preview
                 </button>
@@ -295,7 +296,8 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
             <div className="min-w-0 flex-1">
               {stage === 'setup' && <StageSetup ret={ret} patch={patch} advance={() => advanceFrom('setup')} reveal={setupReveal} />}
               {stage === 'analyse' && <StageAnalyse ret={ret} patch={patch} advance={() => advanceFrom('analyse')} />}
-              {stage === 'review' && <StageReview ret={ret} patch={patch} advance={() => advanceFrom('review')} page={reviewPage} setPage={setReviewPage} reveal={reviewReveal} onNavigate={goToReview} />}
+              {stage === 'review' && ret.returnType === 'ct600' && <StageReviewCt600 ret={ret} patch={patch} advance={() => advanceFrom('review')} />}
+              {stage === 'review' && ret.returnType !== 'ct600' && <StageReview ret={ret} patch={patch} advance={() => advanceFrom('review')} page={reviewPage} setPage={setReviewPage} reveal={reviewReveal} onNavigate={goToReview} />}
               {stage === 'approval' && <StageApproval ret={ret} patch={patch} advance={() => advanceFrom('approval')} />}
               {stage === 'submit' && <StageSubmit ret={ret} patch={patch} />}
             </div>

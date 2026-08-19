@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner, Ct600Data, Ct600LossStream } from './types';
 
 /** The taxpayer's ownership share (0–1) of a jointly-owned item. No owners ⇒ 1.
  *  Shared by CGT disposals and joint interest. */
@@ -1539,6 +1539,124 @@ export function paymentPlan(income: Sa100Income, taxYear = '2025/26'): PaymentPl
     julDue: nextPoaEach,
     janDate: `31 January ${dueYear}`,
     julDate: `31 July ${dueYear}`,
+  };
+}
+
+// ─── CT600 — Corporation Tax computation ─────────────────────────────────────
+// A first-cut corporation-tax computation: taxable trading profit + other income
+// streams → total profits → less losses/reliefs → Profits Chargeable to
+// Corporation Tax (PCTCT) → CT at the small-profits / main rate with marginal
+// relief. (Full loss-stream interactions & the calculator sub-modules land later.)
+
+export interface Ct600Computation {
+  taxYear: string;
+  turnover: number;
+  taxableTradingProfit: number;   // from the Trading & Professional Profits panel
+  nonTradingLoanProfit: number;   // NTLR / non-trading loan relationship income
+  propertyProfit: number;
+  overseasProfit: number;
+  intangiblesProfit: number;
+  otherIncome: number;
+  chargeableGains: number;
+  totalProfits: number;           // before broad losses & reliefs
+  lossesReliefs: number;          // management expenses, loss c/f claimed against total profits, etc.
+  pctct: number;                  // profits chargeable to corporation tax
+  ctRatePct: number;              // headline rate applied (19 / 25 / effective)
+  taxBeforeMarginalRelief: number;
+  marginalRelief: number;
+  corporationTax: number;
+  effectiveRate: number;
+  notes: string[];
+}
+
+// Financial-year 2023 onwards (covers 2024/25 and 2025/26).
+const CT_SMALL_PROFITS_RATE = 0.19;
+const CT_MAIN_RATE = 0.25;
+const CT_LOWER_LIMIT = 50_000;
+const CT_UPPER_LIMIT = 250_000;
+const CT_MR_FRACTION = 3 / 200; // standard marginal relief fraction
+
+/** Net taxable income from a loss stream: income arising less brought-forward
+ *  and in-period losses utilised against it (floored at nil). */
+function ct600StreamNet(s?: Ct600LossStream): number {
+  if (!s) return 0;
+  const n = (v?: number) => v || 0;
+  return Math.max(0, n(s.incomeArising) - n(s.utilised) - n(s.broughtForward));
+}
+
+export function computeCt600(data: Ct600Data | undefined, taxYear = '2025/26'): Ct600Computation {
+  const t = data?.trading ?? {};
+  const L = data?.losses;
+  const n = (v?: number) => v || 0;
+  const notes: string[] = [];
+
+  // ── Trading & Professional Profits panel ──
+  const taxableTradingProfit = r0(
+    n(t.profitPerAccount) + n(t.addBack) + n(t.adjustments) + n(t.disallowableExpenses)
+    + n(t.balancingCharges) + n(t.incomeNotCredited) + n(t.rdec) + n(t.avec) + n(t.vgec)
+    - n(t.incomeNotAssessed) - n(t.expenditureNotInAccounts)
+    - n(t.rdOrFilmsExpenditure) - n(t.rdOrFilmsRelief) - n(t.capitalAllowances),
+  );
+
+  // ── Other income streams (from the Losses & Excess Amount tabs) ──
+  const nonTradingLoanProfit = r0(Math.max(0,
+    n(L?.ntlr.incomeLoanRelationships) + n(L?.ntlr.incomeNonLoanDerivatives)
+    - n(L?.ntlr.utilised) - n(L?.ntlr.broughtForward)));
+  const propertyProfit = r0(Math.max(0,
+    n(L?.property.incomeArising) - n(L?.property.utilised) - n(L?.property.broughtForward)
+    - n(L?.property.lossesCurrentPeriod) - n(L?.property.lossesBroughtForwardUtil)));
+  const overseasProfit = r0(ct600StreamNet(L?.overseasTrading) + ct600StreamNet(L?.overseasProperty));
+  const intangiblesProfit = r0(ct600StreamNet(L?.intangibles));
+  const otherIncome = r0(ct600StreamNet(L?.otherIncome) + ct600StreamNet(L?.interestDistributions));
+  const chargeableGains = r0(ct600StreamNet(L?.chargeableGains));
+
+  const totalProfits = Math.max(0, taxableTradingProfit)
+    + nonTradingLoanProfit + propertyProfit + overseasProfit + intangiblesProfit + otherIncome + chargeableGains;
+
+  // ── Broad losses & reliefs set against total profits ──
+  const lossesReliefs = r0(
+    n(L?.managementExpenses.utilised) + n(L?.managementExpenses.broughtForward)
+    + n(L?.trading.cfClaimedTotalProfits)     // Box 285
+    + n(L?.trading.bfSetInvestmentIncome)     // Box 225
+    + n(L?.ntlr.bfSetTotalProfits),           // Box 263
+  );
+
+  const pctct = Math.max(0, totalProfits - lossesReliefs);
+
+  // ── Corporation Tax charge ──
+  let ctRatePct: number, taxBeforeMarginalRelief: number, marginalRelief = 0;
+  if (pctct <= CT_LOWER_LIMIT) {
+    ctRatePct = CT_SMALL_PROFITS_RATE * 100;
+    taxBeforeMarginalRelief = r0(pctct * CT_SMALL_PROFITS_RATE);
+  } else if (pctct >= CT_UPPER_LIMIT) {
+    ctRatePct = CT_MAIN_RATE * 100;
+    taxBeforeMarginalRelief = r0(pctct * CT_MAIN_RATE);
+  } else {
+    // Main rate then marginal relief between the £50k–£250k limits.
+    taxBeforeMarginalRelief = pctct * CT_MAIN_RATE;
+    marginalRelief = r0((CT_UPPER_LIMIT - pctct) * CT_MR_FRACTION);
+    taxBeforeMarginalRelief = r0(taxBeforeMarginalRelief);
+    ctRatePct = pctct > 0 ? ((taxBeforeMarginalRelief - marginalRelief) / pctct) * 100 : 0;
+    notes.push('Marginal relief applied (profits between £50,000 and £250,000).');
+  }
+  const corporationTax = Math.max(0, taxBeforeMarginalRelief - marginalRelief);
+
+  notes.push('Simplified corporation-tax computation — associated-company limits, group relief and the calculator sub-modules apply later.');
+
+  return {
+    taxYear,
+    turnover: r0(n(t.turnover)),
+    taxableTradingProfit,
+    nonTradingLoanProfit, propertyProfit, overseasProfit, intangiblesProfit, otherIncome, chargeableGains,
+    totalProfits: r0(totalProfits),
+    lossesReliefs,
+    pctct: r0(pctct),
+    ctRatePct,
+    taxBeforeMarginalRelief,
+    marginalRelief,
+    corporationTax: r0(corporationTax),
+    effectiveRate: totalProfits > 0 ? corporationTax / totalProfits : 0,
+    notes,
   };
 }
 
