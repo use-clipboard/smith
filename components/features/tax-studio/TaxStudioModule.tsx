@@ -243,7 +243,7 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
       wide
     >
       <button onClick={closeReturn} className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]">
-        <ArrowLeft size={13} /> Back to command centre
+        <ArrowLeft size={13} /> Back
       </button>
 
       <ReturnHeader ret={live} />
