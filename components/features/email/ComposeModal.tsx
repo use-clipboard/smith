@@ -19,6 +19,7 @@ import { EMAIL_FONTS, DEFAULT_EMAIL_FONT, emailFontStack } from '@/lib/emailFont
 import type { ComposeSnapshot, DriveAttachment } from './ComposeWindowProvider';
 import DriveFolderPicker from './DriveFolderPicker';
 import { createClient as createBrowserSupabase } from '@/lib/supabase';
+import { fetchJson } from '@/lib/fetchJson';
 
 // Attachment size thresholds. Below INLINE_LIMIT the whole batch rides in the
 // send request as today (fast, no bucket round-trip). Between that and Gmail's
@@ -1010,12 +1011,13 @@ export default function ComposeModal({
       if (useStaging) formData.append('stagedAttachments', JSON.stringify(stagedAttachments));
       else snap.attachedFiles.forEach(f => formData.append('attachments', f));
 
-      const res = await fetch('/api/email/send', { method: 'POST', body: formData });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(errData.error ?? `Send failed (${res.status})`);
-      }
-      const data = await res.json() as { threadId?: string; messageId?: string };
+      // fetchJson turns an expired-session redirect (a 200 HTML login page) into
+      // a clear "session expired" message instead of the cryptic
+      // "Unexpected token '<'" JSON parse error, and preserves the draft (the
+      // catch below restores the window).
+      const data = await fetchJson<{ threadId?: string; messageId?: string }>(
+        '/api/email/send', { method: 'POST', body: formData },
+      );
       const sentThreadId = data.threadId ?? '';
       const sentMessageId = data.messageId ?? '';
 
