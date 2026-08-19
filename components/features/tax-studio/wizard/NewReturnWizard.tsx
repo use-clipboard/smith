@@ -152,7 +152,7 @@ export default function NewReturnWizard({
   const header = (() => {
     switch (step) {
       case 1: return { title: 'Create New Return', sub: 'Let’s create your new tax return in just a few simple steps.' };
-      case 2: return { title: 'Select Client', sub: 'Choose the individual or sole trader client you want to prepare a Self Assessment return for.' };
+      case 2: return { title: 'Select Client', sub: returnTypeId === 'ct600' ? 'Choose the limited company you want to prepare a Company Tax (CT600) return for.' : 'Choose the individual or sole trader client you want to prepare a Self Assessment return for.' };
       case 3: return { title: client ? `New Return for ${client.name}` : (returnTypeId === 'ct600' ? 'Accounting Period' : 'Tax Year'), sub: returnTypeId === 'ct600' ? 'Set the company’s accounting period for this return.' : 'Choose the tax year for this return.' };
       case 4: return { title: client ? `New Return for ${client.name}` : 'Roll Forward', sub: 'Review last year’s data and choose what to roll forward.' };
       default: return { title: 'Review & Confirm', sub: 'One last look before we create the return.' };
@@ -195,7 +195,7 @@ export default function NewReturnWizard({
         returnTypeId={returnTypeId} periodStart={periodStart} periodEnd={periodEnd}
         onPeriodChange={(s, e) => { setPeriodStart(s); setPeriodEnd(e); }} />}
       {step === 4 && <StepRollForward priorYear={priorYear} priorIncome={priorIncome} roll={roll} onToggle={k => setRoll(r => ({ ...r, [k]: !r[k] }))} onSetAll={v => setRoll(r => { const n = { ...r }; for (const c of ROLL_CATEGORIES) if (c.key !== 'personal') n[c.key] = v && (priorIncome ? categoryHasData(c.key, priorIncome) : false); return n; })} client={client} />}
-      {step === 5 && <StepConfirm returnTypeId={returnTypeId} client={client} taxYear={taxYear} seededIncome={seededIncome} roll={roll} hasPrior={!!priorIncome} />}
+      {step === 5 && <StepConfirm returnTypeId={returnTypeId} client={client} taxYear={taxYear} seededIncome={seededIncome} roll={roll} hasPrior={!!priorIncome} periodStart={periodStart} periodEnd={periodEnd} />}
 
       {error && <p className="text-right text-[12px] font-medium text-red-600">{error}</p>}
 

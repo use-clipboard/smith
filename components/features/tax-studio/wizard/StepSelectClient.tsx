@@ -208,8 +208,8 @@ export default function StepSelectClient({
                   <SortableTh label="Account" sortKey="account" sort={sort} onSort={toggleSort} />
                   <SortableTh label="Return" sortKey="return" sort={sort} onSort={toggleSort} />
                   <SortableTh label="Last return" sortKey="lastReturn" sort={sort} onSort={toggleSort} />
-                  <th className="sticky top-0 z-10 border-b border-black/5 bg-white/95 px-3 py-2 backdrop-blur">Tax year</th>
-                  <th className="sticky top-0 z-10 border-b border-black/5 bg-white/95 px-3 py-2 backdrop-blur">Next deadline</th>
+                  {returnTypeId !== 'ct600' && <th className="sticky top-0 z-10 border-b border-black/5 bg-white/95 px-3 py-2 backdrop-blur">Tax year</th>}
+                  {returnTypeId !== 'ct600' && <th className="sticky top-0 z-10 border-b border-black/5 bg-white/95 px-3 py-2 backdrop-blur">Next deadline</th>}
                 </tr>
               </thead>
               <tbody>
@@ -235,11 +235,13 @@ export default function StepSelectClient({
                       <td className="px-3 py-2.5 text-[12px]"><AccountStatusCell status={c.status} /></td>
                       <td className="px-3 py-2.5"><StatusBadge status={rst} /></td>
                       <td className="px-3 py-2.5 text-[var(--text-secondary)]">{latest ? latest.ret.taxYear : '—'}</td>
-                      <td className="px-3 py-2.5 text-[var(--text-secondary)]">{season.taxYear}</td>
-                      <td className="px-3 py-2.5">
-                        <p className="text-[var(--text-secondary)]">{fmtDateUK(season.deadline)}</p>
-                        <p className={`text-[10.5px] ${season.daysToDeadline < 60 ? 'text-rose-600' : 'text-[var(--text-muted)]'}`}>in {season.daysToDeadline} days</p>
-                      </td>
+                      {returnTypeId !== 'ct600' && <td className="px-3 py-2.5 text-[var(--text-secondary)]">{season.taxYear}</td>}
+                      {returnTypeId !== 'ct600' && (
+                        <td className="px-3 py-2.5">
+                          <p className="text-[var(--text-secondary)]">{fmtDateUK(season.deadline)}</p>
+                          <p className={`text-[10.5px] ${season.daysToDeadline < 60 ? 'text-rose-600' : 'text-[var(--text-muted)]'}`}>in {season.daysToDeadline} days</p>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}

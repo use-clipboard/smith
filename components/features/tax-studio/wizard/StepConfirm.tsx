@@ -1,14 +1,14 @@
 'use client';
 
 import { User, Calendar, FileText, RotateCcw, CheckCircle2, Sparkles } from 'lucide-react';
-import { returnType, fmtMoney } from '../data';
+import { returnType, fmtMoney, fmtDateUK } from '../data';
 import { estimateSa100 } from '../calc';
 import { EstimateChip } from '../primitives';
 import { ROLL_CATEGORIES, entityLabelForBusinessType, type RollKey, type WizardClient } from './wizardData';
 import type { ReturnTypeId, Sa100Income } from '../types';
 
 export default function StepConfirm({
-  returnTypeId, client, taxYear, seededIncome, roll, hasPrior,
+  returnTypeId, client, taxYear, seededIncome, roll, hasPrior, periodStart, periodEnd,
 }: {
   returnTypeId: ReturnTypeId;
   client: WizardClient | null;
@@ -16,7 +16,10 @@ export default function StepConfirm({
   seededIncome: Sa100Income;
   roll: Record<RollKey, boolean>;
   hasPrior: boolean;
+  periodStart?: string;
+  periodEnd?: string;
 }) {
+  const ct600 = returnTypeId === 'ct600';
   const rt = returnType(returnTypeId);
   const est = estimateSa100(seededIncome, taxYear);
   const rolled = ROLL_CATEGORIES.filter(c => roll[c.key] && (c.mapsToIncome || c.key === 'personal'));
@@ -30,7 +33,9 @@ export default function StepConfirm({
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Summary icon={FileText} label="Return type" value={`${rt.form} · ${rt.label}`} />
           <Summary icon={User} label="Client" value={client?.name ?? '—'} sub={client ? `${client.client_ref ?? ''} · ${entityLabelForBusinessType(client.business_type)}` : ''} />
-          <Summary icon={Calendar} label="Tax year" value={taxYear} />
+          {ct600
+            ? <Summary icon={Calendar} label="Accounting period" value={periodStart && periodEnd ? `${fmtDateUK(periodStart)} – ${fmtDateUK(periodEnd)}` : '—'} />
+            : <Summary icon={Calendar} label="Tax year" value={taxYear} />}
         </div>
 
         <div className="mt-4 rounded-xl border border-[var(--border)] bg-white/60 p-4">
