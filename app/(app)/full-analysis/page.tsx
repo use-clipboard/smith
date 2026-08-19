@@ -232,6 +232,10 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
   const [clientName, setClientName] = useState('');
   const [clientAddress, setClientAddress] = useState('');
+  // Free-text business/trade description — gives the AI context for coding.
+  // Prefilled from the client record, editable, and rolled forward (saved back
+  // to the client) when the analysis runs.
+  const [businessDescription, setBusinessDescription] = useState('');
   const [isVatRegistered, setIsVatRegistered] = useState(false);
   // Flat Rate Scheme: shown only when VAT registered. Auto-set from the linked
   // client record; the user can override the toggle and the %.
@@ -288,6 +292,7 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     if (!selectedClient) return;
     if (selectedClient.name) setClientName(selectedClient.name);
     if (selectedClient.address) setClientAddress(selectedClient.address);
+    setBusinessDescription(selectedClient.business_description ?? '');
     if (selectedClient.vat_number) setIsVatRegistered(true);
     // Flat Rate Scheme: auto-enable + prefill the % from the client record when
     // the client is marked Flat Rate; reset it otherwise (the user can still
@@ -672,13 +677,26 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
       return { ...tx, ledgerValidation: { status: 'no-match' as const, originalAiSuggestion: { name: aiName } } };
     }) : validTxs;
 
+    // Never silently drop a document that couldn't be read. Any FAILED scan
+    // (blurry / handwritten / too complex / missing details) becomes a flagged
+    // entry keyed to its filename, so it shows in the Flagged tab WITH its image
+    // preview and the user can key it in by hand or delete it — rather than it
+    // vanishing on "Dismiss and continue".
+    const failedFlags: FlaggedEntry[] = results
+      .filter(r => r.status === 'failed')
+      .map(r => ({
+        fileName: r.fileName,
+        reason: `Couldn't be read automatically${r.errorMessage ? ` — ${r.errorMessage}` : ' — the document may be blurry, handwritten, or missing key details'}. Enter the details by hand below, or delete it.`,
+        pageNumber: 1,
+      }));
+
     // Guard against a document landing in BOTH sections (or a valid row
     // appearing twice). The AI's duplicate handling occasionally returns the
     // same transaction in validTransactions AND flaggedEntries, which surfaced
     // as a flagged entry "duplicated" into the valid table. Flagged wins (it's
     // flagged for a reason); identical valid rows are collapsed. Content-keyed
     // (fileName|page|gross|label) so only genuine same-doc dupes are removed.
-    const flagged = [...rawFlagged, ...calcFlagged];
+    const flagged = [...rawFlagged, ...calcFlagged, ...failedFlags];
     const flaggedContentKeys = new Set(flagged.map(e => flaggedKey(e, targetSoftware).slice(2)));
     const seenValid = new Set<string>();
     const dedupedValidated = validated.filter(tx => {
@@ -722,7 +740,8 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            clientName, clientAddress, isVatRegistered, targetSoftware, analysisMode,
+            clientName, clientAddress, businessDescription: businessDescription.trim() || null,
+            isVatRegistered, targetSoftware, analysisMode,
             isFlatRate: isVatRegistered && isFlatRate,
             flatRatePercent: (isVatRegistered && isFlatRate && flatRatePercent !== '') ? Number(flatRatePercent) : null,
             files: [filePayload],
@@ -854,7 +873,7 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     await runWithConcurrency(tasks, SCAN_CONCURRENCY);
 
     return acc.map(buildResult);
-  }, [clientName, clientAddress, isVatRegistered, isFlatRate, flatRatePercent, targetSoftware, analysisMode, selectedClient?.id, selectedClient?.client_ref]);
+  }, [clientName, clientAddress, businessDescription, isVatRegistered, isFlatRate, flatRatePercent, targetSoftware, analysisMode, selectedClient?.id, selectedClient?.client_ref]);
 
   // ─── Analysis ────────────────────────────────────────────────────────────────
 
@@ -862,6 +881,15 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     if (documentFiles.length === 0) return;
     setAppState('loading'); setError(null); setErrorCode(undefined); setProgress(0);
     setScanResults([]);
+
+    // Roll the business/trade description forward onto the client record so it
+    // prefills next time (fire-and-forget — never block the scan on it).
+    if (selectedClient?.id && businessDescription.trim() !== (selectedClient.business_description ?? '').trim()) {
+      void fetch(`/api/clients/${selectedClient.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_description: businessDescription.trim() || null }),
+      }).catch(() => {});
+    }
 
     // Build a stable file reference map for the rescan handler
     const fileMap = new Map(documentFiles.map(f => [f.name, f]));
@@ -892,7 +920,12 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
       try {
         const results = await scanFiles(documentFiles, pastTransactionsContent, ledgersContent);
         setScanProgress(null);
-        if (results[0].status === 'failed') {
+        // A whole-system issue (auth / rate-limit / overload / too-large) is worth
+        // retrying, so show the error screen. A document-level failure (unreadable,
+        // too complex, parse) proceeds to Review so the doc is FLAGGED with its
+        // image for manual entry — never silently dropped.
+        const SYSTEM_ERROR_CODES = new Set(['AUTH_ERROR', 'RATE_LIMIT', 'AI_OVERLOADED', 'FILES_TOO_LARGE']);
+        if (results[0].status === 'failed' && SYSTEM_ERROR_CODES.has(results[0].errorCode ?? '')) {
           setError(results[0].errorMessage ?? 'Scan failed'); setErrorCode(results[0].errorCode); setAppState('error');
         } else {
           applyValidationAndProceed(results);
@@ -908,7 +941,7 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     setScanProgress(null);
     setScanResults(results);
     setAppState('scan_results');
-  }, [documentFiles, pastTransactionsFile, ledgersFile, scanFiles, applyValidationAndProceed, useAutoContext, autoContextCsv]);
+  }, [documentFiles, pastTransactionsFile, ledgersFile, scanFiles, applyValidationAndProceed, useAutoContext, autoContextCsv, selectedClient, businessDescription]);
 
   // ─── Re-scan failed documents ─────────────────────────────────────────────
 
@@ -1177,6 +1210,24 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                   )}
                 </div>
               </div>
+              <div className="mt-4 pt-4 border-t border-[var(--border)]">
+                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">
+                  Business / trade description <span className="normal-case font-normal">(optional — helps SMITH code accurately)</span>
+                </label>
+                <textarea
+                  value={businessDescription}
+                  onChange={e => setBusinessDescription(e.target.value)}
+                  rows={2}
+                  placeholder="e.g. Independent fish &amp; chip shop — takeaway food with some outside catering. Buys stock from wholesalers, pays casual staff."
+                  className="input-base w-full resize-none"
+                />
+                <p className="text-xs text-[var(--text-muted)] mt-1.5">
+                  {selectedClient
+                    ? 'Saved to this client and reused on their next analysis — edit any time.'
+                    : 'Link a client (above) to save this and reuse it next time.'}
+                </p>
+              </div>
+
               <div className="mt-4 pt-4 border-t border-[var(--border)]">
                 <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Date range <span className="normal-case font-normal">(optional)</span></p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">

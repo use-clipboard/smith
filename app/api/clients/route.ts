@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
   // vat_rate_type + vat_flat_rate_percentage were added later (migration 20260787).
   // If that migration hasn't been applied yet the select 42703s — we drop them and
   // retry so client search never breaks on a lagging migration.
-  const SELECT_COLS = `${SELECT_COLS_BASE}, vat_rate_type, vat_flat_rate_percentage`;
+  const SELECT_COLS = `${SELECT_COLS_BASE}, vat_rate_type, vat_flat_rate_percentage, business_description`;
   let selectCols = SELECT_COLS;
 
   // ── Paginated fetch ───────────────────────────────────────────────────────

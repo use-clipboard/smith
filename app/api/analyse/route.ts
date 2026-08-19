@@ -24,6 +24,7 @@ const FileSchema = z.object({
 const RequestSchema = z.object({
   clientName: z.string().default(''),
   clientAddress: z.string().default(''),
+  businessDescription: z.string().nullable().optional(),
   clientId: z.string().nullable().optional(),
   clientCode: z.string().nullable().optional(),
   saveToDrive: z.boolean().optional(),
@@ -86,6 +87,7 @@ async function runBatch(
   context: {
     clientName: string;
     clientAddress: string;
+    businessDescription?: string | null;
     pastTransactionsContent?: string | null;
     ledgersContent?: string | null;
   },
@@ -173,7 +175,7 @@ export async function POST(req: NextRequest) {
     }
 
     const {
-      clientName, clientAddress, clientId, clientCode, saveToDrive,
+      clientName, clientAddress, businessDescription, clientId, clientCode, saveToDrive,
       isVatRegistered, isFlatRate, flatRatePercent, targetSoftware, analysisMode, files, pastTransactionsContent, ledgersContent,
     } = parsed.data;
 
@@ -197,7 +199,7 @@ export async function POST(req: NextRequest) {
 
     const batchResults = await Promise.all(
       batches.map(batch =>
-        runBatch(batch, staticInstructions, { clientName, clientAddress, pastTransactionsContent, ledgersContent }, anthropic, maxTokens)
+        runBatch(batch, staticInstructions, { clientName, clientAddress, businessDescription, pastTransactionsContent, ledgersContent }, anthropic, maxTokens)
       )
     );
 

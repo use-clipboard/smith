@@ -76,7 +76,7 @@ This OVERRIDES all other VAT rules in these instructions — including the forma
   }
 
   const flaggingPrompt = `**Task 2: Flagging Entries**
-Flag irrelevant, unprocessable, or potential duplicate documents. For EACH flagged entry output an object with: 'fileName', 'reason' (why it was flagged), 'pageNumber' (where it was found), and — CRITICALLY — also extract whatever transaction data IS legible on the document into these fields: 'date' (YYYY-MM-DD), 'supplier' (the supplier/customer name), 'amount' (the total GROSS amount, as a number), and 'description' (a short summary). Always populate these data fields from the document when the values are present, EVEN THOUGH the entry is flagged — so that if the user decides the entry is valid after all, the details are already captured and ready to promote without re-keying. Leave a data field out only if it genuinely does not appear on the document. When checking for duplicates within the current batch, if you find multiple identical documents, you MUST process the first occurrence as a valid transaction and flag all subsequent occurrences as duplicates (set 'duplicateOf' to the reference of the original).`;
+Flag irrelevant, unprocessable, or potential duplicate documents. For EACH flagged entry output an object with: 'fileName', 'reason' (why it was flagged), 'pageNumber' (where it was found), and — CRITICALLY — also extract whatever transaction data IS legible on the document into these fields: 'date' (YYYY-MM-DD), 'supplier' (the supplier/customer name), 'amount' (the total GROSS amount, as a number), and 'description' (a short summary). Always populate these data fields from the document when the values are present, EVEN THOUGH the entry is flagged — so that if the user decides the entry is valid after all, the details are already captured and ready to promote without re-keying. Leave a data field out only if it genuinely does not appear on the document. When checking for duplicates within the current batch, if you find multiple identical documents, you MUST process the first occurrence as a valid transaction and flag all subsequent occurrences as duplicates (set 'duplicateOf' to the reference of the original). If a document is partially or fully unreadable — blurry, a poor-quality scan, handwriting you cannot confidently read, or missing a critical field such as the date, supplier or total — you MUST STILL output a flagged entry for it (NEVER omit it) with a clear 'reason' (e.g. "Handwritten — could not read the total", "Invoice date not visible") and whatever fields you CAN read populated. Never skip or ignore a document just because it is hard to read.`;
 
   const thoroughPrompt = analysisMode === 'thorough'
     ? `**Analysis Mode: THOROUGH.**\n- Examine every line of each document carefully; do not rush.\n- Double-check every monetary figure (net, VAT, gross) against the document and confirm net + VAT = gross before outputting.\n- Re-read supplier/customer names, dates and references for accuracy.\n- Take extra care matching each transaction to the correct account/category; when genuinely uncertain, flag the entry with a clear reason rather than guessing.\n- Scrutinise for duplicates and anomalies more aggressively than usual.`
@@ -101,15 +101,20 @@ export function buildDynamicContext(opts: {
   fileNames: string[];
   clientName: string;
   clientAddress: string;
+  businessDescription?: string | null;
   pastTransactionsContent?: string | null;
   ledgersContent?: string | null;
 }): string {
-  const { fileNames, clientName, clientAddress, pastTransactionsContent, ledgersContent } = opts;
+  const { fileNames, clientName, clientAddress, businessDescription, pastTransactionsContent, ledgersContent } = opts;
 
   let context = `**Documents to analyse:** [${fileNames.join(', ')}]\n\n**CRITICAL INSTRUCTIONS:**\n1. You MUST process every single document provided. Each document must result in an entry in either the 'validTransactions' array OR the 'flaggedEntries' array. Do not omit any document from the final JSON output.\n2. For the 'fileName' field in your response, you MUST use the exact filename from the provided list: [${fileNames.join(', ')}].\n3. For each transaction or flagged entry, you MUST identify the page number (starting from 1) in the source document where it was found.`;
 
   if (clientName.trim()) {
     context += `\n\n**Client Information for Context:**\nThe client is "${clientName.trim()}", address: "${clientAddress.trim()}".\n**Critical Instructions based on Client Info:**\n- A document is a **purchase** if addressed TO the client. Use type 'PIN'.\n- A document is a **sale** if issued BY the client. Use type 'SIN'.\n- If addressed to a different entity, flag it as "Potentially irrelevant".\n- If unsure, flag as "Uncertain transaction type".`;
+  }
+
+  if (businessDescription?.trim()) {
+    context += `\n\n**About the client's business / trade:**\n"${businessDescription.trim()}"\nUse this to judge whether a document is relevant to the business, and to choose the most appropriate account/category for each transaction (e.g. expenses that fit this trade vs. likely personal or out-of-scope items). Where a purchase is unusual for this type of business, prefer flagging it for review over guessing an account.`;
   }
 
   if (pastTransactionsContent) {
