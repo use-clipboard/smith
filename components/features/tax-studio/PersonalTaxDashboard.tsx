@@ -15,7 +15,6 @@ import ClientEmailLink from '@/components/features/email/ClientEmailLink';
 import { renderSa302Pdf, sa302FileName } from './sa302Pdf';
 import { renderDetailedReportPdf } from './detailedReportPdf';
 import { detailedReportFileName } from './detailedReport';
-import { renderSa100ApprovalPdf } from './approvalPdf';
 import type { TaxReturn, ReturnStatus } from './types';
 
 export interface PersonalTaxClient {
@@ -566,7 +565,7 @@ function ReturnRow({ item, selectedYear, onOpen }: {
   onOpen: (r: TaxReturn) => void;
 }) {
   const ret = item.ret;
-  const [busy, setBusy] = useState<null | 'full' | 'sa302' | 'detailed'>(null);
+  const [busy, setBusy] = useState<null | 'sa302' | 'detailed'>(null);
   const status = deriveStatus(ret);
   const isSelectedYear = ret.taxYear === selectedYear;
   const c = useMemo(() => computeSa100Full(ret.income, ret.taxYear), [ret.income, ret.taxYear]);
@@ -580,23 +579,15 @@ function ReturnRow({ item, selectedYear, onOpen }: {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   }
 
-  async function download(kind: 'full' | 'sa302' | 'detailed') {
+  async function download(kind: 'sa302' | 'detailed') {
     if (busy) return;
     setBusy(kind);
     try {
       const base = { clientName: ret.clientName, clientRef: ret.clientRef, utr: ret.utr, taxYear: ret.taxYear, income: ret.income, preparedBy: ret.preparedBy };
       if (kind === 'sa302') {
         triggerDownload(await renderSa302Pdf(base), sa302FileName(ret.clientName, ret.taxYear));
-      } else if (kind === 'detailed') {
-        triggerDownload(await renderDetailedReportPdf(base), detailedReportFileName(ret.clientName, ret.taxYear));
       } else {
-        const blob = await renderSa100ApprovalPdf({
-          clientName: ret.clientName, clientRef: ret.clientRef, utr: ret.utr,
-          taxpayer: ret.taxpayer, amended: ret.amended, taxYear: ret.taxYear,
-          returnTypeId: ret.returnType, entityLabel: ret.entityLabel, preparedBy: ret.preparedBy, income: ret.income,
-        });
-        const safe = (ret.clientName || 'Client').replace(/[\\/:*?"<>|]/g, '').trim() || 'Client';
-        triggerDownload(blob, `${safe}-Tax Return-${ret.taxYear.replace('/', '-')}.pdf`);
+        triggerDownload(await renderDetailedReportPdf(base), detailedReportFileName(ret.clientName, ret.taxYear));
       }
     } catch { /* non-fatal — the download simply doesn't fire */ }
     finally { setBusy(null); }
@@ -607,9 +598,11 @@ function ReturnRow({ item, selectedYear, onOpen }: {
       <div className="flex items-center gap-3">
         <span className="w-16 shrink-0 text-[12.5px] font-bold text-[var(--text-primary)]">{ret.taxYear}</span>
         <StatusBadge status={status} />
+        <span className={`inline-flex shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${ret.amended ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-500'}`}>
+          {ret.amended ? 'Amended' : 'Original'}
+        </span>
         <span className="flex-1 truncate text-[11.5px] text-[var(--text-muted)]">{returnType(ret.returnType).form} · edited {item.date}</span>
         <div className="flex items-center gap-0.5">
-          <DownloadIconBtn icon={FileText} label="Download full tax return" loading={busy === 'full'} disabled={!!busy} onClick={() => download('full')} />
           <DownloadIconBtn icon={Calculator} label="Download SA302" loading={busy === 'sa302'} disabled={!!busy} onClick={() => download('sa302')} />
           <DownloadIconBtn icon={ClipboardList} label="Download detailed report" loading={busy === 'detailed'} disabled={!!busy} onClick={() => download('detailed')} />
         </div>
