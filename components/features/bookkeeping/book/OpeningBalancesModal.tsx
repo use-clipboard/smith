@@ -161,9 +161,14 @@ export default function OpeningBalancesModal({
   }, [messages, proposal, chatBusy]);
 
   function addFiles(list: FileList | null) {
-    if (!list) return;
+    if (!list || list.length === 0) return;
+    // Snapshot NOW, not inside the state updater. `list` is the input's live
+    // FileList, and the caller resets `input.value` (so re-picking the same
+    // file still fires change) the moment this returns — which empties it.
+    // Reading it lazily in the updater got us an empty array every time.
+    const picked = Array.from(list);
     setError('');
-    setFiles(prev => [...prev, ...Array.from(list)]);
+    setFiles(prev => [...prev, ...picked]);
   }
 
   // ── Scope ──────────────────────────────────────────────────────────────────
@@ -526,9 +531,13 @@ export default function OpeningBalancesModal({
 
             {step === 'upload' && (
               <div className="space-y-4">
-                <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-slate-300 rounded-xl py-10 px-6 text-center cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors">
+                <label
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); addFiles(e.dataTransfer.files); }}
+                  className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-slate-300 rounded-xl py-10 px-6 text-center cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors"
+                >
                   <UploadCloud size={26} className="text-slate-400" />
-                  <span className="text-sm font-medium text-slate-700">Choose files to upload</span>
+                  <span className="text-sm font-medium text-slate-700">Drop files here, or click to choose</span>
                   <span className="text-xs text-slate-500">Trial balance or accounts — PDF, JPG, PNG, CSV or Excel</span>
                   <input
                     type="file"
