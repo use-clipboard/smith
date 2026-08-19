@@ -14,7 +14,7 @@ import {
 } from './data';
 import { estimateSa100 } from './calc';
 import type { ReturnListItem } from './persistence';
-import type { ReturnStatus, TaxReturn, TimelineEvent } from './types';
+import type { ReturnStatus, TaxReturn, TimelineEvent, TaxSuggestion } from './types';
 
 // Bucket → which statuses it counts, colour, icon.
 const BUCKETS: { key: string; label: string; statuses: ReturnStatus[]; color: string; tone: string; icon: typeof Layers }[] = [
@@ -64,6 +64,7 @@ export default function CommandCentre({
 }) {
   const [view, setView] = useState<'list' | 'board'>('list');
   const [bucketView, setBucketView] = useState<BucketView | null>(null);
+  const [infoBox, setInfoBox] = useState<null | 'returns' | 'insights' | 'deadlines' | 'suggestions' | 'pipeline' | 'activity'>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; label: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [showOrphaned, setShowOrphaned] = useState(false);
@@ -92,19 +93,26 @@ export default function CommandCentre({
   const highImpact = suggestions.filter(s => s.estSaving >= 1000 || s.confidence >= 75).length;
   const medImpact = suggestions.length - highImpact;
 
-  const continueWorking = rows.filter(r => !['filed', 'archived'].includes(r.status)).slice(0, 5);
+  // The current user's own returns, most-recently-edited first — "Continue
+  // working" is personal, not the whole firm's book.
+  const myReturns = useMemo(
+    () => rows.filter(r => r.mine).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)),
+    [rows],
+  );
+  const continueWorking = useMemo(
+    () => myReturns.filter(r => !['filed', 'archived'].includes(r.status)),
+    [myReturns],
+  );
 
   const deadlines = useMemo(() =>
     rows.filter(r => !['filed', 'archived'].includes(r.status))
       .map(r => ({ r, date: deadlineForTaxYear(r.ret.taxYear) }))
-      .sort((a, b) => a.date.getTime() - b.date.getTime())
-      .slice(0, 5),
+      .sort((a, b) => a.date.getTime() - b.date.getTime()),
     [rows]);
 
   const activity = useMemo(() =>
     rows.flatMap(r => r.ret.timeline.map(t => ({ ev: t, client: r.ret.clientName })))
-      .sort((a, b) => (a.ev.at < b.ev.at ? 1 : -1))
-      .slice(0, 6),
+      .sort((a, b) => (a.ev.at < b.ev.at ? 1 : -1)),
     [rows]);
 
   const briefing = useMemo(() => {
@@ -144,102 +152,34 @@ export default function CommandCentre({
       {/* Row 1: Continue working | AI briefing | Upcoming deadlines */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Continue working */}
-        <Panel title="Continue working" action="View all my returns" onAction={undefined}>
+        <Panel title="Continue working" action="View all my returns" onAction={() => setInfoBox('returns')}>
           {loading ? <PanelLoading /> : continueWorking.length === 0 ? (
             <PanelEmpty text="Nothing in progress." />
           ) : (
-            <div className="space-y-1">
-              {continueWorking.map(r => {
-                const rt = returnType(r.ret.returnType);
-                const prog = stageProgress(r.ret);
-                return (
-                  <button key={r.id} onClick={() => onOpen(r.ret)} className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors hover:bg-black/[0.03]">
-                    <Avatar name={r.ret.clientName} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[12.5px] font-semibold text-[var(--text-primary)]">{r.ret.clientName}</p>
-                      <p className="text-[11px] text-[var(--text-muted)]">{rt.form}</p>
-                    </div>
-                    <StatusBadge status={r.status} />
-                    <div className="hidden w-20 items-center gap-1.5 sm:flex">
-                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200/70"><div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${(prog / 5) * 100}%` }} /></div>
-                      <span className="text-[10px] text-[var(--text-muted)]">{Math.round((prog / 5) * 100)}%</span>
-                    </div>
-                    <ChevronRight size={14} className="shrink-0 text-[var(--text-muted)]" />
-                  </button>
-                );
-              })}
-            </div>
+            <ContinueList items={continueWorking} onOpen={onOpen} />
           )}
         </Panel>
 
         {/* AI briefing */}
-        <Panel title="AI briefing" action="View all insights">
-          <div className="space-y-1">
-            {briefing.map((b, i) => (
-              <div key={i} className="flex items-center gap-2.5 rounded-xl px-2 py-2">
-                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${b.tone}`}><b.icon size={15} /></div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[12.5px] font-semibold text-[var(--text-primary)]">{b.headline}</p>
-                  <p className="text-[11px] text-[var(--text-muted)]">{b.sub}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+        <Panel title="AI briefing" action="View all insights" onAction={() => setInfoBox('insights')}>
+          <BriefingList items={briefing} />
         </Panel>
 
         {/* Upcoming deadlines */}
-        <Panel title="Upcoming deadlines" action="View calendar">
-          {deadlines.length === 0 ? <PanelEmpty text="No open deadlines." /> : (
-            <div className="space-y-1">
-              {deadlines.map(({ r, date }) => {
-                const days = Math.round((date.getTime() - Date.now()) / 86400000);
-                const rt = returnType(r.ret.returnType);
-                return (
-                  <button key={r.id} onClick={() => onOpen(r.ret)} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-black/[0.03]">
-                    <div className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg bg-slate-100 leading-none">
-                      <span className="text-[13px] font-extrabold text-[var(--text-primary)]">{date.getDate()}</span>
-                      <span className="text-[9px] font-semibold uppercase text-[var(--text-muted)]">{date.toLocaleString('en-GB', { month: 'short' })}</span>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[12.5px] font-semibold text-[var(--text-primary)]">{r.ret.clientName}</p>
-                      <p className="text-[11px] text-[var(--text-muted)]">{rt.form} · {r.ret.taxYear}</p>
-                    </div>
-                    <span className={`shrink-0 text-[11px] font-semibold ${days < 30 ? 'text-rose-600' : days < 90 ? 'text-amber-600' : 'text-[var(--text-muted)]'}`}>
-                      {days > 0 ? `${days} days` : 'due'}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+        <Panel title="Upcoming deadlines" action="View all deadlines" onAction={() => setInfoBox('deadlines')}>
+          {deadlines.length === 0 ? <PanelEmpty text="No open deadlines." /> : <DeadlineList items={deadlines} onOpen={onOpen} />}
         </Panel>
       </div>
 
       {/* Row 2: AI suggestions | Returns by status | Recent activity */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* AI suggestions */}
-        <Panel title="AI suggestions for your clients" action="View all suggestions">
-          {suggestions.length === 0 ? <PanelEmpty text="Run Analyse on a return to surface opportunities." /> : (
-            <div className="space-y-1.5">
-              {suggestions.slice(0, 4).map((s, i) => {
-                const high = s.estSaving >= 1000 || s.confidence >= 75;
-                return (
-                  <button key={i} onClick={() => onOpen(s.ret)} className="flex w-full items-center gap-2.5 rounded-xl border border-[var(--border)] bg-white/60 px-3 py-2 text-left transition-colors hover:border-[var(--accent)]/40">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]"><Sparkles size={14} /></div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[12.5px] font-semibold text-[var(--text-primary)]">{s.title}</p>
-                      <p className="truncate text-[11px] text-[var(--text-muted)]">{s.client}{s.estSaving > 0 ? ` · save ~${fmtMoney(s.estSaving)}` : ''}</p>
-                    </div>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${high ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{high ? 'High' : 'Medium'}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+        <Panel title="AI suggestions for your clients" action="View all suggestions" onAction={() => setInfoBox('suggestions')}>
+          {suggestions.length === 0 ? <PanelEmpty text="Run Analyse on a return to surface opportunities." /> : <SuggestionList items={suggestions} onOpen={onOpen} />}
         </Panel>
 
         {/* Returns by status donut */}
-        <Panel title="Returns by status" action="View full pipeline">
+        <Panel title="Returns by status" action="View full pipeline" onAction={() => setInfoBox('pipeline')}>
           <div className="flex items-center gap-4">
             <StatusDonut total={total} segments={BUCKETS.map(b => ({ label: b.label, value: counts[b.key], color: b.color }))} />
             <div className="flex-1 space-y-1">
@@ -256,20 +196,8 @@ export default function CommandCentre({
         </Panel>
 
         {/* Recent activity */}
-        <Panel title="Recent activity" action="View all activity">
-          {activity.length === 0 ? <PanelEmpty text="Activity will appear here as you work." /> : (
-            <div className="space-y-2">
-              {activity.map(({ ev, client }, i) => (
-                <div key={i} className="flex items-start gap-2.5">
-                  <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--accent)]/10 text-[var(--accent)]"><ActivityIcon kind={ev.kind} /></div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[12px] text-[var(--text-secondary)]"><span className="font-semibold text-[var(--text-primary)]">{client}</span> — {ev.label}</p>
-                    <p className="text-[10.5px] text-[var(--text-muted)]">{relTime(ev.at)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+        <Panel title="Recent activity" action="View all activity" onAction={() => setInfoBox('activity')}>
+          {activity.length === 0 ? <PanelEmpty text="Activity will appear here as you work." /> : <ActivityList items={activity} />}
         </Panel>
       </div>
 
@@ -287,9 +215,13 @@ export default function CommandCentre({
         ) : rows.length === 0 ? (
           <EmptyState onNew={onNew} />
         ) : view === 'list' ? (
-          <ReturnList rows={rows} onOpen={onOpen} onAskDelete={onDelete ? askDelete : undefined} />
+          <div className="max-h-[440px] overflow-y-auto rounded-[18px]">
+            <ReturnList rows={rows} onOpen={onOpen} onAskDelete={onDelete ? askDelete : undefined} />
+          </div>
         ) : (
-          <KanbanBoard rows={rows} onOpen={onOpen} />
+          <div className="max-h-[440px] overflow-y-auto">
+            <KanbanBoard rows={rows} onOpen={onOpen} />
+          </div>
         )}
 
         {/* Returns whose client was deleted — off the dashboard, still reachable. */}
@@ -350,6 +282,18 @@ export default function CommandCentre({
         bucket={bucketView}
         onClose={() => setBucketView(null)}
         onOpen={r => { setBucketView(null); onOpen(r); }}
+      />
+
+      <InfoLightbox
+        kind={infoBox}
+        onClose={() => setInfoBox(null)}
+        onOpen={r => { setInfoBox(null); onOpen(r); }}
+        myReturns={myReturns}
+        allReturns={rows}
+        briefing={briefing}
+        deadlines={deadlines}
+        suggestions={suggestions}
+        activity={activity}
       />
 
       <ConfirmDeleteModal
@@ -476,6 +420,72 @@ function BucketLightbox({ bucket, onClose, onOpen }: { bucket: BucketView | null
   );
 }
 
+// A lightbox listing the full data behind a dashboard panel's "View all …" link.
+function InfoLightbox({ kind, onClose, onOpen, myReturns, allReturns, briefing, deadlines, suggestions, activity }: {
+  kind: null | 'returns' | 'insights' | 'deadlines' | 'suggestions' | 'pipeline' | 'activity';
+  onClose: () => void;
+  onOpen: (r: TaxReturn) => void;
+  myReturns: RowWithStatus[];
+  allReturns: RowWithStatus[];
+  briefing: BriefingItem[];
+  deadlines: DeadlineItem[];
+  suggestions: SuggestionItem[];
+  activity: ActivityItem[];
+}) {
+  useEffect(() => {
+    if (!kind) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [kind, onClose]);
+
+  if (!kind) return null;
+
+  const META: Record<Exclude<typeof kind, null>, { title: string; icon: typeof Layers; tint: string; count: number; empty: string }> = {
+    returns:     { title: 'My returns',         icon: Layers,        tint: '#6366f1', count: myReturns.length,   empty: 'You have no returns yet.' },
+    insights:    { title: 'AI briefing',        icon: Sparkles,      tint: '#6366f1', count: briefing.length,    empty: 'No insights yet.' },
+    deadlines:   { title: 'Upcoming deadlines', icon: CalendarClock, tint: '#f59e0b', count: deadlines.length,   empty: 'No open deadlines.' },
+    suggestions: { title: 'AI suggestions',     icon: PiggyBank,     tint: '#10b981', count: suggestions.length, empty: 'No suggestions yet.' },
+    pipeline:    { title: 'Full pipeline',      icon: Activity,      tint: '#6366f1', count: allReturns.length,  empty: 'No returns yet.' },
+    activity:    { title: 'Recent activity',    icon: Activity,      tint: '#6366f1', count: activity.length,    empty: 'No activity yet.' },
+  };
+  const m = META[kind];
+  const Icon = m.icon;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" />
+      <div className="relative z-10 flex max-h-[80vh] w-full max-w-xl flex-col overflow-hidden rounded-[22px] border border-white/60 bg-white/90 shadow-[0_24px_80px_rgba(31,38,88,0.28)] backdrop-blur-xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3 border-b border-black/5 px-5 py-3.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: `${m.tint}1f`, color: m.tint }}><Icon size={18} /></div>
+          <div className="flex-1">
+            <p className="text-[14px] font-bold text-[var(--text-primary)]">{m.title}</p>
+            <p className="text-[11.5px] text-[var(--text-muted)]">{m.count} item{m.count === 1 ? '' : 's'}</p>
+          </div>
+          <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-black/5"><X size={16} /></button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {m.count === 0 ? (
+            <p className="py-10 text-center text-[13px] text-[var(--text-muted)]">{m.empty}</p>
+          ) : kind === 'returns' ? (
+            <ContinueList items={myReturns} onOpen={onOpen} />
+          ) : kind === 'pipeline' ? (
+            <ContinueList items={allReturns} onOpen={onOpen} />
+          ) : kind === 'insights' ? (
+            <BriefingList items={briefing} />
+          ) : kind === 'deadlines' ? (
+            <DeadlineList items={deadlines} onOpen={onOpen} />
+          ) : kind === 'suggestions' ? (
+            <SuggestionList items={suggestions} onOpen={onOpen} />
+          ) : (
+            <ActivityList items={activity} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BucketCard({ label, value, pct, icon: Icon, tint, onClick }: { label: string; value: number | string; pct?: number; icon: typeof Layers; tint: string; onClick?: () => void }) {
   return (
     <button type="button" onClick={onClick} className="group relative w-full overflow-hidden rounded-[20px] border border-white/60 bg-white/70 p-4 text-left shadow-[0_8px_32px_rgba(31,38,88,0.08)] backdrop-blur-md transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(31,38,88,0.14)]">
@@ -500,14 +510,122 @@ function Panel({ title, action, onAction, children }: { title: string; action?: 
     <StudioCard className="flex flex-col p-4">
       <div className="mb-2 flex items-center justify-between">
         <p className="text-[13px] font-bold text-[var(--text-primary)]">{title}</p>
-        {action && <button onClick={onAction} disabled={!onAction} className="flex items-center gap-0.5 text-[11px] font-semibold text-[var(--accent)] disabled:opacity-45">{action} <ArrowRight size={11} /></button>}
+        {action && <button onClick={onAction} disabled={!onAction} className="flex items-center gap-0.5 text-[11px] font-semibold text-[var(--accent)] transition-opacity hover:opacity-80 disabled:opacity-45">{action} <ArrowRight size={11} /></button>}
       </div>
-      <div className="flex-1">{children}</div>
+      <div className="flex-1 overflow-y-auto pr-0.5" style={{ maxHeight: 232 }}>{children}</div>
     </StudioCard>
   );
 }
 function PanelLoading() { return <div className="flex items-center justify-center gap-2 py-8 text-[12px] text-[var(--text-muted)]"><Loader2 size={14} className="animate-spin" /> Loading…</div>; }
 function PanelEmpty({ text }: { text: string }) { return <p className="py-6 text-center text-[12px] text-[var(--text-muted)]">{text}</p>; }
+
+// ─── Shared list renderers (used by both the panels and their lightboxes) ─────
+type DeadlineItem = { r: RowWithStatus; date: Date };
+type ActivityItem = { ev: TimelineEvent; client: string };
+type SuggestionItem = TaxSuggestion & { client: string; ret: TaxReturn };
+type BriefingItem = { icon: typeof Sparkles; headline: string; sub: string; tone: string };
+
+function ContinueList({ items, onOpen }: { items: RowWithStatus[]; onOpen: (r: TaxReturn) => void }) {
+  return (
+    <div className="space-y-1">
+      {items.map(r => {
+        const rt = returnType(r.ret.returnType);
+        const prog = stageProgress(r.ret);
+        return (
+          <button key={r.id} onClick={() => onOpen(r.ret)} className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors hover:bg-black/[0.03]">
+            <Avatar name={r.ret.clientName} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12.5px] font-semibold text-[var(--text-primary)]">{r.ret.clientName}</p>
+              <p className="text-[11px] text-[var(--text-muted)]">{rt.form} · {r.ret.taxYear}</p>
+            </div>
+            <StatusBadge status={r.status} />
+            <div className="hidden w-20 items-center gap-1.5 sm:flex">
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200/70"><div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${(prog / 5) * 100}%` }} /></div>
+              <span className="text-[10px] text-[var(--text-muted)]">{Math.round((prog / 5) * 100)}%</span>
+            </div>
+            <ChevronRight size={14} className="shrink-0 text-[var(--text-muted)]" />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function DeadlineList({ items, onOpen }: { items: DeadlineItem[]; onOpen: (r: TaxReturn) => void }) {
+  return (
+    <div className="space-y-1">
+      {items.map(({ r, date }) => {
+        const days = Math.round((date.getTime() - Date.now()) / 86400000);
+        const rt = returnType(r.ret.returnType);
+        return (
+          <button key={r.id} onClick={() => onOpen(r.ret)} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-black/[0.03]">
+            <div className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg bg-slate-100 leading-none">
+              <span className="text-[13px] font-extrabold text-[var(--text-primary)]">{date.getDate()}</span>
+              <span className="text-[9px] font-semibold uppercase text-[var(--text-muted)]">{date.toLocaleString('en-GB', { month: 'short' })}</span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12.5px] font-semibold text-[var(--text-primary)]">{r.ret.clientName}</p>
+              <p className="text-[11px] text-[var(--text-muted)]">{rt.form} · {r.ret.taxYear}</p>
+            </div>
+            <span className={`shrink-0 text-[11px] font-semibold ${days < 30 ? 'text-rose-600' : days < 90 ? 'text-amber-600' : 'text-[var(--text-muted)]'}`}>{days > 0 ? `${days} days` : 'due'}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SuggestionList({ items, onOpen }: { items: SuggestionItem[]; onOpen: (r: TaxReturn) => void }) {
+  return (
+    <div className="space-y-1.5">
+      {items.map((s, i) => {
+        const high = s.estSaving >= 1000 || s.confidence >= 75;
+        return (
+          <button key={i} onClick={() => onOpen(s.ret)} className="flex w-full items-center gap-2.5 rounded-xl border border-[var(--border)] bg-white/60 px-3 py-2 text-left transition-colors hover:border-[var(--accent)]/40">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]"><Sparkles size={14} /></div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12.5px] font-semibold text-[var(--text-primary)]">{s.title}</p>
+              <p className="truncate text-[11px] text-[var(--text-muted)]">{s.client}{s.estSaving > 0 ? ` · save ~${fmtMoney(s.estSaving)}` : ''}</p>
+            </div>
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${high ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{high ? 'High' : 'Medium'}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ActivityList({ items }: { items: ActivityItem[] }) {
+  return (
+    <div className="space-y-2">
+      {items.map(({ ev, client }, i) => (
+        <div key={i} className="flex items-start gap-2.5">
+          <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--accent)]/10 text-[var(--accent)]"><ActivityIcon kind={ev.kind} /></div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] text-[var(--text-secondary)]"><span className="font-semibold text-[var(--text-primary)]">{client}</span> — {ev.label}</p>
+            <p className="text-[10.5px] text-[var(--text-muted)]">{relTime(ev.at)}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BriefingList({ items }: { items: BriefingItem[] }) {
+  return (
+    <div className="space-y-1">
+      {items.map((b, i) => (
+        <div key={i} className="flex items-center gap-2.5 rounded-xl px-2 py-2">
+          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${b.tone}`}><b.icon size={15} /></div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[12.5px] font-semibold text-[var(--text-primary)]">{b.headline}</p>
+            <p className="text-[11px] text-[var(--text-muted)]">{b.sub}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function BannerStat({ label, value }: { label: string; value: string }) {
   return (

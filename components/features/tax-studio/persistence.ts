@@ -21,6 +21,8 @@ export interface ReturnListItem {
   ret: TaxReturn;
   /** dd-mm-yyyy HH:mm */
   date: string;
+  /** Raw ISO timestamp of the last edit — for sorting by recency. */
+  updatedAt: string;
   mine: boolean;
   /** False when the client record has been deleted (return is orphaned). */
   clientLinked: boolean;
@@ -33,7 +35,7 @@ function fmt(iso: string): string {
 }
 
 function toItem(dto: ReturnDto): ReturnListItem {
-  return { id: dto.id, ret: { ...dto.data, id: dto.id }, date: fmt(dto.updatedAt), mine: dto.mine, clientLinked: dto.clientLinked !== false };
+  return { id: dto.id, ret: { ...dto.data, id: dto.id }, date: fmt(dto.updatedAt), updatedAt: dto.updatedAt, mine: dto.mine, clientLinked: dto.clientLinked !== false };
 }
 
 async function readJson<T>(r: Response, fallback: string): Promise<T> {
