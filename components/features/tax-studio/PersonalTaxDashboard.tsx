@@ -9,6 +9,7 @@ import { StudioCard, StatusBadge } from './primitives';
 import { deriveStatus, STATUS_META, returnType } from './data';
 import { listReturns, type ReturnListItem } from './persistence';
 import { fetchJson } from '@/lib/fetchJson';
+import ClientEmailLink from '@/components/features/email/ClientEmailLink';
 import type { TaxReturn, ReturnStatus } from './types';
 
 export interface PersonalTaxClient {
@@ -24,12 +25,44 @@ export interface PersonalTaxClient {
   address?: string | null;
 }
 
-// Tax years offered in the picker (newest first). 2025/26 is the working default.
-const TAX_YEARS = ['2026/27', '2025/26', '2024/25', '2023/24', '2022/23'] as const;
+// Tax years offered in the picker (newest first). 2025/26 is the earliest —
+// Tax Studio's Personal Tax module doesn't go back before it — and the default.
+const TAX_YEARS = ['2026/27', '2025/26'] as const;
 const DEFAULT_TAX_YEAR = '2025/26';
 
 type SortKey = 'name' | 'client_ref' | 'utr' | 'status';
 type SortDir = 'asc' | 'desc';
+type ClientStatusFilter = 'all' | 'active' | 'hold' | 'inactive';
+type ClientTypeFilter = 'all' | 'individual' | 'sole_trader';
+type SubmissionFilter = 'all' | ReturnStatus;
+
+// Client lifecycle status → display label + pill tone. Unknown/blank = active.
+function clientStatusLabel(s: string | null | undefined): string {
+  return s === 'hold' ? 'On hold' : s === 'inactive' ? 'Inactive' : 'Active';
+}
+function clientStatusTone(s: string | null | undefined): string {
+  return s === 'hold' ? 'text-amber-700 bg-amber-100' : s === 'inactive' ? 'text-slate-500 bg-slate-100' : 'text-emerald-700 bg-emerald-100';
+}
+// Business type → "Individual" / "Sole trader" label.
+function clientTypeLabel(bt: string | null): string {
+  return bt === 'sole_trader' ? 'Sole trader' : bt === 'individual' ? 'Individual' : '—';
+}
+
+const CLIENT_STATUS_OPTIONS: { value: ClientStatusFilter; label: string }[] = [
+  { value: 'all', label: 'All statuses' },
+  { value: 'active', label: 'Active' },
+  { value: 'hold', label: 'On hold' },
+  { value: 'inactive', label: 'Inactive' },
+];
+const CLIENT_TYPE_OPTIONS: { value: ClientTypeFilter; label: string }[] = [
+  { value: 'all', label: 'All types' },
+  { value: 'individual', label: 'Individual' },
+  { value: 'sole_trader', label: 'Sole trader' },
+];
+const SUBMISSION_OPTIONS: { value: SubmissionFilter; label: string }[] = [
+  { value: 'all', label: 'All submissions' },
+  ...(Object.keys(STATUS_META) as ReturnStatus[]).map(k => ({ value: k, label: STATUS_META[k].label })),
+];
 
 // ── CSV helpers ──────────────────────────────────────────────────────────────
 function csvEscape(value: unknown): string {
@@ -80,6 +113,9 @@ export default function PersonalTaxDashboard({ onBack, onOpen, onNewForClient }:
 
   const [taxYear, setTaxYear] = useState<string>(DEFAULT_TAX_YEAR);
   const [search, setSearch] = useState('');
+  const [clientStatusFilter, setClientStatusFilter] = useState<ClientStatusFilter>('all');
+  const [clientTypeFilter, setClientTypeFilter] = useState<ClientTypeFilter>('all');
+  const [submissionFilter, setSubmissionFilter] = useState<SubmissionFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -145,25 +181,32 @@ export default function PersonalTaxDashboard({ onBack, onOpen, onNewForClient }:
     });
   }
 
-  // Build the display rows: filter → attach the selected-year return → sort.
+  // Build the display rows: attach the selected-year return → filter → sort.
   const rows: ClientRow[] = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const list = clients.filter(c => {
-      if (!q) return true;
-      const hay = `${c.name} ${c.client_ref ?? ''}`.toLowerCase();
-      return hay.includes(q);
-    });
+    const statusLabel = (r: ClientRow) => (r.yearStatus ? STATUS_META[r.yearStatus].label : 'Not started');
 
-    const built: ClientRow[] = list.map(client => {
+    const built: ClientRow[] = clients.map(client => {
       const clientReturns = returnsByClient.get(client.id) ?? [];
       const yearReturn = clientReturns.find(r => r.ret.taxYear === taxYear) ?? null;
       const yearStatus = yearReturn ? deriveStatus(yearReturn.ret) : null;
       return { client, returns: clientReturns, yearReturn, yearStatus };
     });
 
-    const statusLabel = (r: ClientRow) => (r.yearStatus ? STATUS_META[r.yearStatus].label : 'Not started');
+    const filtered = built.filter(r => {
+      if (q) {
+        const hay = `${r.client.name} ${r.client.client_ref ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (clientStatusFilter !== 'all' && (r.client.status ?? 'active') !== clientStatusFilter) return false;
+      if (clientTypeFilter !== 'all' && r.client.business_type !== clientTypeFilter) return false;
+      // Submission filter matches the effective selected-year status ('not-started'
+      // covers clients with no return for the year).
+      if (submissionFilter !== 'all' && (r.yearStatus ?? 'not-started') !== submissionFilter) return false;
+      return true;
+    });
 
-    return built.sort((a, b) => {
+    return filtered.sort((a, b) => {
       switch (sortKey) {
         case 'name':
           return compareValues(a.client.name, b.client.name, sortDir);
@@ -177,14 +220,16 @@ export default function PersonalTaxDashboard({ onBack, onOpen, onNewForClient }:
           return 0;
       }
     });
-  }, [clients, returnsByClient, search, taxYear, sortKey, sortDir]);
+  }, [clients, returnsByClient, search, taxYear, sortKey, sortDir, clientStatusFilter, clientTypeFilter, submissionFilter]);
 
   // ── Export ─────────────────────────────────────────────────────────────────
   function exportCsv() {
-    const headers = ['Client', 'Code', 'UTR', 'NI Number', 'Email', `Status (${taxYear})`, 'Returns'];
+    const headers = ['Client', 'Code', 'Type', 'Client status', 'UTR', 'NI Number', 'Email', `Status (${taxYear})`, 'Returns'];
     const dataRows = rows.map(r => [
       r.client.name,
       r.client.client_ref ?? '',
+      clientTypeLabel(r.client.business_type),
+      clientStatusLabel(r.client.status),
       r.client.utr_number ?? '',
       r.client.national_insurance_number ?? '',
       r.client.contact_email ?? '',
@@ -237,9 +282,9 @@ export default function PersonalTaxDashboard({ onBack, onOpen, onNewForClient }:
         </div>
       </div>
 
-      {/* Toolbar: search + export */}
+      {/* Toolbar: search + filters + export */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[220px] max-w-[340px] flex-1">
+        <div className="relative min-w-[200px] max-w-[300px] flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
           <input
             type="text"
@@ -249,10 +294,13 @@ export default function PersonalTaxDashboard({ onBack, onOpen, onNewForClient }:
             className="w-full rounded-lg border border-[var(--border)] bg-white py-2 pl-9 pr-3 text-[13px] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
           />
         </div>
+        <FilterSelect value={clientTypeFilter} onChange={v => setClientTypeFilter(v as ClientTypeFilter)} options={CLIENT_TYPE_OPTIONS} />
+        <FilterSelect value={clientStatusFilter} onChange={v => setClientStatusFilter(v as ClientStatusFilter)} options={CLIENT_STATUS_OPTIONS} />
+        <FilterSelect value={submissionFilter} onChange={v => setSubmissionFilter(v as SubmissionFilter)} options={SUBMISSION_OPTIONS} />
         <button
           onClick={exportCsv}
           disabled={rows.length === 0}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-[13px] font-semibold text-[var(--text-secondary)] transition-colors hover:bg-black/[0.03] disabled:opacity-40 disabled:hover:bg-white"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-[13px] font-semibold text-[var(--text-secondary)] transition-colors hover:bg-black/[0.03] disabled:opacity-40 disabled:hover:bg-white"
         >
           <Download size={14} /> Export
         </button>
@@ -360,6 +408,28 @@ function SortHeader({ label, field, sortKey, sortDir, onSort }: {
   );
 }
 
+// ─── Filter dropdown ─────────────────────────────────────────────────────────
+function FilterSelect({ value, onChange, options }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  const active = value !== 'all';
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className={`rounded-lg border px-2.5 py-2 text-[12.5px] font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 ${
+        active
+          ? 'border-[var(--accent)]/50 bg-[var(--accent)]/[0.06] text-[var(--accent)]'
+          : 'border-[var(--border)] bg-white text-[var(--text-secondary)]'
+      }`}
+    >
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+
 // ─── Expandable client row ───────────────────────────────────────────────────
 function ClientRowView({ row, taxYear, expanded, totalCols, onToggle, onOpen, onNewForClient }: {
   row: ClientRow;
@@ -383,7 +453,13 @@ function ClientRowView({ row, taxYear, expanded, totalCols, onToggle, onOpen, on
         <td className="px-3 py-2.5">
           <div className="flex items-center gap-2.5">
             <Avatar name={client.name} />
-            <span className="truncate font-semibold text-[var(--text-primary)]">{client.name}</span>
+            <div className="min-w-0">
+              <p className="truncate font-semibold text-[var(--text-primary)]">{client.name}</p>
+              <div className="mt-0.5 flex items-center gap-1.5">
+                <span className="text-[10.5px] text-[var(--text-muted)]">{clientTypeLabel(client.business_type)}</span>
+                <span className={`inline-flex rounded-full px-1.5 py-px text-[9px] font-bold uppercase tracking-wide ${clientStatusTone(client.status)}`}>{clientStatusLabel(client.status)}</span>
+              </div>
+            </div>
           </div>
         </td>
         <td className="px-3 py-2.5 font-mono text-[12px] text-[var(--text-secondary)]">{client.client_ref ?? '—'}</td>
@@ -421,19 +497,30 @@ function ClientRowView({ row, taxYear, expanded, totalCols, onToggle, onOpen, on
           <td colSpan={totalCols} className="px-6 py-4" onClick={e => e.stopPropagation()}>
             <div className="flex flex-col gap-4">
               {/* Identity line */}
-              {(client.utr_number || client.national_insurance_number || client.contact_email) && (
-                <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-[12px]">
-                  {client.utr_number && (
-                    <IdentityItem icon={FileText} label="UTR" value={client.utr_number} mono />
-                  )}
-                  {client.national_insurance_number && (
-                    <IdentityItem icon={CreditCard} label="NI Number" value={client.national_insurance_number} mono />
-                  )}
-                  {client.contact_email && (
-                    <IdentityItem icon={Mail} label="Email" value={client.contact_email} />
-                  )}
+              <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-[12px]">
+                <IdentityItem icon={Users} label="Type" value={clientTypeLabel(client.business_type)} />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[var(--text-muted)]">Status:</span>
+                  <span className={`inline-flex rounded-full px-1.5 py-px text-[10px] font-bold uppercase tracking-wide ${clientStatusTone(client.status)}`}>{clientStatusLabel(client.status)}</span>
                 </div>
-              )}
+                {client.utr_number && (
+                  <IdentityItem icon={FileText} label="UTR" value={client.utr_number} mono />
+                )}
+                {client.national_insurance_number && (
+                  <IdentityItem icon={CreditCard} label="NI Number" value={client.national_insurance_number} mono />
+                )}
+                {client.contact_email && (
+                  <div className="flex items-center gap-1.5">
+                    <Mail size={13} className="shrink-0 text-[var(--text-muted)]" />
+                    <span className="text-[var(--text-muted)]">Email:</span>
+                    <ClientEmailLink
+                      email={client.contact_email}
+                      client={{ id: client.id, name: client.name, client_ref: client.client_ref, contact_email: client.contact_email }}
+                      className="font-medium text-[var(--accent)] hover:underline"
+                    />
+                  </div>
+                )}
+              </div>
 
               {/* Returns list */}
               <div>
