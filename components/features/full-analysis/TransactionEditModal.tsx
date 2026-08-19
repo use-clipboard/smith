@@ -105,6 +105,22 @@ const SOFTWARE_FIELDS: Record<TargetSoftware, FieldConfig[]> = {
   ],
 };
 
+// Net / VAT / Gross field keys per software, for auto-balancing in the editor.
+// Gross is the anchor: editing VAT or Gross recalculates Net; editing Net
+// recalculates VAT. Only softwares that expose all three fields are listed —
+// FreeAgent (amount only), Sage (no gross) and Xero (no VAT field) are omitted.
+const BALANCE_FIELDS: Partial<Record<TargetSoftware, { net: string; vat: string; gross: string }>> = {
+  smith:      { net: 'netAmount',  vat: 'vatAmount',  gross: 'grossAmount' },
+  vt:         { net: 'analysis',   vat: 'vat',        gross: 'total' },
+  capium:     { net: 'netAmount',  vat: 'vatamount',  gross: 'amount' },
+  quickbooks: { net: 'unitAmount', vat: 'vatAmount',  gross: 'grossAmount' },
+  general:    { net: 'netAmount',  vat: 'vatAmount',  gross: 'grossAmount' },
+};
+
+function round2(n: number): string {
+  return (Math.round(n * 100) / 100).toFixed(2);
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function txToFormValues(tx: Transaction, software: TargetSoftware): Record<string, string> {
@@ -241,7 +257,26 @@ export default function TransactionEditModal({
   }, [onClose]);
 
   const setField = (key: string, value: string) =>
-    setFormValues(prev => ({ ...prev, [key]: value }));
+    setFormValues(prev => {
+      const next = { ...prev, [key]: value };
+      // Auto-balance Net / VAT / Gross so the three always reconcile. Gross is
+      // the anchor: editing VAT or Gross recalculates Net; editing Net
+      // recalculates VAT. Only fires for a balancing field when there's a Gross
+      // to work from (so typing into an empty entry doesn't force negatives).
+      const bal = BALANCE_FIELDS[targetSoftware];
+      if (bal && (key === bal.net || key === bal.vat || key === bal.gross)) {
+        const num = (k: string) => parseFloat(next[k]) || 0;
+        const gross = num(bal.gross);
+        if (key === bal.gross) {
+          next[bal.net] = round2(gross - num(bal.vat));            // Gross edited → Net rebalances, VAT held
+        } else if (key === bal.vat && gross > 0) {
+          next[bal.net] = round2(gross - num(bal.vat));            // VAT edited → Net rebalances, Gross held
+        } else if (key === bal.net && gross > 0) {
+          next[bal.vat] = round2(gross - num(bal.net));            // Net edited → VAT rebalances, Gross held
+        }
+      }
+      return next;
+    });
 
   const handleSave = () => {
     if (isFlagged) {

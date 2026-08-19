@@ -14,7 +14,7 @@ import FullAnalysisHistory, { type SeedAnalysis } from '@/components/features/fu
 import CaptureReviewChat from '@/components/features/full-analysis/CaptureReviewChat';
 import { applyCaptureEdit, flaggedKey, type CaptureEdit } from '@/components/features/full-analysis/captureChat';
 import { canAccessCaptureChat } from '@/lib/full-analysis/access';
-import { FileSearch, Download, Undo2, Redo2, AlertTriangle, Pencil, ChevronUp, ChevronDown, ChevronsUpDown, CheckCheck, ChevronRight, ArrowLeft, Sparkles, Check, ArrowRight, UploadCloud, Users, FileOutput, SlidersHorizontal, Zap, Trash2, BookCopy } from 'lucide-react';
+import { FileSearch, Download, Undo2, Redo2, AlertTriangle, Pencil, ChevronUp, ChevronDown, ChevronsUpDown, CheckCheck, ChevronRight, ArrowLeft, Sparkles, Check, ArrowRight, UploadCloud, Users, FileOutput, SlidersHorizontal, Zap, Trash2, BookCopy, Loader2, FilePlus } from 'lucide-react';
 import type { Transaction, FlaggedEntry, TargetSoftware, LedgerAccount, VTTransaction, CapiumTransaction, XeroTransaction, QuickBooksTransaction, FreeAgentTransaction, SageTransaction, GeneralTransaction, SmithTransaction, DocumentScanResult } from '@/types';
 import { fileToBase64, readFileAsText, parseLedgerCsv, findBestMatch } from '@/utils/fileUtils';
 import { spreadsheetToText, isSpreadsheetFile } from '@/utils/spreadsheetText';
@@ -319,6 +319,9 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
   }, []);
   const docInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  // "+ Add documents" on the review screen — scans extra files into the current run.
+  const addDocsInputRef = useRef<HTMLInputElement>(null);
+  const [addingDocs, setAddingDocs] = useState(false);
 
   // Step gating
   const canLeaveStep1 = clientName.trim().length > 0;
@@ -585,9 +588,25 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     setSelectedFlagged(new Set());
   }, [flaggedEntries, selectedFlagged, processedTransactions, targetSoftware, pushHistory]);
 
+  // Delete valid transactions outright (vs. flagging). Undoable via the history
+  // (pushHistory), so a fat-fingered delete is one Undo away.
+  const handleDeleteRow = useCallback((origIndex: number) => {
+    pushHistory(processedTransactions.filter((_, i) => i !== origIndex));
+    setSelectedValid(new Set());
+  }, [processedTransactions, pushHistory]);
+
+  const handleBulkDelete = useCallback(() => {
+    if (selectedValid.size === 0) return;
+    pushHistory(processedTransactions.filter((_, i) => !selectedValid.has(i)));
+    setSelectedValid(new Set());
+  }, [processedTransactions, selectedValid, pushHistory]);
+
   // ─── Validation & ledger matching (applied after all scans complete) ─────────
 
-  const applyValidationAndProceed = useCallback((results: DocumentScanResult[]) => {
+  // Pure: turn raw scan results into validated transactions + flagged entries
+  // (arithmetic check + ledger matching). Shared by the initial scan and the
+  // "+ Add documents" append flow, so both apply identical validation.
+  const computeValidatedAndFlagged = useCallback((results: DocumentScanResult[]): { validated: Transaction[]; flagged: FlaggedEntry[] } => {
     const successful = results.filter(r => r.status === 'success');
     const parsedLedgerAccounts = sharedInputsRef.current?.parsedLedgerAccounts ?? [];
 
@@ -653,12 +672,17 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
       return { ...tx, ledgerValidation: { status: 'no-match' as const, originalAiSuggestion: { name: aiName } } };
     }) : validTxs;
 
+    return { validated, flagged: [...rawFlagged, ...calcFlagged] };
+  }, [targetSoftware, isVatRegistered]);
+
+  const applyValidationAndProceed = useCallback((results: DocumentScanResult[]) => {
+    const { validated, flagged } = computeValidatedAndFlagged(results);
     setTransactionHistory([validated]);
     setHistoryIndex(0);
-    setFlaggedEntries([...rawFlagged, ...calcFlagged]);
+    setFlaggedEntries(flagged);
     setSort(null); setSelectedValid(new Set()); setSelectedFlagged(new Set());
     setAppState('success');
-  }, [targetSoftware, isVatRegistered]);
+  }, [computeValidatedAndFlagged]);
 
   // ─── Scan a list of files one at a time, returning per-file results ──────────
 
@@ -903,6 +927,35 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     applyValidationAndProceed(scanResults);
   }, [scanResults, applyValidationAndProceed]);
 
+  // ─── Add more documents to an in-progress analysis (review screen) ──────────
+  // Scans the extra files with the SAME shared inputs (past transactions +
+  // ledger/COA) captured on the first run, then merges the results into the
+  // current lists. Undoable via history. Saves the "start over / second run"
+  // dance when a doc was missed.
+  const handleAddDocuments = useCallback(async (files: File[]) => {
+    const newDocs = files.filter(f => f && f.size > 0);
+    if (newDocs.length === 0 || addingDocs) return;
+    setAddingDocs(true);
+    try {
+      // Register the files (as documents) so the edit-modal preview resolves them.
+      setDocs(prev => [
+        ...prev,
+        ...newDocs.map((file, k) => ({
+          id: `${file.name}-${file.size}-${Math.round(file.lastModified)}-add-${prev.length + k}`,
+          file, cat: 'documents' as DocCat,
+        })),
+      ]);
+      const shared = sharedInputsRef.current;
+      const results = await scanFiles(newDocs, shared?.pastTransactionsContent ?? null, shared?.ledgersContent ?? null);
+      setScanProgress(null);
+      const { validated, flagged } = computeValidatedAndFlagged(results);
+      pushHistory([...processedTransactions, ...validated]);
+      if (flagged.length) setFlaggedEntries(prev => [...prev, ...flagged]);
+    } finally {
+      setAddingDocs(false);
+    }
+  }, [addingDocs, scanFiles, computeValidatedAndFlagged, processedTransactions, pushHistory]);
+
   if (appState === 'loading') {
     const processingFiles: ProgressFile[] = documentFiles.map(f => {
       const result = scanResults.find(r => r.fileName === f.name);
@@ -978,6 +1031,14 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     </Tooltip>
   );
 
+  const DeleteBtn = ({ onClick }: { onClick: () => void }) => (
+    <Tooltip label="Delete (undoable)">
+      <button onClick={onClick} aria-label="Delete transaction" className="p-1 rounded text-[var(--text-muted)] hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 transition-colors">
+        <Trash2 size={13} />
+      </button>
+    </Tooltip>
+  );
+
   // Bulk action bar for valid transactions
   const BulkBarValid = () => {
     if (selectedValid.size === 0) return null;
@@ -1007,6 +1068,10 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
           <button onClick={() => setBulkMode('flag')}
             className="py-1 px-3 text-xs font-medium rounded-lg bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800">
             <span className="flex items-center gap-1"><AlertTriangle size={11} /> Flag selected</span>
+          </button>
+          <button onClick={handleBulkDelete}
+            className="py-1 px-3 text-xs font-medium rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors dark:bg-red-900/20 dark:text-red-400 dark:border-red-800">
+            <span className="flex items-center gap-1"><Trash2 size={11} /> Delete selected</span>
           </button>
           <button onClick={() => setSelectedValid(new Set())} className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] ml-auto transition-colors">
             Deselect all
@@ -1306,7 +1371,9 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
       )}
 
       {appState === 'success' && (
-        <div className="space-y-4">
+        // pb-28 keeps the last table row clear of the floating "Ask Smith"
+        // button (bottom-right), so its edit/delete controls are always reachable.
+        <div className="space-y-4 pb-28">
           {/* Wizard stepper — Review step. Clicking a prior step returns to setup. */}
           <div className="bg-white/[0.78] backdrop-blur-md rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin">
             <WizardStepper current={4} onStep={n => { if (n < 4) { setAppState('idle'); setWizardStep(n as 1 | 2 | 3 | 4); } }} />
@@ -1351,6 +1418,18 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
             <div className="flex items-center gap-2">
               <button onClick={() => { setHistoryIndex(h => h - 1); setSelectedValid(new Set()); }} disabled={!canUndo} className="btn-secondary px-2.5 py-2"><Undo2 size={14} /></button>
               <button onClick={() => { setHistoryIndex(h => h + 1); setSelectedValid(new Set()); }} disabled={!canRedo} className="btn-secondary px-2.5 py-2"><Redo2 size={14} /></button>
+              {/* Add more documents to this analysis without starting over */}
+              <input ref={addDocsInputRef} type="file" multiple className="hidden"
+                accept=".pdf,.png,.jpg,.jpeg,.webp,.csv,.xlsx,.xls,.doc,.docx"
+                onChange={e => { const f = Array.from(e.target.files ?? []); e.target.value = ''; void handleAddDocuments(f); }} />
+              <Tooltip label="Scan and add more documents to this analysis">
+                <button onClick={() => addDocsInputRef.current?.click()} disabled={addingDocs}
+                  className="btn-secondary flex items-center gap-1.5 disabled:opacity-60">
+                  {addingDocs
+                    ? <><Loader2 size={14} className="animate-spin" /> Scanning…</>
+                    : <><FilePlus size={14} /> Add documents</>}
+                </button>
+              </Tooltip>
               <button onClick={() => setSaveModalOpen(true)} className="btn-primary"><Download size={14} />Save Analysis</button>
               <button onClick={() => {
                 setDocs([]); setTransactionHistory([]); setHistoryIndex(-1); setFlaggedEntries([]);
@@ -1393,7 +1472,14 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                           <input type="checkbox" checked={isSelected} onChange={toggleRow} className="w-4 h-4 cursor-pointer accent-[var(--accent)] rounded" />
                         </td>
                       );
-                      const editTd = <td className="px-2 py-2" onClick={e => e.stopPropagation()}><EditBtn onClick={() => setEditTarget({ type: 'valid', index: origIndex })} /></td>;
+                      const editTd = (
+                        <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center gap-0.5">
+                            <EditBtn onClick={() => setEditTarget({ type: 'valid', index: origIndex })} />
+                            <DeleteBtn onClick={() => handleDeleteRow(origIndex)} />
+                          </div>
+                        </td>
+                      );
 
                       if (targetSoftware === 'smith') {
                         const m = tx as SmithTransaction;
@@ -1558,7 +1644,14 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                         <tbody className="divide-y divide-[var(--border)]">
                           {outRangeWithIndices.map(({ tx, origIndex }) => {
                             const rowCls = 'hover:bg-[var(--bg-nav-hover)] transition-colors';
-                            const editTd = <td className="px-2 py-2" onClick={e => e.stopPropagation()}><EditBtn onClick={() => setEditTarget({ type: 'valid', index: origIndex })} /></td>;
+                            const editTd = (
+                        <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center gap-0.5">
+                            <EditBtn onClick={() => setEditTarget({ type: 'valid', index: origIndex })} />
+                            <DeleteBtn onClick={() => handleDeleteRow(origIndex)} />
+                          </div>
+                        </td>
+                      );
                             if (targetSoftware === 'vt') { const v = tx as VTTransaction; return <tr key={origIndex} className={rowCls}><td className="px-3 py-2 w-10" /><td className="px-3 py-2 text-[var(--text-muted)] truncate max-w-[120px]">{v.fileName}</td><td className="px-3 py-2">{v.date}</td><td className="px-3 py-2">{v.type}</td><td className="px-3 py-2">{v.primaryAccount}</td><td className="px-3 py-2 truncate max-w-[160px]">{v.details}</td><td className="px-3 py-2 text-right">£{v.total?.toFixed(2)}</td><td className="px-3 py-2 text-right">£{v.vat?.toFixed(2)}</td><td className="px-3 py-2 text-right">£{v.analysis?.toFixed(2)}</td><td className="px-3 py-2">{v.analysisAccount}</td>{editTd}</tr>; }
                             if (targetSoftware === 'capium') { const c = tx as CapiumTransaction; return <tr key={origIndex} className={rowCls}><td className="px-3 py-2 w-10" /><td className="px-3 py-2 truncate max-w-[120px]">{c.fileName}</td><td className="px-3 py-2">{c.invoicedate}</td><td className="px-3 py-2">{c.contactname}</td><td className="px-3 py-2 truncate max-w-[160px]">{c.description}</td><td className="px-3 py-2">{c.accountname}</td><td className="px-3 py-2 text-right">£{c.amount?.toFixed(2)}</td><td className="px-3 py-2 text-right">£{c.vatamount?.toFixed(2)}</td><td className="px-3 py-2 text-right">£{c.netAmount?.toFixed(2)}</td>{editTd}</tr>; }
                             if (targetSoftware === 'xero') { const x = tx as XeroTransaction; return <tr key={origIndex} className={rowCls}><td className="px-3 py-2 w-10" /><td className="px-3 py-2 truncate max-w-[120px]">{x.fileName}</td><td className="px-3 py-2">{x.invoiceDate}</td><td className="px-3 py-2">{x.contactName}</td><td className="px-3 py-2">{x.invoiceNumber}</td><td className="px-3 py-2 truncate max-w-[160px]">{x.description}</td><td className="px-3 py-2 text-right">£{x.unitAmount?.toFixed(2)}</td><td className="px-3 py-2 text-right">£{x.grossAmount?.toFixed(2)}</td><td className="px-3 py-2">{x.accountName}</td><td className="px-3 py-2">{x.taxType}</td>{editTd}</tr>; }
