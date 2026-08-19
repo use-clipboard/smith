@@ -173,10 +173,18 @@ function formatDateUk(iso: string): string {
   return `${d}/${m}/${y.slice(2)}`;
 }
 
-// Display balance for an account row in the master list. We hit the /balances
-// endpoint which returns natural Dr-Cr; for Suppliers (liability) we flip the
-// sign so the balance reads positive when we owe them.
-function displayBalance(account_type: string, balance: number): number {
+// Display balance for an account row in the master list.
+//
+// /balances returns natural Dr−Cr, which is exactly what the ledger detail
+// pane shows — credits in brackets. The master list matches that, so the
+// figure beside an account is the figure you get when you open it.
+//
+// The exception is a ledger whose column carries a bespoke, direction-stating
+// label ("They are owed", "They owe us"): there the sign is already in the
+// words, and "They are owed (500.00)" reads like nonsense. Those flip so the
+// number reads as plain English.
+function displayBalance(account_type: string, balance: number, directionInLabel: boolean): number {
+  if (!directionInLabel) return balance;
   if (account_type === 'liability' || account_type === 'equity' || account_type === 'income') return -balance;
   return balance;
 }
@@ -279,7 +287,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
         const b = (isPl ? plById.get(a.id) : balById.get(a.id)) ?? balById.get(a.id);
         return {
           ...a,
-          balance:      displayBalance(a.account_type, b?.balance ?? 0),
+          balance:      displayBalance(a.account_type, b?.balance ?? 0, Boolean(bespoke)),
           debit_total:  b?.debit_total  ?? 0,
           credit_total: b?.credit_total ?? 0,
         };
