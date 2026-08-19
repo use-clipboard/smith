@@ -36,6 +36,11 @@ export function buildStaticInstructions(
   isFlatRate = false,
   flatRatePercent: number | null = null,
 ): string {
+  // Reading-quality guidance. Many source documents are phone photos or scans
+  // and include handwriting; poor reading here is the single biggest cause of
+  // wrong figures, so spell out how to handle it.
+  const readingQualityInstruction = `**Reading the documents carefully:**\n- Documents may be scans, photos or contain handwriting. Read every figure — especially dates, totals and VAT — carefully and digit by digit.\n- For handwritten or faint totals, cross-check the total against the sum of any line items on the same document, and prefer the value that reconciles.\n- Do NOT guess a value you cannot actually read. If a critical figure (total, date, supplier) is illegible or ambiguous, flag the entry stating exactly which field is uncertain, and fill in every other field you CAN read.`;
+
   const vatInstruction = isVatRegistered
     ? `**VAT Status: REGISTERED.**\n- You MUST only extract a VAT amount if a VAT value (e.g., "VAT", "Value Added Tax") and a corresponding amount is explicitly listed on the document.\n- If the document does not explicitly state a VAT amount, the VAT value MUST be 0.\n- If a VAT registration number is present, it is a strong indicator that VAT might be applicable, but you still must find an explicit VAT amount on the document to extract it.`
     : `**VAT Status: NOT REGISTERED.**\n- The client is NOT VAT registered. For ALL transactions, the VAT amount MUST be 0.`;
@@ -83,6 +88,7 @@ Flag irrelevant, unprocessable, or potential duplicate documents. For EACH flagg
     : '';
 
   return [
+    readingQualityInstruction,
     vatInstruction,
     flatRateInstruction,
     taskPrompt,

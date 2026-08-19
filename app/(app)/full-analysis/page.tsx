@@ -18,6 +18,7 @@ import { FileSearch, Download, Undo2, Redo2, AlertTriangle, Pencil, ChevronUp, C
 import type { Transaction, FlaggedEntry, TargetSoftware, LedgerAccount, VTTransaction, CapiumTransaction, XeroTransaction, QuickBooksTransaction, FreeAgentTransaction, SageTransaction, GeneralTransaction, SmithTransaction, DocumentScanResult } from '@/types';
 import { fileToBase64, readFileAsText, parseLedgerCsv, findBestMatch } from '@/utils/fileUtils';
 import { spreadsheetToText, isSpreadsheetFile } from '@/utils/spreadsheetText';
+import { wordToText, isWordFile } from '@/utils/wordText';
 
 type AppState = 'idle' | 'loading' | 'scan_results' | 'success' | 'error';
 type View = 'valid' | 'flagged';
@@ -735,6 +736,8 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
         // images go as base64.
         const filePayload = isSpreadsheetFile(chunk)
           ? { name: chunk.name, mimeType: chunk.type || 'text/csv', text: await spreadsheetToText(chunk) }
+          : isWordFile(chunk)
+          ? { name: chunk.name, mimeType: chunk.type || 'text/plain', text: await wordToText(chunk) }
           : { name: chunk.name, mimeType: chunk.type || 'application/pdf', base64: await fileToBase64(chunk) };
         const res = await fetch('/api/analyse', {
           method: 'POST',
@@ -1355,7 +1358,7 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                   <p className="text-sm font-semibold text-[var(--text-primary)]">Drop files here or click to browse</p>
                   <p className="text-xs text-[var(--text-muted)] mt-1">Invoices, receipts & bank statements (PDF, JPG, PNG) — plus optional past-transactions / chart-of-accounts CSVs. We auto-sort them; retag below if needed.</p>
                 </div>
-                <input ref={docInputRef} type="file" multiple accept="application/pdf,image/*,.csv,.xlsx,.xls,.tsv" className="hidden"
+                <input ref={docInputRef} type="file" multiple accept="application/pdf,image/*,.csv,.xlsx,.xls,.tsv,.doc,.docx" className="hidden"
                   onChange={e => { addDocs(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
 
                 {docs.length > 0 && (
