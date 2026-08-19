@@ -15,12 +15,21 @@ function yearRange(label: string): string {
 
 export default function StepTaxYear({
   taxYear, onChange, client, allReturns,
+  returnTypeId, periodStart, periodEnd, onPeriodChange,
 }: {
   taxYear: string;
   onChange: (y: string) => void;
   client: WizardClient | null;
   allReturns: ReturnListItem[];
+  returnTypeId: string;
+  periodStart: string;
+  periodEnd: string;
+  onPeriodChange: (start: string, end: string) => void;
 }) {
+  // Companies file for an accounting period, not a tax year — CT600 collects the
+  // period dates directly (most foolproof; Accounts Studio / CH auto-fill later).
+  const ct600 = returnTypeId === 'ct600';
+  const periodInvalid = ct600 && !!periodStart && !!periodEnd && periodEnd <= periodStart;
   const history = client
     ? allReturns.filter(r => r.ret.clientId === client.id).sort((a, b) => (a.ret.taxYear < b.ret.taxYear ? 1 : -1))
     : [];
@@ -29,18 +38,43 @@ export default function StepTaxYear({
 
   return (
     <div className="rounded-2xl bg-white/[0.78] p-5 backdrop-blur-md">
-      <h3 className="text-[16px] font-bold text-[var(--text-primary)]">3. Tax Year</h3>
-      <p className="mt-0.5 text-[12.5px] text-[var(--text-muted)]">Choose the year you&apos;re preparing. SMITH will roll last year&apos;s data forward next.</p>
+      <h3 className="text-[16px] font-bold text-[var(--text-primary)]">3. {ct600 ? 'Accounting Period' : 'Tax Year'}</h3>
+      <p className="mt-0.5 text-[12.5px] text-[var(--text-muted)]">
+        {ct600
+          ? 'Companies file for an accounting period, not a tax year — enter the period this return covers.'
+          : 'Choose the year you’re preparing. SMITH will roll last year’s data forward next.'}
+      </p>
 
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Tax year selector */}
-        <div className="rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/[0.05] p-3.5">
-          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]"><Calendar size={12} /> Tax year</p>
-          <select value={taxYear} onChange={e => onChange(e.target.value)} className="input-base mt-1.5 py-1.5 text-sm font-semibold">
-            {taxYearOptions().map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-          <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">{yearRange(taxYear)}</p>
-        </div>
+        {ct600 ? (
+          /* Accounting period entry */
+          <div className="rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/[0.05] p-3.5 sm:col-span-2">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]"><Calendar size={12} /> Accounting period</p>
+            <div className="mt-1.5 grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Start</label>
+                <input type="date" value={periodStart} onChange={e => onPeriodChange(e.target.value, periodEnd)} className="input-base py-1.5 text-sm font-semibold" />
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">End</label>
+                <input type="date" value={periodEnd} onChange={e => onPeriodChange(periodStart, e.target.value)} className="input-base py-1.5 text-sm font-semibold" />
+              </div>
+            </div>
+            {client?.year_end
+              ? <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">Client&apos;s year end: <span className="font-semibold text-[var(--text-secondary)]">{client.year_end}</span></p>
+              : null}
+            {periodInvalid && <p className="mt-1.5 text-[11px] font-medium text-rose-600">The end date must be after the start date.</p>}
+          </div>
+        ) : (
+          /* Tax year selector */
+          <div className="rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/[0.05] p-3.5">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]"><Calendar size={12} /> Tax year</p>
+            <select value={taxYear} onChange={e => onChange(e.target.value)} className="input-base mt-1.5 py-1.5 text-sm font-semibold">
+              {taxYearOptions().map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">{yearRange(taxYear)}</p>
+          </div>
+        )}
 
         {/* Last return */}
         <SummaryCard icon={FileClock} label="Last return">
@@ -68,7 +102,9 @@ export default function StepTaxYear({
       </div>
 
       <p className="mt-4 text-[11.5px] text-[var(--text-muted)]">
-        Preparing the <span className="font-semibold text-[var(--text-secondary)]">{taxYear}</span> return{client ? ` for ${client.name}` : ''}.
+        {ct600
+          ? <>Accounting period <span className="font-semibold text-[var(--text-secondary)]">{periodStart ? fmtDateUK(periodStart) : '—'}</span> to <span className="font-semibold text-[var(--text-secondary)]">{periodEnd ? fmtDateUK(periodEnd) : '—'}</span>{client ? ` for ${client.name}` : ''}.</>
+          : <>Preparing the <span className="font-semibold text-[var(--text-secondary)]">{taxYear}</span> return{client ? ` for ${client.name}` : ''}.</>}
       </p>
     </div>
   );

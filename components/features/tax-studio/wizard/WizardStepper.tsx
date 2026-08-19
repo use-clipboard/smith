@@ -13,15 +13,16 @@ export const WIZARD_STEPS: WizardStepDef[] = [
 ];
 
 export default function WizardStepper({
-  current, onSelect, furthest,
+  current, onSelect, furthest, steps = WIZARD_STEPS,
 }: {
   current: number;
   furthest: number;
   onSelect: (n: number) => void;
+  steps?: WizardStepDef[];
 }) {
   return (
     <div className="flex items-center">
-      {WIZARD_STEPS.map((s, i) => {
+      {steps.map((s, i) => {
         const done = s.n < current;
         const isCurrent = s.n === current;
         const reachable = s.n <= furthest;
@@ -45,7 +46,7 @@ export default function WizardStepper({
                 {s.label}
               </span>
             </button>
-            {i < WIZARD_STEPS.length - 1 && (
+            {i < steps.length - 1 && (
               <div className={`mx-3 h-px flex-1 ${done ? 'bg-emerald-300' : 'bg-slate-200'}`} />
             )}
           </div>

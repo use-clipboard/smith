@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { X, ArrowLeft, ArrowRight, Plus, Loader2, ChevronRight } from 'lucide-react';
-import WizardStepper from './WizardStepper';
+import WizardStepper, { WIZARD_STEPS } from './WizardStepper';
 import StepReturnType from './StepReturnType';
 import StepSelectClient from './StepSelectClient';
 import StepTaxYear from './StepTaxYear';
@@ -17,6 +17,22 @@ import {
 } from '../data';
 import { listReturns, type ReturnListItem } from '../persistence';
 import type { ReturnTypeId, TaxReturn } from '../types';
+
+function isoDate(d: Date): string { const p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; }
+/** Default CT600 accounting period — the 12 months ending on the most recent 31 March. */
+function defaultCt600Period(): { start: string; end: string } {
+  const now = new Date();
+  const endYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  return { start: isoDate(new Date(endYear - 1, 3, 1)), end: isoDate(new Date(endYear, 2, 31)) };
+}
+/** The UK tax year (6 Apr–5 Apr) containing a date — CT600's coarse grouping label. */
+function taxYearForDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return currentFilingSeason().taxYear;
+  const y = d.getFullYear();
+  const startY = d >= new Date(y, 3, 6) ? y : y - 1;
+  return `${startY}/${String(startY + 1).slice(2)}`;
+}
 
 function initialRoll(): Record<RollKey, boolean> {
   const r = {} as Record<RollKey, boolean>;
@@ -40,6 +56,15 @@ export default function NewReturnWizard({
   const [returnTypeId, setReturnTypeId] = useState<ReturnTypeId>('sa100');
   const [client, setClient] = useState<WizardClient | null>(initialClient);
   const [taxYear, setTaxYear] = useState(initialTaxYear || currentFilingSeason().taxYear);
+  // CT600 accounting period (companies file per period, not tax year).
+  const [periodStart, setPeriodStart] = useState('');
+  const [periodEnd, setPeriodEnd] = useState('');
+  useEffect(() => {
+    if (returnTypeId === 'ct600' && !periodStart && !periodEnd) {
+      const p = defaultCt600Period();
+      setPeriodStart(p.start); setPeriodEnd(p.end);
+    }
+  }, [returnTypeId, periodStart, periodEnd]);
   const [roll, setRoll] = useState<Record<RollKey, boolean>>(initialRoll);
   const [allReturns, setAllReturns] = useState<ReturnListItem[]>([]);
   const [creating, setCreating] = useState(false);
@@ -75,7 +100,11 @@ export default function NewReturnWizard({
   );
 
   const rt = returnType(returnTypeId);
-  const canContinue = step === 2 ? !!client : true;
+  const canContinue = step === 2
+    ? !!client
+    : step === 3 && returnTypeId === 'ct600'
+      ? !!(periodStart && periodEnd && periodEnd > periodStart)
+      : true;
 
   function goTo(n: number) {
     if (n < 1 || n > 5) return;
@@ -106,6 +135,7 @@ export default function NewReturnWizard({
       const built: TaxReturn = {
         ...base,
         income: seededIncome,
+        ...(returnTypeId === 'ct600' ? { periodStart, periodEnd, taxYear: taxYearForDate(periodEnd) } : {}),
         entityLabel: entityLabelForBusinessType(client.business_type),
         connected: seedConnectedSources(),
         stageStatus: { setup: 'complete', analyse: 'active', review: 'upcoming', approval: 'upcoming', submit: 'upcoming' },
@@ -123,7 +153,7 @@ export default function NewReturnWizard({
     switch (step) {
       case 1: return { title: 'Create New Return', sub: 'Let’s create your new tax return in just a few simple steps.' };
       case 2: return { title: 'Select Client', sub: 'Choose the individual or sole trader client you want to prepare a Self Assessment return for.' };
-      case 3: return { title: client ? `New Return for ${client.name}` : 'Tax Year', sub: 'Choose the tax year for this return.' };
+      case 3: return { title: client ? `New Return for ${client.name}` : (returnTypeId === 'ct600' ? 'Accounting Period' : 'Tax Year'), sub: returnTypeId === 'ct600' ? 'Set the company’s accounting period for this return.' : 'Choose the tax year for this return.' };
       case 4: return { title: client ? `New Return for ${client.name}` : 'Roll Forward', sub: 'Review last year’s data and choose what to roll forward.' };
       default: return { title: 'Review & Confirm', sub: 'One last look before we create the return.' };
     }
@@ -154,13 +184,16 @@ export default function NewReturnWizard({
 
       {/* Stepper */}
       <div className="rounded-2xl border border-white/60 bg-white/60 px-5 py-3.5 backdrop-blur-md">
-        <WizardStepper current={step} furthest={furthest} onSelect={goTo} />
+        <WizardStepper current={step} furthest={furthest} onSelect={goTo}
+          steps={returnTypeId === 'ct600' ? WIZARD_STEPS.map(s => (s.n === 3 ? { ...s, label: 'Accounting Period' } : s)) : WIZARD_STEPS} />
       </div>
 
       {/* Step body */}
       {step === 1 && <StepReturnType selected={returnTypeId} onSelect={setReturnTypeId} />}
       {step === 2 && <StepSelectClient returnTypeId={returnTypeId} selected={client} onSelect={setClient} allReturns={allReturns} />}
-      {step === 3 && <StepTaxYear taxYear={taxYear} onChange={setTaxYear} client={client} allReturns={allReturns} />}
+      {step === 3 && <StepTaxYear taxYear={taxYear} onChange={setTaxYear} client={client} allReturns={allReturns}
+        returnTypeId={returnTypeId} periodStart={periodStart} periodEnd={periodEnd}
+        onPeriodChange={(s, e) => { setPeriodStart(s); setPeriodEnd(e); }} />}
       {step === 4 && <StepRollForward priorYear={priorYear} priorIncome={priorIncome} roll={roll} onToggle={k => setRoll(r => ({ ...r, [k]: !r[k] }))} onSetAll={v => setRoll(r => { const n = { ...r }; for (const c of ROLL_CATEGORIES) if (c.key !== 'personal') n[c.key] = v && (priorIncome ? categoryHasData(c.key, priorIncome) : false); return n; })} client={client} />}
       {step === 5 && <StepConfirm returnTypeId={returnTypeId} client={client} taxYear={taxYear} seededIncome={seededIncome} roll={roll} hasPrior={!!priorIncome} />}
 

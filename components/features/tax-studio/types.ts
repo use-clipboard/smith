@@ -1576,8 +1576,14 @@ export interface TaxReturn {
   clientRef: string | null;
   clientName: string;
   returnType: ReturnTypeId;
-  /** Tax year label, e.g. '2025/26'. */
+  /** Tax year label, e.g. '2025/26'. For CT600 this is the tax year that
+   *  contains the accounting-period end (a coarse grouping label); the true
+   *  period is in periodStart/periodEnd. */
   taxYear: string;
+  /** CT600 accounting period (ISO yyyy-mm-dd). Companies file for an accounting
+   *  period, not a tax year — these hold the actual period for CT600 returns. */
+  periodStart?: string;
+  periodEnd?: string;
   utr?: string | null;
   /** Taxpayer personal details for the return — pulled from the client record,
    *  editable in Setup, and used on the tax return itself. */

@@ -15,6 +15,10 @@ export function ReturnHeader({ ret }: { ret: TaxReturn }) {
   const rt = returnType(ret.returnType);
   const initials = ret.clientName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const Icon = rt.icon;
+  // Companies show their accounting period rather than a tax year.
+  const periodLabel = ret.returnType === 'ct600' && ret.periodStart && ret.periodEnd
+    ? `${fmtDateUK(ret.periodStart)} – ${fmtDateUK(ret.periodEnd)}`
+    : ret.taxYear;
   return (
     <StudioCard className="px-5 py-4">
       <div className="flex flex-wrap items-center gap-4">
@@ -22,7 +26,7 @@ export function ReturnHeader({ ret }: { ret: TaxReturn }) {
         <div className="min-w-0">
           <h3 className="text-[16px] font-bold text-[var(--text-primary)]">{ret.clientName}</h3>
           <p className="flex items-center gap-1.5 text-[12px] text-[var(--text-muted)]">
-            <Icon size={12} /> {rt.form} · {rt.label} · {ret.taxYear}
+            <Icon size={12} /> {rt.form} · {rt.label} · {periodLabel}
             {ret.amended && <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-700">Amended</span>}
             {ret.late && <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">Late</span>}
           </p>

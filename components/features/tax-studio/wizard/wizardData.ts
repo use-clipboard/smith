@@ -90,6 +90,8 @@ export interface WizardClient {
   national_insurance_number?: string | null;
   date_of_birth?: string | null;
   address?: string | null;
+  /** Freeform accounting year-end (e.g. '31-03') — a hint for the CT600 period. */
+  year_end?: string | null;
 }
 
 // ── Per-return-type info panel (mockup step 1, right rail) ────────────────────
