@@ -171,7 +171,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     byType,
     dateRange: dates.length ? { from: dates[0], to: dates[dates.length - 1] } : null,
     unbalanced: 0,
-    coa: { existing: coaDetail.filter(c => c.existing).length, toCreate: coaDetail.filter(c => !c.existing).length },
+    // snake_case `to_create` to match the VT + CSV importers — the shared
+    // preview card reads summary.coa.to_create.
+    coa: { existing: coaDetail.filter(c => c.existing).length, to_create: coaDetail.filter(c => !c.existing).length },
+    coaAccounts: coaDetail.length,
     warnings,
     coa_detail: coaDetail,
     source: 'capture',

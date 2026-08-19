@@ -1,13 +1,18 @@
 'use client';
 
 /**
- * BookImportTab — VT → SMITH bulk-import workspace.
+ * BookImportTab — Import & Migrate hub.
  *
- *   ┌─ Upload card ─────────────────────────────────────────────────┐
- *   │  Drop a VT Transaction Report .xlsx here, or click to choose  │
- *   └────────────────────────────────────────────────────────────────┘
+ * A source-selection landing (`mode: 'hub'`) fronting every route into a book:
+ *   • AI Opening Balances — last year's TB/accounts → one opening journal
+ *   • VT Transaction+     — full history from a VT Transaction Report .xlsx
+ *   • General CSV / other — any provider's export, AI-mapped columns
+ *   • Capture analyses    — invoices/receipts already analysed in Capture
  *
- *   Once uploaded the staging row appears in the "Recent imports" list
+ * Every source except Opening Balances converges on the SAME staging pipeline:
+ * a `bookkeeping_imports` row in status 'pending' carrying ParsedTransaction[].
+ *
+ *   Once staged the row appears in the "Recent imports" list
  *   below. Click it to open the preview panel — row counts, type
  *   breakdown, COA mapping, errors. From the preview the user can either
  *   click **Post** (commits the import to the live ledger) or just leave
@@ -27,10 +32,11 @@ import * as XLSX from 'xlsx';
 import {
   Upload, Loader2, CheckCircle2, AlertTriangle, RotateCcw, FileSpreadsheet,
   Trash2, ChevronRight, RefreshCw, Sparkles, ArrowLeft, Table, Building2, Clock,
-  Download, ShieldCheck, type LucideIcon,
+  Download, ShieldCheck, ScanLine, type LucideIcon,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import OpeningBalancesModal from '../book/OpeningBalancesModal';
+import CaptureImportPicker from './CaptureImportPicker';
 
 interface ImportRow {
   id: string;
@@ -68,6 +74,8 @@ interface Props {
    *  wizard launched from the hub. */
   bookName?: string;
   firstPeriodStart?: string | null;
+  /** The book's client — lets the Capture source list default to their analyses. */
+  clientId?: string | null;
   /** Fires after a successful Post or Rollback so the rest of the book
    *  (Home recent feed, Key Information balances, any open ledger tabs)
    *  can refetch. Mirrors the `onPosted` callback the input sheets use. */
@@ -88,14 +96,14 @@ function formatDateTime(iso: string | null): string {
   return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-export default function BookImportTab({ bookId, isAdmin, bookName, firstPeriodStart, onChanged }: Props) {
+export default function BookImportTab({ bookId, isAdmin, bookName, firstPeriodStart, clientId, onChanged }: Props) {
   const [imports, setImports] = useState<ImportRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  /** Hub landing vs an import workspace (VT or AI CSV). */
-  const [mode, setMode] = useState<'hub' | 'vt' | 'csv'>('hub');
+  /** Hub landing vs an import workspace (VT, AI CSV or Capture). */
+  const [mode, setMode] = useState<'hub' | 'vt' | 'csv' | 'capture'>('hub');
   /** AI Opening Balances wizard overlay. */
   const [obOpen, setObOpen] = useState(false);
   /** Recent-import opened for review from the hub (preview overlay). */
@@ -299,6 +307,13 @@ export default function BookImportTab({ bookId, isAdmin, bookName, firstPeriodSt
                   tone="violet"
                   onClick={() => setMode('csv')}
                 />
+                <SourceCard
+                  title="Capture analyses"
+                  desc="Pull in invoices and receipts already analysed in Capture — no re-upload, no extra AI cost."
+                  icon={ScanLine}
+                  tone="sky"
+                  onClick={() => setMode('capture')}
+                />
               </div>
             </div>
           </div>
@@ -320,8 +335,14 @@ export default function BookImportTab({ bookId, isAdmin, bookName, firstPeriodSt
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3 items-start">
       {/* Left — upload + selected import preview */}
       <div className="space-y-3">
-        {/* Upload zone */}
-        {mode === 'vt' ? (
+        {/* Source picker / upload zone */}
+        {mode === 'capture' ? (
+          <CaptureImportPicker
+            bookId={bookId}
+            clientId={clientId ?? null}
+            onStaged={async id => { await refresh(); setSelectedId(id); }}
+          />
+        ) : mode === 'vt' ? (
           <div
             onDragOver={e => e.preventDefault()}
             onDrop={onDrop}
@@ -517,7 +538,7 @@ function SourceCard({
   title: string;
   desc: string;
   icon: LucideIcon;
-  tone: 'amber' | 'emerald' | 'indigo' | 'violet';
+  tone: 'amber' | 'emerald' | 'indigo' | 'violet' | 'sky';
   badge?: string;
   coming?: boolean;
   onClick?: () => void;
@@ -527,6 +548,7 @@ function SourceCard({
     emerald: 'bg-emerald-50 text-emerald-600',
     indigo: 'bg-indigo-50 text-indigo-600',
     violet: 'bg-violet-50 text-violet-600',
+    sky: 'bg-sky-50 text-sky-600',
   };
   return (
     <button

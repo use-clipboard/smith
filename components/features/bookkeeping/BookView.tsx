@@ -580,7 +580,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
               bumpRefresh used by the input sheets, so the Home tab's recent-
               transactions feed + Key Information balances refresh straight
               away without a page reload. */}
-          <BookImportTab bookId={bookId} isAdmin={isAdmin} bookName={book.name} firstPeriodStart={book.first_period_start} onChanged={bumpRefresh} />
+          <BookImportTab bookId={bookId} isAdmin={isAdmin} bookName={book.name} firstPeriodStart={book.first_period_start} clientId={book.client_id} onChanged={bumpRefresh} />
         </div>
         {dynamicTabs.map(dt => {
           if (dt.kind === 'ledger') {
