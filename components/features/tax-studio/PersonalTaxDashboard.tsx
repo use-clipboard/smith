@@ -3,13 +3,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft, ArrowRight, ArrowUp, ArrowDown, ArrowUpDown, Download, Loader2,
-  Plus, Search, ChevronRight, Users, Mail, CreditCard, FileText,
+  Plus, Search, ChevronRight, Users, Mail, CreditCard, FileText, Calculator, ClipboardList,
 } from 'lucide-react';
 import { StudioCard, StatusBadge } from './primitives';
-import { deriveStatus, STATUS_META, returnType } from './data';
+import Tooltip from '@/components/ui/Tooltip';
+import { deriveStatus, STATUS_META, returnType, fmtMoney } from './data';
+import { computeSa100Full, paymentPlan } from './calc';
 import { listReturns, type ReturnListItem } from './persistence';
 import { fetchJson } from '@/lib/fetchJson';
 import ClientEmailLink from '@/components/features/email/ClientEmailLink';
+import { renderSa302Pdf, sa302FileName } from './sa302Pdf';
+import { renderDetailedReportPdf } from './detailedReportPdf';
+import { detailedReportFileName } from './detailedReport';
+import { renderSa100ApprovalPdf } from './approvalPdf';
 import type { TaxReturn, ReturnStatus } from './types';
 
 export interface PersonalTaxClient {
@@ -528,33 +534,10 @@ function ClientRowView({ row, taxYear, expanded, totalCols, onToggle, onOpen, on
                 {returns.length === 0 ? (
                   <p className="text-[12px] text-[var(--text-muted)]">No returns yet.</p>
                 ) : (
-                  <div className="space-y-1">
-                    {returns.map(item => {
-                      const status = deriveStatus(item.ret);
-                      const isSelectedYear = item.ret.taxYear === taxYear;
-                      return (
-                        <div
-                          key={item.id}
-                          className={`flex items-center gap-3 rounded-xl border px-3 py-2 ${
-                            isSelectedYear
-                              ? 'border-[var(--accent)]/30 bg-white'
-                              : 'border-[var(--border)] bg-white/60'
-                          }`}
-                        >
-                          <span className="w-16 shrink-0 text-[12.5px] font-bold text-[var(--text-primary)]">{item.ret.taxYear}</span>
-                          <StatusBadge status={status} />
-                          <span className="flex-1 truncate text-[11.5px] text-[var(--text-muted)]">
-                            {returnType(item.ret.returnType).form} · edited {item.date}
-                          </span>
-                          <button
-                            onClick={() => onOpen(item.ret)}
-                            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[var(--text-secondary)] transition-colors hover:border-[var(--accent)]/40 hover:text-[var(--accent)]"
-                          >
-                            Open <ArrowRight size={12} />
-                          </button>
-                        </div>
-                      );
-                    })}
+                  <div className="space-y-1.5">
+                    {returns.map(item => (
+                      <ReturnRow key={item.id} item={item} selectedYear={taxYear} onOpen={onOpen} />
+                    ))}
                   </div>
                 )}
               </div>
@@ -573,6 +556,105 @@ function ClientRowView({ row, taxYear, expanded, totalCols, onToggle, onOpen, on
         </tr>
       )}
     </>
+  );
+}
+
+// ─── One tax return: key figures + quick-download shortcuts ──────────────────
+function ReturnRow({ item, selectedYear, onOpen }: {
+  item: ReturnListItem;
+  selectedYear: string;
+  onOpen: (r: TaxReturn) => void;
+}) {
+  const ret = item.ret;
+  const [busy, setBusy] = useState<null | 'full' | 'sa302' | 'detailed'>(null);
+  const status = deriveStatus(ret);
+  const isSelectedYear = ret.taxYear === selectedYear;
+  const c = useMemo(() => computeSa100Full(ret.income, ret.taxYear), [ret.income, ret.taxYear]);
+  const plan = useMemo(() => paymentPlan(ret.income, ret.taxYear), [ret.income, ret.taxYear]);
+
+  function triggerDownload(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  async function download(kind: 'full' | 'sa302' | 'detailed') {
+    if (busy) return;
+    setBusy(kind);
+    try {
+      const base = { clientName: ret.clientName, clientRef: ret.clientRef, utr: ret.utr, taxYear: ret.taxYear, income: ret.income, preparedBy: ret.preparedBy };
+      if (kind === 'sa302') {
+        triggerDownload(await renderSa302Pdf(base), sa302FileName(ret.clientName, ret.taxYear));
+      } else if (kind === 'detailed') {
+        triggerDownload(await renderDetailedReportPdf(base), detailedReportFileName(ret.clientName, ret.taxYear));
+      } else {
+        const blob = await renderSa100ApprovalPdf({
+          clientName: ret.clientName, clientRef: ret.clientRef, utr: ret.utr,
+          taxpayer: ret.taxpayer, amended: ret.amended, taxYear: ret.taxYear,
+          returnTypeId: ret.returnType, entityLabel: ret.entityLabel, preparedBy: ret.preparedBy, income: ret.income,
+        });
+        const safe = (ret.clientName || 'Client').replace(/[\\/:*?"<>|]/g, '').trim() || 'Client';
+        triggerDownload(blob, `${safe}-Tax Return-${ret.taxYear.replace('/', '-')}.pdf`);
+      }
+    } catch { /* non-fatal — the download simply doesn't fire */ }
+    finally { setBusy(null); }
+  }
+
+  return (
+    <div className={`rounded-xl border px-3 py-2.5 ${isSelectedYear ? 'border-[var(--accent)]/30 bg-white' : 'border-[var(--border)] bg-white/60'}`}>
+      <div className="flex items-center gap-3">
+        <span className="w-16 shrink-0 text-[12.5px] font-bold text-[var(--text-primary)]">{ret.taxYear}</span>
+        <StatusBadge status={status} />
+        <span className="flex-1 truncate text-[11.5px] text-[var(--text-muted)]">{returnType(ret.returnType).form} · edited {item.date}</span>
+        <div className="flex items-center gap-0.5">
+          <DownloadIconBtn icon={FileText} label="Download full tax return" loading={busy === 'full'} disabled={!!busy} onClick={() => download('full')} />
+          <DownloadIconBtn icon={Calculator} label="Download SA302" loading={busy === 'sa302'} disabled={!!busy} onClick={() => download('sa302')} />
+          <DownloadIconBtn icon={ClipboardList} label="Download detailed report" loading={busy === 'detailed'} disabled={!!busy} onClick={() => download('detailed')} />
+        </div>
+        <button
+          onClick={() => onOpen(ret)}
+          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[var(--text-secondary)] transition-colors hover:border-[var(--accent)]/40 hover:text-[var(--accent)]"
+        >
+          Open <ArrowRight size={12} />
+        </button>
+      </div>
+      {/* Key figures for the return */}
+      <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-black/5 pt-2 sm:grid-cols-4">
+        <Figure label="Taxable income" value={fmtMoney(c.taxableIncome)} />
+        <Figure label="Total tax charged" value={fmtMoney(c.totalDue)} />
+        <Figure label="Due 31 Jan" value={fmtMoney(plan.janDue)} />
+        <Figure label="Due 31 Jul" value={fmtMoney(plan.julDue)} />
+      </div>
+    </div>
+  );
+}
+
+function Figure({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[9.5px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">{label}</p>
+      <p className="text-[13px] font-bold tabular-nums text-[var(--text-primary)]">{value}</p>
+    </div>
+  );
+}
+
+function DownloadIconBtn({ icon: Icon, label, loading, disabled, onClick }: {
+  icon: typeof FileText; label: string; loading: boolean; disabled: boolean; onClick: () => void;
+}) {
+  return (
+    <Tooltip label={label}>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={label}
+        className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--accent)]/10 hover:text-[var(--accent)] disabled:opacity-50"
+      >
+        {loading ? <Loader2 size={14} className="animate-spin" /> : <Icon size={14} />}
+      </button>
+    </Tooltip>
   );
 }
 
