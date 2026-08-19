@@ -36,9 +36,17 @@ export interface LedgerValidation {
 export interface BaseTransaction {
   fileName: string;
   pageNumber: number;
+  /** 1-based page range this transaction occupies in its source file. Set when a
+   *  file is tagged as "multiple invoices" (each invoice spans pageStart..pageEnd)
+   *  or "single invoice" (whole file). Used to split the PDF per invoice. */
+  pageStart?: number;
+  pageEnd?: number;
   ledgerValidation?: LedgerValidation;
   driveLink?: string;
 }
+
+/** How Capture should treat a multi-page uploaded file. */
+export type DocSeparationMode = 'auto' | 'single' | 'multiple';
 
 export interface VTTransaction extends BaseTransaction {
   type: string;

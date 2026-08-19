@@ -15,7 +15,7 @@ import CaptureReviewChat from '@/components/features/full-analysis/CaptureReview
 import { applyCaptureEdit, captureRowKey, flaggedKey, type CaptureEdit } from '@/components/features/full-analysis/captureChat';
 import { canAccessCaptureChat } from '@/lib/full-analysis/access';
 import { FileSearch, Download, Undo2, Redo2, AlertTriangle, Pencil, ChevronUp, ChevronDown, ChevronsUpDown, CheckCheck, ChevronRight, ArrowLeft, Sparkles, Check, ArrowRight, UploadCloud, Users, FileOutput, SlidersHorizontal, Zap, Trash2, BookCopy, Loader2, FilePlus } from 'lucide-react';
-import type { Transaction, FlaggedEntry, TargetSoftware, LedgerAccount, VTTransaction, CapiumTransaction, XeroTransaction, QuickBooksTransaction, FreeAgentTransaction, SageTransaction, GeneralTransaction, SmithTransaction, DocumentScanResult } from '@/types';
+import type { Transaction, FlaggedEntry, TargetSoftware, LedgerAccount, VTTransaction, CapiumTransaction, XeroTransaction, QuickBooksTransaction, FreeAgentTransaction, SageTransaction, GeneralTransaction, SmithTransaction, DocumentScanResult, DocSeparationMode } from '@/types';
 import { fileToBase64, readFileAsText, parseLedgerCsv, findBestMatch } from '@/utils/fileUtils';
 import { spreadsheetToText, isSpreadsheetFile } from '@/utils/spreadsheetText';
 import { wordToText, isWordFile } from '@/utils/wordText';
@@ -113,6 +113,81 @@ function buildMinimalTx(entry: FlaggedEntry, software: TargetSoftware): Transact
   return { ...base, date: entry.date ?? '', supplier: entry.supplier ?? '', invoiceNumber: '', description: entry.description ?? '', netAmount: entry.amount ?? 0, vatAmount: 0, grossAmount: entry.amount ?? 0, currency: 'GBP', documentType: 'Purchase', category: '', notes: '' } as GeneralTransaction;
 }
 
+// A short label for a per-invoice split filename — the supplier/contact if we
+// can find one, else empty (the caller falls back to an index).
+function txContactLabel(tx: Transaction): string {
+  const r = tx as unknown as Record<string, unknown>;
+  const cand = r.contactName ?? r.contactname ?? r.primaryAccount ?? r.supplier ?? r.ACCOUNT_REF
+    ?? r.invoiceNumber ?? r.invoiceNo ?? r.reference;
+  return typeof cand === 'string'
+    ? cand.slice(0, 30).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim()
+    : '';
+}
+
+// #3 — DEXT-style document separation. For each source PDF the user tagged as
+// "multiple invoices", split it into one PDF per invoice (using the AI-returned
+// page range) and repoint each transaction at its own split file. Everything
+// downstream is keyed off fileName (preview, Drive link, Vault), so per-invoice
+// previews and links then "just work". Returns the rewritten results, the new
+// split files, and the originals now fully represented by splits.
+async function splitMultiInvoiceDocs(
+  results: DocumentScanResult[],
+  sourceFiles: File[],
+  separationByName: Map<string, DocSeparationMode>,
+): Promise<{ results: DocumentScanResult[]; newFiles: File[]; replacedOriginals: Set<string> }> {
+  const targets = results.filter(r =>
+    (separationByName.get(r.fileName) ?? 'auto') === 'multiple' && (r.validTransactions?.length ?? 0) > 0);
+  if (targets.length === 0) return { results, newFiles: [], replacedOriginals: new Set() };
+
+  const { PDFDocument } = await import('pdf-lib');
+  const fileByName = new Map(sourceFiles.map(f => [f.name, f]));
+  const newFiles: File[] = [];
+  const replacedOriginals = new Set<string>();
+
+  const updated = await Promise.all(results.map(async (r) => {
+    if (!targets.includes(r)) return r;
+    const src = fileByName.get(r.fileName);
+    if (!src || (src.type && src.type !== 'application/pdf')) return r;
+    let srcDoc: import('pdf-lib').PDFDocument;
+    try { srcDoc = await PDFDocument.load(await src.arrayBuffer()); } catch { return r; }
+    const totalPages = srcDoc.getPageCount();
+    const base = src.name.replace(/\.pdf$/i, '');
+    const used = new Set<string>();
+
+    const newValid: Transaction[] = [];
+    for (let i = 0; i < (r.validTransactions?.length ?? 0); i++) {
+      const tx = r.validTransactions![i] as Transaction;
+      const start = Math.max(1, Math.min(totalPages, tx.pageStart ?? tx.pageNumber ?? 1));
+      const end = Math.max(start, Math.min(totalPages, tx.pageEnd ?? tx.pageStart ?? tx.pageNumber ?? start));
+      try {
+        const out = await PDFDocument.create();
+        const idxs: number[] = [];
+        for (let p = start; p <= end; p++) idxs.push(p - 1);
+        const copied = await out.copyPages(srcDoc, idxs);
+        copied.forEach(pg => out.addPage(pg));
+        const bytes = await out.save();
+        const label = txContactLabel(tx) || `invoice ${i + 1}`;
+        const range = end !== start ? `p${start}-${end}` : `p${start}`;
+        let name = `${base} — ${label} (${range}).pdf`;
+        let n = 2; while (used.has(name)) name = `${base} — ${label} (${range}) ${n++}.pdf`;
+        used.add(name);
+        newFiles.push(new File([bytes], name, { type: 'application/pdf' }));
+        newValid.push({ ...tx, fileName: name, pageNumber: 1, pageStart: 1, pageEnd: end - start + 1 });
+      } catch {
+        newValid.push(tx); // split failed for this row — leave it pointing at the original
+      }
+    }
+    // Fully represented by splits (nothing flagged, everything repointed) → the
+    // original no longer needs to be kept/uploaded.
+    if ((r.flaggedEntries?.length ?? 0) === 0 && newValid.every(t => t.fileName !== r.fileName)) {
+      replacedOriginals.add(r.fileName);
+    }
+    return { ...r, validTransactions: newValid };
+  }));
+
+  return { results: updated, newFiles, replacedOriginals };
+}
+
 // ─── Setup wizard helpers ───────────────────────────────────────────────────────
 
 const WIZARD_STEPS = [
@@ -149,7 +224,14 @@ function WizardStepper({ current, onStep }: { current: number; onStep: (n: numbe
 
 // Package-upload categories
 type DocCat = 'documents' | 'past_transactions' | 'chart_of_accounts';
-interface DocItem { id: string; file: File; cat: DocCat; }
+interface DocItem { id: string; file: File; cat: DocCat; separation: DocSeparationMode; }
+
+// Per-file "how to treat this document" tag (DEXT-style), shown on document rows.
+const SEPARATION_OPTIONS: { id: DocSeparationMode; label: string; hint: string }[] = [
+  { id: 'auto',     label: 'Auto-detect',       hint: 'Let SMITH decide how many invoices are in the file.' },
+  { id: 'single',   label: 'One invoice',        hint: 'The whole file is a single invoice spanning multiple pages → one entry.' },
+  { id: 'multiple', label: 'Multiple invoices',  hint: 'The file holds several invoices → split into one entry (and one PDF) each.' },
+];
 
 const DOC_CATS: { id: DocCat; label: string; hint: string; required?: boolean }[] = [
   { id: 'documents',         label: 'Documents',         hint: 'Invoices, receipts & bank statements (PDF, JPG, PNG)', required: true },
@@ -312,15 +394,22 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
   // documentFiles / pastTransactionsFile / ledgersFile state is DERIVED from this
   // (see effect below) so the analysis logic stays unchanged.
   const [docs, setDocs] = useState<DocItem[]>([]);
+  // Per-invoice split PDFs produced from "multiple invoices" files (#3), and the
+  // original filenames they fully replace. documentFiles = uploaded documents
+  // (minus replaced originals) + the splits, so preview/Drive/Vault resolve
+  // per-invoice.
+  const [splitDocFiles, setSplitDocFiles] = useState<File[]>([]);
+  const [hiddenOriginalNames, setHiddenOriginalNames] = useState<Set<string>>(new Set());
   useEffect(() => {
-    setDocumentFiles(docs.filter(d => d.cat === 'documents').map(d => d.file));
+    const base = docs.filter(d => d.cat === 'documents').map(d => d.file).filter(f => !hiddenOriginalNames.has(f.name));
+    setDocumentFiles([...base, ...splitDocFiles]);
     setPastTransactionsFile(docs.find(d => d.cat === 'past_transactions')?.file ?? null);
     setLedgersFile(docs.find(d => d.cat === 'chart_of_accounts')?.file ?? null);
-  }, [docs]);
+  }, [docs, splitDocFiles, hiddenOriginalNames]);
   const addDocs = useCallback((files: File[]) => {
     setDocs(prev => [
       ...prev,
-      ...files.map(file => ({ id: `${file.name}-${file.size}-${Math.round(file.lastModified)}-${prev.length}`, file, cat: detectDocCat(file) })),
+      ...files.map(file => ({ id: `${file.name}-${file.size}-${Math.round(file.lastModified)}-${prev.length}`, file, cat: detectDocCat(file), separation: 'auto' as DocSeparationMode })),
     ]);
   }, []);
   const docInputRef = useRef<HTMLInputElement>(null);
@@ -718,16 +807,32 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     setAppState('success');
   }, [computeValidatedAndFlagged]);
 
+  // Per-file separation tags, keyed by filename (from the upload step).
+  const docSeparationMap = useCallback(() =>
+    new Map(docs.filter(d => d.cat === 'documents').map(d => [d.file.name, d.separation] as const)),
+    [docs]);
+
+  // Split any "multiple invoices" PDFs into per-invoice files, register the
+  // splits, then hand the rewritten results to the initial-scan flow.
+  const proceedWithSplitting = useCallback(async (results: DocumentScanResult[], sourceFiles: File[]) => {
+    const { results: split, newFiles, replacedOriginals } = await splitMultiInvoiceDocs(results, sourceFiles, docSeparationMap());
+    if (newFiles.length) setSplitDocFiles(prev => [...prev, ...newFiles]);
+    if (replacedOriginals.size) setHiddenOriginalNames(prev => new Set([...prev, ...replacedOriginals]));
+    applyValidationAndProceed(split);
+  }, [applyValidationAndProceed, docSeparationMap]);
+
   // ─── Scan a list of files one at a time, returning per-file results ──────────
 
   const scanFiles = useCallback(async (
     filesToScan: File[],
     pastTransactionsContent: string | null,
     ledgersContent: string | null,
+    separationByName?: Map<string, DocSeparationMode>,
   ): Promise<DocumentScanResult[]> => {
     // Scan a single (already size-safe) document through the AI and normalise the
     // result. `chunk` is either the whole file or one page-range slice of it.
-    const scanChunk = async (chunk: File): Promise<{
+    // `separation` tells the AI whether the file is one invoice, several, or auto.
+    const scanChunk = async (chunk: File, separation: DocSeparationMode): Promise<{
       ok: boolean; validTransactions: Transaction[]; flaggedEntries: FlaggedEntry[];
       errorMessage?: string; errorCode?: string;
     }> => {
@@ -744,6 +849,7 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             clientName, clientAddress, businessDescription: businessDescription.trim() || null,
+            separation,
             isVatRegistered, targetSoftware, analysisMode,
             isFlatRate: isVatRegistered && isFlatRate,
             flatRatePercent: (isVatRegistered && isFlatRate && flatRatePercent !== '') ? Number(flatRatePercent) : null,
@@ -798,7 +904,16 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     // the progress bar and lets us scan all chunks across all files through one
     // bounded-concurrency pool instead of strictly one-at-a-time.
     const perFile = await Promise.all(
-      filesToScan.map(async (file) => ({ file, chunks: await splitPdfIfNeeded(file) })),
+      filesToScan.map(async (file) => {
+        // A "single invoice" file must NOT be size-split — that would tear one
+        // invoice across independent scans. Send it whole (oversized ones fail
+        // gracefully into the flagged list). Others split by size as before.
+        const sep = separationByName?.get(file.name) ?? 'auto';
+        const chunks = sep === 'single'
+          ? [{ file, originalName: file.name, pageOffset: 0 }]
+          : await splitPdfIfNeeded(file);
+        return { file, chunks };
+      }),
     );
     const totalChunks = perFile.reduce((n, f) => n + f.chunks.length, 0);
 
@@ -837,15 +952,18 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     const tasks = perFile.flatMap(({ file, chunks }, fileIdx) =>
       chunks.map((chunk) => async () => {
         const a = acc[fileIdx];
-        const r = await scanChunk(chunk.file);
+        const r = await scanChunk(chunk.file, separationByName?.get(chunk.originalName) ?? 'auto');
         if (r.ok) {
           // Remap chunk-local results back onto the original document: restore the
-          // real filename and shift the chunk-relative page number to its absolute
-          // page. Keeps preview, Drive/Gmail links and uploads (all keyed off
-          // fileName) resolving to the source file and correct page.
+          // real filename and shift chunk-relative page numbers (incl. the
+          // pageStart/pageEnd invoice range) to their absolute pages. Keeps
+          // preview, Drive/Gmail links, uploads and per-invoice splitting (all
+          // keyed off fileName + page) resolving to the source file.
           for (const t of r.validTransactions) {
             t.fileName = chunk.originalName;
             if (typeof t.pageNumber === 'number') t.pageNumber = chunk.pageOffset + t.pageNumber;
+            if (typeof t.pageStart === 'number') t.pageStart = chunk.pageOffset + t.pageStart;
+            if (typeof t.pageEnd === 'number') t.pageEnd = chunk.pageOffset + t.pageEnd;
           }
           for (const f of r.flaggedEntries) {
             f.fileName = chunk.originalName;
@@ -918,10 +1036,12 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     if (ledgersContent) { parsedLedgerAccounts = parseLedgerCsv(ledgersContent); setLedgerAccounts(parsedLedgerAccounts); }
     sharedInputsRef.current = { pastTransactionsContent, ledgersContent, parsedLedgerAccounts };
 
+    const sepMap = docSeparationMap();
+
     // Single file: skip the results page and go straight to success or error
     if (documentFiles.length === 1) {
       try {
-        const results = await scanFiles(documentFiles, pastTransactionsContent, ledgersContent);
+        const results = await scanFiles(documentFiles, pastTransactionsContent, ledgersContent, sepMap);
         setScanProgress(null);
         // A whole-system issue (auth / rate-limit / overload / too-large) is worth
         // retrying, so show the error screen. A document-level failure (unreadable,
@@ -931,7 +1051,7 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
         if (results[0].status === 'failed' && SYSTEM_ERROR_CODES.has(results[0].errorCode ?? '')) {
           setError(results[0].errorMessage ?? 'Scan failed'); setErrorCode(results[0].errorCode); setAppState('error');
         } else {
-          applyValidationAndProceed(results);
+          await proceedWithSplitting(results, documentFiles);
         }
       } catch {
         setAppState('error'); setError('An unexpected error occurred');
@@ -940,11 +1060,11 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     }
 
     // Multiple files: scan each individually, then show the scan results page
-    const results = await scanFiles(documentFiles, pastTransactionsContent, ledgersContent);
+    const results = await scanFiles(documentFiles, pastTransactionsContent, ledgersContent, sepMap);
     setScanProgress(null);
     setScanResults(results);
     setAppState('scan_results');
-  }, [documentFiles, pastTransactionsFile, ledgersFile, scanFiles, applyValidationAndProceed, useAutoContext, autoContextCsv, selectedClient, businessDescription]);
+  }, [documentFiles, pastTransactionsFile, ledgersFile, scanFiles, proceedWithSplitting, docSeparationMap, useAutoContext, autoContextCsv, selectedClient, businessDescription]);
 
   // ─── Re-scan failed documents ─────────────────────────────────────────────
 
@@ -959,7 +1079,7 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     setScanProgress(null);
 
     const { pastTransactionsContent, ledgersContent } = sharedInputsRef.current ?? { pastTransactionsContent: null, ledgersContent: null };
-    const newResults = await scanFiles(failedFiles, pastTransactionsContent ?? null, ledgersContent ?? null);
+    const newResults = await scanFiles(failedFiles, pastTransactionsContent ?? null, ledgersContent ?? null, docSeparationMap());
 
     // Merge: replace each failed entry with its new result (success or still failed)
     setScanResults(prev => {
@@ -970,13 +1090,13 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     setScanProgress(null);
     setIsRescanning(false);
     setAppState('scan_results');
-  }, [scanResults, fileRefs, scanFiles]);
+  }, [scanResults, fileRefs, scanFiles, docSeparationMap]);
 
   // ─── Dismiss failed and proceed with successful results ───────────────────
 
   const handleDismissAndContinue = useCallback(() => {
-    applyValidationAndProceed(scanResults);
-  }, [scanResults, applyValidationAndProceed]);
+    void proceedWithSplitting(scanResults, documentFiles);
+  }, [scanResults, documentFiles, proceedWithSplitting]);
 
   // ─── Add more documents to an in-progress analysis (review screen) ──────────
   // Scans the extra files with the SAME shared inputs (past transactions +
@@ -993,7 +1113,7 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
         ...prev,
         ...newDocs.map((file, k) => ({
           id: `${file.name}-${file.size}-${Math.round(file.lastModified)}-add-${prev.length + k}`,
-          file, cat: 'documents' as DocCat,
+          file, cat: 'documents' as DocCat, separation: 'auto' as DocSeparationMode,
         })),
       ]);
       const shared = sharedInputsRef.current;
@@ -1369,6 +1489,16 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                         <FileSearch size={14} className="text-[var(--text-muted)] shrink-0" />
                         <span className="text-xs font-medium text-[var(--text-primary)] truncate flex-1">{d.file.name}</span>
                         <span className="text-[10px] text-[var(--text-muted)] shrink-0 hidden sm:inline">{(d.file.size / 1024).toFixed(0)} KB</span>
+                        {d.cat === 'documents' && d.file.type === 'application/pdf' && (
+                          <Tooltip label={SEPARATION_OPTIONS.find(o => o.id === d.separation)?.hint ?? ''}>
+                            <select value={d.separation}
+                              onChange={e => setDocs(prev => prev.map(x => x.id === d.id ? { ...x, separation: e.target.value as DocSeparationMode } : x))}
+                              aria-label="How to treat this multi-page file"
+                              className="text-[11px] h-7 rounded-md border border-[var(--border-input)] bg-[var(--bg-input)] px-1.5 text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)]">
+                              {SEPARATION_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                            </select>
+                          </Tooltip>
+                        )}
                         <select value={d.cat} onChange={e => setDocs(prev => prev.map(x => x.id === d.id ? { ...x, cat: e.target.value as DocCat } : x))}
                           className="text-[11px] h-7 rounded-md border border-[var(--border-input)] bg-[var(--bg-input)] px-1.5 text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)]">
                           {DOC_CATS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
@@ -1503,6 +1633,7 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
               <button onClick={() => {
                 setDocs([]); setTransactionHistory([]); setHistoryIndex(-1); setFlaggedEntries([]);
                 setScanResults([]); setSelectedValid(new Set()); setSelectedFlagged(new Set());
+                setSplitDocFiles([]); setHiddenOriginalNames(new Set());
                 setWizardStep(1); setAppState('idle');
               }} className="btn-secondary">New Analysis</button>
             </div>

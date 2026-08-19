@@ -108,12 +108,19 @@ export function buildDynamicContext(opts: {
   clientName: string;
   clientAddress: string;
   businessDescription?: string | null;
+  separation?: 'auto' | 'single' | 'multiple';
   pastTransactionsContent?: string | null;
   ledgersContent?: string | null;
 }): string {
-  const { fileNames, clientName, clientAddress, businessDescription, pastTransactionsContent, ledgersContent } = opts;
+  const { fileNames, clientName, clientAddress, businessDescription, separation, pastTransactionsContent, ledgersContent } = opts;
 
-  let context = `**Documents to analyse:** [${fileNames.join(', ')}]\n\n**CRITICAL INSTRUCTIONS:**\n1. You MUST process every single document provided. Each document must result in an entry in either the 'validTransactions' array OR the 'flaggedEntries' array. Do not omit any document from the final JSON output.\n2. For the 'fileName' field in your response, you MUST use the exact filename from the provided list: [${fileNames.join(', ')}].\n3. For each transaction or flagged entry, you MUST identify the page number (starting from 1) in the source document where it was found.`;
+  let context = `**Documents to analyse:** [${fileNames.join(', ')}]\n\n**CRITICAL INSTRUCTIONS:**\n1. You MUST process every single document provided. Each document must result in an entry in either the 'validTransactions' array OR the 'flaggedEntries' array. Do not omit any document from the final JSON output.\n2. For the 'fileName' field in your response, you MUST use the exact filename from the provided list: [${fileNames.join(', ')}].\n3. For each transaction or flagged entry, you MUST identify the page number (starting from 1) in the source document where it was found. Also set 'pageStart' and 'pageEnd' — the first and last 1-based page the invoice occupies in this file (equal for a single-page invoice).`;
+
+  if (separation === 'single') {
+    context += `\n\n**IMPORTANT — this file is a SINGLE invoice/document that spans ALL of its pages.** Combine every page into EXACTLY ONE transaction (one entry). Do NOT create a separate entry per page — the totals may appear on a later page than the line items. Set 'pageStart' to 1 and 'pageEnd' to the last page.`;
+  } else if (separation === 'multiple') {
+    context += `\n\n**IMPORTANT — this file contains SEVERAL separate invoices/documents batched together.** Extract EACH invoice as its OWN transaction. For each, set 'pageStart' and 'pageEnd' to the first and last page that invoice occupies within this file. Never merge two different invoices into one entry, and never split one invoice into several.`;
+  }
 
   if (clientName.trim()) {
     context += `\n\n**Client Information for Context:**\nThe client is "${clientName.trim()}", address: "${clientAddress.trim()}".\n**Critical Instructions based on Client Info:**\n- A document is a **purchase** if addressed TO the client. Use type 'PIN'.\n- A document is a **sale** if issued BY the client. Use type 'SIN'.\n- If addressed to a different entity, flag it as "Potentially irrelevant".\n- If unsure, flag as "Uncertain transaction type".`;
