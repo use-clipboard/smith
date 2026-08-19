@@ -39,6 +39,7 @@ import {
   ChevronRight, Eye, PanelRightClose, PanelRightOpen, Wand2,
 } from 'lucide-react';
 import AccountPicker from '../input/AccountPicker';
+import ChatMarkdown, { renderInline } from '@/components/ui/ChatMarkdown';
 import DateInput, { toIso, fromIso } from '../input/DateInput';
 import { formatMoney } from '@/lib/bookkeeping/formatMoney';
 import { fileToBase64, readFileAsText, compressImage } from '@/utils/fileUtils';
@@ -766,13 +767,15 @@ export default function OpeningBalancesModal({
                 {messages.map((m, i) => (
                   <div
                     key={i}
-                    className={`text-xs leading-relaxed rounded-xl px-3 py-2 whitespace-pre-wrap ${
+                    className={`text-xs leading-relaxed rounded-xl px-3 py-2 ${
                       m.role === 'user'
-                        ? 'bg-indigo-600 text-white ml-6'
+                        ? 'bg-indigo-600 text-white ml-6 whitespace-pre-wrap'
                         : 'bg-white border border-slate-200 text-slate-700 mr-2'
                     }`}
                   >
-                    {m.content}
+                    {/* SMITH's replies come back as markdown; the user's own
+                        words are shown verbatim. */}
+                    {m.role === 'assistant' ? <ChatMarkdown text={m.content} /> : m.content}
                   </div>
                 ))}
 
@@ -788,7 +791,7 @@ export default function OpeningBalancesModal({
                       <div className="text-[11px] font-semibold text-indigo-900 flex items-center gap-1.5">
                         <Wand2 size={12} /> Proposed change
                       </div>
-                      <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">{proposal.summary}</p>
+                      <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">{renderInline(proposal.summary)}</p>
                     </div>
                     <ul className="px-3 py-2 space-y-0.5 max-h-40 overflow-y-auto">
                       {proposal.ops.map((op, i) => (
