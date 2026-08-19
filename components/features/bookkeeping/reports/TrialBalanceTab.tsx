@@ -98,7 +98,6 @@ export default function TrialBalanceTab({ bookId, onOpenAccount }: Props) {
   const activePeriod = nav?.activePeriod ?? { ready: false, fromIso: null, toIso: null, label: '' };
 
   const [accounts, setAccounts] = useState<AccountBalance[]>([]);
-  const [totals, setTotals] = useState({ debit_total: 0, credit_total: 0 });
   const [netProfit, setNetProfit] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -107,20 +106,27 @@ export default function TrialBalanceTab({ bookId, onOpenAccount }: Props) {
 
   useEffect(() => {
     // Don't fetch until the user has set up a year-end + selected a period.
-    if (!activePeriod.ready) { setAccounts([]); setTotals({ debit_total: 0, credit_total: 0 }); setNetProfit(0); return; }
+    if (!activePeriod.ready) { setAccounts([]); setNetProfit(0); return; }
     let cancelled = false;
     async function go() {
       setLoading(true); setError('');
       try {
         const params = new URLSearchParams();
-        if (activePeriod.fromIso) params.set('from', activePeriod.fromIso);
-        if (activePeriod.toIso)   params.set('to',   activePeriod.toIso);
-        // Same as the P&L: drop year-end closing journals so P&L accounts
-        // show their NET activity for the year rather than zeroing out
-        // against the YET clearance. The BS already gets RE from YET via
-        // Profit-and-loss-account ledger, which isn't a P&L account, so
-        // excluding YET here doesn't break it.
+        // A trial balance is CUMULATIVE — it lists what every account stands at
+        // on the date, so balance-sheet accounts must carry their brought-
+        // forward figures. Passing `from` made this a movement-in-period report
+        // instead, which showed nothing at all for a year that had only
+        // brought-forward balances and no transactions of its own.
+        //
+        // So: no `from`, and instead hold back only the VIEWED period's own
+        // year-end close (exclude_types_from). Every earlier close still
+        // applies, which is what correctly sweeps prior years' nominals into
+        // reserves and leaves P&L accounts showing this year alone. Excluding a
+        // whole journal keeps the TB in balance, because both its sides go
+        // together.
+        if (activePeriod.toIso) params.set('to', activePeriod.toIso);
         params.set('exclude_types', 'YET');
+        if (activePeriod.fromIso) params.set('exclude_types_from', activePeriod.fromIso);
         // Same pattern as the P&L/BS — when the user ticks "Show zero-balance
         // accounts" we have to ask the server for them, because the response
         // hides zero-movement rows by default.
@@ -133,7 +139,6 @@ export default function TrialBalanceTab({ bookId, onOpenAccount }: Props) {
         const d = await r.json();
         if (cancelled) return;
         setAccounts(d.accounts ?? []);
-        setTotals(d.totals ?? { debit_total: 0, credit_total: 0 });
         setNetProfit(d.net_profit ?? 0);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load');

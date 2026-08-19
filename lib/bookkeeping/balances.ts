@@ -42,6 +42,23 @@ export interface ComputeBalancesOpts {
   includeZero?: boolean;
   /** Transaction types to leave out of the aggregation (e.g. ['YET'] for P&L). */
   excludeTypes?: string[];
+  /**
+   * Apply `excludeTypes` ONLY to transactions dated on or after this date;
+   * anything earlier is kept.
+   *
+   * This is what lets a trial balance be a trial balance. A TB has to be
+   * CUMULATIVE — balance-sheet accounts carry their brought-forward figures —
+   * but it must not include the viewed year's own closing journal, or that
+   * year's P&L would zero itself out against it. Passing no `from` (so the
+   * aggregation runs from the beginning of time) together with
+   * excludeTypesFrom = the period start gives exactly that: every prior year's
+   * close is honoured (so their nominals are correctly swept to reserves),
+   * while this year's is held back.
+   *
+   * Excluding a whole journal keeps the TB in balance, because both its sides
+   * go together.
+   */
+  excludeTypesFrom?: string | null;
   /** Charity fund accounting — restrict the aggregation to splits in this fund.
    *  Null/undefined aggregates across all funds (the normal whole-book view). */
   fundId?: string | null;
@@ -60,8 +77,13 @@ export async function computeBalances(
   bookId: string,
   opts: ComputeBalancesOpts = {},
 ): Promise<BalancesResult> {
-  const { from = null, to = null, includeZero = false, fundId = null } = opts;
+  const { from = null, to = null, includeZero = false, fundId = null, excludeTypesFrom = null } = opts;
   const excludeTypes = (opts.excludeTypes ?? []).map(s => s.trim().toUpperCase()).filter(Boolean);
+  const excludeTypeSet = new Set(excludeTypes);
+  // Date-qualified exclusion can't be expressed as a single PostgREST filter,
+  // so it's applied while aggregating instead. The query already carries the
+  // transaction's date and type, so this costs nothing extra.
+  const dateQualifiedExclude = excludeTypes.length > 0 && Boolean(excludeTypesFrom);
 
   const PAGE_SIZE = 1000;
   type SplitRow = {
@@ -88,7 +110,9 @@ export async function computeBalances(
 
     if (from) q = q.gte('transaction.date', from);
     if (to)   q = q.lte('transaction.date', to);
-    if (excludeTypes.length > 0) q = q.not('transaction.type', 'in', `(${excludeTypes.join(',')})`);
+    if (excludeTypes.length > 0 && !dateQualifiedExclude) {
+      q = q.not('transaction.type', 'in', `(${excludeTypes.join(',')})`);
+    }
     if (fundId) q = q.eq('fund_id', fundId);
 
     const { data, error } = await q;
@@ -106,6 +130,11 @@ export async function computeBalances(
   const byAccount = new Map<string, Agg>();
   for (const r of rows) {
     if (!r.account) continue;
+    if (
+      dateQualifiedExclude && r.transaction
+      && r.transaction.date >= (excludeTypesFrom as string)
+      && excludeTypeSet.has((r.transaction.type ?? '').toUpperCase())
+    ) continue;
     const a = byAccount.get(r.account.id) ?? {
       id: r.account.id, name: r.account.name, ledger: r.account.ledger,
       account_type: r.account.account_type, code: r.account.code ?? null, debit_total: 0, credit_total: 0,

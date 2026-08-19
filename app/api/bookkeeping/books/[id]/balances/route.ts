@@ -49,12 +49,18 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const fundId = url.searchParams.get('fund_id');
   const excludeTypes = (url.searchParams.get('exclude_types') ?? '')
     .split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+  // Applies exclude_types only from this date onwards — see the option's note
+  // in lib/bookkeeping/balances.ts. Used by the trial balance.
+  const excludeTypesFrom = url.searchParams.get('exclude_types_from');
 
   if (from && !/^\d{4}-\d{2}-\d{2}$/.test(from)) {
     return NextResponse.json({ error: 'Invalid from date — use YYYY-MM-DD' }, { status: 400 });
   }
   if (to && !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
     return NextResponse.json({ error: 'Invalid to date — use YYYY-MM-DD' }, { status: 400 });
+  }
+  if (excludeTypesFrom && !/^\d{4}-\d{2}-\d{2}$/.test(excludeTypesFrom)) {
+    return NextResponse.json({ error: 'Invalid exclude_types_from date — use YYYY-MM-DD' }, { status: 400 });
   }
 
   const supabase = createClient();
@@ -69,7 +75,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // Aggregation now lives in lib/bookkeeping/balances.ts so this route and the
   // /statements endpoint compute from one source of truth.
   try {
-    const result = await computeBalances(supabase, params.id, { from, to, includeZero, excludeTypes, fundId });
+    const result = await computeBalances(supabase, params.id, { from, to, includeZero, excludeTypes, excludeTypesFrom, fundId });
     return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to load balances' }, { status: 500 });

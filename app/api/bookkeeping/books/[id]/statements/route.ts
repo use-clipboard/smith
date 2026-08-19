@@ -41,7 +41,12 @@ async function statementsFor(
 
   // Run the three slices in parallel — same params the report tabs use.
   const [tb, pl, bs] = await Promise.all([
-    computeBalances(supabase, bookId, { from, to, excludeTypes: ['YET'], includeZero: false }),
+    // TB is cumulative as at `to`, holding back only this period's own
+    // year-end close — same shape as the on-screen Trial Balance, so the
+    // statements handed to Accounts Review / Performance carry the
+    // brought-forward balance-sheet figures a TB is supposed to have.
+    computeBalances(supabase, bookId, { to, excludeTypes: ['YET'], excludeTypesFrom: from, includeZero: false }),
+    // P&L is genuinely a movement-in-period report — unchanged.
     computeBalances(supabase, bookId, { from, to, excludeTypes: ['YET'] }),
     computeBalances(supabase, bookId, { to }),
   ]);
