@@ -338,7 +338,17 @@ export default function ClientLinksPanel({
                   </Link>
                 </div>
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[var(--accent-light)] text-[var(--accent)]">{linkLabelForDirection(l.link_type, l.direction)}</span>
+                  {(() => {
+                    const color = LINK_TYPE_META[l.link_type as keyof typeof LINK_TYPE_META]?.color ?? '#6b7280';
+                    return (
+                      <span
+                        className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                        style={{ color, background: `${color}1a`, border: `1px solid ${color}40` }}
+                      >
+                        {linkLabelForDirection(l.link_type, l.direction)}
+                      </span>
+                    );
+                  })()}
                   {l.notes && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">{l.notes}</span>}
                 </div>
               </li>
