@@ -1,6 +1,7 @@
 'use client';
 
-import { Calendar, FileClock, Send, Hash } from 'lucide-react';
+import { useState } from 'react';
+import { Calendar, FileClock, Send, Hash, Sparkles, Loader2 } from 'lucide-react';
 import { taxYearOptions, fmtDateUK, deriveStatus } from '../data';
 import { StatusBadge } from '../primitives';
 import type { WizardClient } from './wizardData';
@@ -30,6 +31,24 @@ export default function StepTaxYear({
   // period dates directly (most foolproof; Accounts Studio / CH auto-fill later).
   const ct600 = returnTypeId === 'ct600';
   const periodInvalid = ct600 && !!periodStart && !!periodEnd && periodEnd <= periodStart;
+  const [pulling, setPulling] = useState(false);
+  const [pullMsg, setPullMsg] = useState<string | null>(null);
+  async function pullPeriod() {
+    if (!client) return;
+    setPulling(true); setPullMsg(null);
+    try {
+      const res = await fetch(`/api/tax-studio/ct600/period?clientId=${client.id}`);
+      const d = await res.json().catch(() => ({}));
+      if (d?.found && d.periodStart && d.periodEnd) {
+        onPeriodChange(d.periodStart, d.periodEnd);
+        setPullMsg(`Pulled from ${d.source ?? 'the accounts'}.`);
+      } else {
+        setPullMsg('No accounting period found — enter it manually.');
+      }
+    } catch {
+      setPullMsg('Could not fetch the period — enter it manually.');
+    } finally { setPulling(false); }
+  }
   const history = client
     ? allReturns.filter(r => r.ret.clientId === client.id).sort((a, b) => (a.ret.taxYear < b.ret.taxYear ? 1 : -1))
     : [];
@@ -59,6 +78,13 @@ export default function StepTaxYear({
                 <label className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">End</label>
                 <input type="date" value={periodEnd} onChange={e => onPeriodChange(periodStart, e.target.value)} className="input-base py-1.5 text-sm font-semibold" />
               </div>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button type="button" onClick={pullPeriod} disabled={pulling || !client}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--accent)]/40 bg-white px-2.5 py-1 text-[11px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/[0.06] disabled:opacity-50">
+                {pulling ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Pull from Accounts Studio
+              </button>
+              {pullMsg && <span className="text-[11px] text-[var(--text-muted)]">{pullMsg}</span>}
             </div>
             {client?.year_end
               ? <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">Client&apos;s year end: <span className="font-semibold text-[var(--text-secondary)]">{client.year_end}</span></p>
