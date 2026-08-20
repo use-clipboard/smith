@@ -147,17 +147,19 @@ export default function DashboardHero() {
               )}
 
               {suggestions.length > 0 && (
-                <div className="mt-auto pt-1 shrink-0 flex items-center gap-2 flex-wrap">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)] shrink-0">Suggested actions</p>
-                  {suggestions.map((s, i) => (
+                <div className="mt-auto pt-1 shrink-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-1.5">Suggested actions</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {suggestions.map((s, i) => (
                       <button
                         key={i}
                         onClick={s.onClick}
-                        className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-white/60 border border-[var(--border-card)] text-[var(--text-primary)] hover:border-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors"
+                        className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-white/60 border border-[var(--border-card)] text-[var(--text-primary)] hover:border-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors"
                       >
-                        {s.label} <ArrowRight size={11} className="text-[var(--accent)]" />
+                        {s.label} <ArrowRight size={11} className="text-[var(--accent)] shrink-0" />
                       </button>
                     ))}
+                  </div>
                 </div>
               )}
             </>
