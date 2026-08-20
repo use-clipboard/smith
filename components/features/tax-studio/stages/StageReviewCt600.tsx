@@ -45,7 +45,9 @@ function Field({ label, value, onChange, calc, box, onCalc }: {
   onCalc?: () => void;
 }) {
   return (
-    <div>
+    // data-editbox lets the CT600 filing-preview click-to-edit hunt find and focus
+    // this field's input when the matching box is clicked on the facsimile.
+    <div data-editbox={box || undefined}>
       <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
         {label}
         {onCalc && (
@@ -70,7 +72,7 @@ function Field({ label, value, onChange, calc, box, onCalc }: {
 /** Checkbox styled to sit in the grid — mirrors StageReview's BoxCheck. */
 function Check({ label, checked, onChange, box }: { label: string; checked: boolean; onChange: (v: boolean) => void; box?: string }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 self-end rounded-lg border border-[var(--border)] bg-white/60 px-2.5 py-2 text-[11px] font-medium text-[var(--text-muted)]">
+    <label data-editbox={box || undefined} className="flex cursor-pointer items-center gap-2 self-end rounded-lg border border-[var(--border)] bg-white/60 px-2.5 py-2 text-[11px] font-medium text-[var(--text-muted)]">
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="h-3.5 w-3.5 shrink-0 accent-[var(--accent)]" />
       {label}{box && <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">Box {box}</span>}
     </label>
@@ -100,10 +102,13 @@ const SUB_TABS: { id: SubTab; label: string }[] = [
   { id: 'management', label: 'Management Expenses' },
 ];
 
-export default function StageReviewCt600({ ret, patch, advance }: {
+/** The CT600 return editor — the tabbed Trading & Losses panels plus the
+ *  calculator/import modals. Extracted so the filing-preview click-to-edit
+ *  lightbox can render the same editor standalone (without the computation card
+ *  and stage controls). */
+export function Ct600ReturnEditor({ ret, patch }: {
   ret: TaxReturn;
   patch: (u: (r: TaxReturn) => TaxReturn) => void;
-  advance: () => void;
 }): JSX.Element {
   const ct: Ct600Data = ret.ct600 ?? emptyCt600();
   const c = computeCt600(ct, ret.taxYear);
@@ -155,7 +160,7 @@ export default function StageReviewCt600({ ret, patch, advance }: {
   }
 
   return (
-    <div className="space-y-4">
+    <>
       <StudioCard className="overflow-hidden">
         {/* Top-level tab bar */}
         <div className="flex flex-wrap gap-1.5 border-b border-black/5 px-4 py-3">
@@ -166,7 +171,7 @@ export default function StageReviewCt600({ ret, patch, advance }: {
             const on = x.id === tab;
             const Icon = x.icon;
             return (
-              <button key={x.id} onClick={() => setTab(x.id)}
+              <button key={x.id} data-review-tab={x.label} onClick={() => setTab(x.id)}
                 className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${on ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)]/30 hover:text-[var(--text-secondary)]'}`}>
                 <Icon size={13} className="shrink-0" />
                 {x.label}
@@ -186,7 +191,7 @@ export default function StageReviewCt600({ ret, patch, advance }: {
                 </button>
               </div>
               <Section title="Trading & Professional Profits">
-                <Field label="Turnover" value={n(t.turnover)} onChange={v => setTrading({ turnover: v })} />
+                <Field label="Turnover" value={n(t.turnover)} box="145" onChange={v => setTrading({ turnover: v })} />
                 <Field label="Profit/(loss) per account" value={n(t.profitPerAccount)} onChange={v => setTrading({ profitPerAccount: v })} />
                 <Field label="Add Back" value={n(t.addBack)} onChange={v => setTrading({ addBack: v })} />
                 <Field label="Adjustments" value={n(t.adjustments)} onChange={v => setTrading({ adjustments: v })} />
@@ -218,9 +223,11 @@ export default function StageReviewCt600({ ret, patch, advance }: {
               <div className="flex flex-wrap gap-1 border-b border-black/5">
                 {SUB_TABS.map(s => {
                   const on = s.id === subTab;
+                  // `bg-white` on the active sub is also how the click-to-edit hunt
+                  // detects which sub is showing (near-invisible on the white card).
                   return (
-                    <button key={s.id} onClick={() => setSubTab(s.id)}
-                      className={`-mb-px border-b-2 px-3 py-2 text-[11.5px] font-semibold transition-colors ${on ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+                    <button key={s.id} data-review-subtab={s.label} onClick={() => setSubTab(s.id)}
+                      className={`-mb-px border-b-2 px-3 py-2 text-[11.5px] font-semibold transition-colors ${on ? 'border-[var(--accent)] bg-white text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
                       {s.label}
                     </button>
                   );
@@ -229,7 +236,7 @@ export default function StageReviewCt600({ ret, patch, advance }: {
 
               {subTab === 'trading' && (
                 <div className="space-y-5">
-                  <LossGrid title="Trading Income" streamKey="trading" />
+                  <LossGrid title="Trading Income" streamKey="trading" cfBox="780" grBox="785" />
                   <Section title="Trading loss detail">
                     <Field label="Losses arising before 1 Apr 2017" value={n(L.trading.incomeBefore2017)} onChange={v => setStream('trading', { incomeBefore2017: v })} />
                     <Field label="Losses arising on/after 1 Apr 2017" value={n(L.trading.incomeAfter2017)} onChange={v => setStream('trading', { incomeAfter2017: v })} />
@@ -249,7 +256,7 @@ export default function StageReviewCt600({ ret, patch, advance }: {
 
               {subTab === 'ntlr' && (
                 <div className="space-y-5">
-                  <LossGrid title="Non Trading Income" streamKey="ntlr"
+                  <LossGrid title="Non Trading Income" streamKey="ntlr" cfBox="795"
                     incomeComputed={n(L.ntlr.incomeLoanRelationships) + n(L.ntlr.incomeNonLoanDerivatives)} />
                   <Section title="Income arising in AP">
                     <Field label="Loan relationships & derivative contracts" value={n(L.ntlr.incomeLoanRelationships)} box="170" onChange={v => setStream('ntlr', { incomeLoanRelationships: v })} />
@@ -267,14 +274,14 @@ export default function StageReviewCt600({ ret, patch, advance }: {
 
               {subTab === 'property' && (
                 <div className="space-y-5">
-                  <LossGrid title="UK land and buildings (Formerly Schedule A)" streamKey="property" bfBox="190" cfBox="250" />
+                  <LossGrid title="UK land and buildings (Formerly Schedule A)" streamKey="property" incomeBox="190" cfBox="805" />
                   <Section title="Losses Utilised">
                     <Field label="Losses of the current period" value={n(L.property.lossesCurrentPeriod)} onChange={v => setStream('property', { lossesCurrentPeriod: v })} />
                     <Field label="Losses brought forward utilised" value={n(L.property.lossesBroughtForwardUtil)} onChange={v => setStream('property', { lossesBroughtForwardUtil: v })} />
                   </Section>
                   <div className="space-y-4">
                     <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Overseas income/losses</p>
-                    <LossGrid title="Overseas trading losses" streamKey="overseasTrading" />
+                    <LossGrid title="Overseas trading losses" streamKey="overseasTrading" cfBox="790" />
                     <LossGrid title="Overseas land & property" streamKey="overseasProperty" />
                   </div>
                 </div>
@@ -282,15 +289,15 @@ export default function StageReviewCt600({ ret, patch, advance }: {
 
               {subTab === 'intangibles' && (
                 <div className="space-y-5">
-                  <LossGrid title="Non-trading losses on intangible fixed assets" streamKey="intangibles" bfBox="195" cfBox="265" />
-                  <LossGrid title="Other income" streamKey="otherIncome" bfBox="205" />
-                  <LossGrid title="Chargeable gains/losses" streamKey="chargeableGains" bfBox="210" cfBox="215" />
+                  <LossGrid title="Non-trading losses on intangible fixed assets" streamKey="intangibles" incomeBox="195" cfBox="830" />
+                  <LossGrid title="Other income" streamKey="otherIncome" incomeBox="205" />
+                  <LossGrid title="Chargeable gains/losses" streamKey="chargeableGains" incomeBox="210" utilBox="215" />
                 </div>
               )}
 
               {subTab === 'management' && (
                 <div className="space-y-5">
-                  <LossGrid title="Management Expenses" streamKey="managementExpenses" bfBox="245" />
+                  <LossGrid title="Management Expenses" streamKey="managementExpenses" utilBox="245" cfBox="850" />
                   <LossGrid title="Interest Distributions" streamKey="interestDistributions" />
                 </div>
               )}
@@ -298,14 +305,6 @@ export default function StageReviewCt600({ ret, patch, advance }: {
           )}
         </div>
       </StudioCard>
-
-      <Ct600ComputationCard c={c} ret={ret} />
-
-      <div className="flex justify-end">
-        <button onClick={advance} className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 py-2 text-[13px] font-bold text-white transition-colors hover:bg-[var(--accent)]/90">
-          Continue to approval <ArrowRight size={15} />
-        </button>
-      </div>
 
       {importOpen && (
         <AccountsImportModal
@@ -339,6 +338,28 @@ export default function StageReviewCt600({ ret, patch, advance }: {
           onClose={() => setRdOpen(false)}
         />
       )}
+    </>
+  );
+}
+
+/** The full CT600 Review stage: the return editor, the corporation-tax
+ *  computation card, and the stage's advance control. */
+export default function StageReviewCt600({ ret, patch, advance }: {
+  ret: TaxReturn;
+  patch: (u: (r: TaxReturn) => TaxReturn) => void;
+  advance: () => void;
+}): JSX.Element {
+  const ct: Ct600Data = ret.ct600 ?? emptyCt600();
+  const c = computeCt600(ct, ret.taxYear);
+  return (
+    <div className="space-y-4">
+      <Ct600ReturnEditor ret={ret} patch={patch} />
+      <Ct600ComputationCard c={c} ret={ret} />
+      <div className="flex justify-end">
+        <button onClick={advance} className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 py-2 text-[13px] font-bold text-white transition-colors hover:bg-[var(--accent)]/90">
+          Continue to approval <ArrowRight size={15} />
+        </button>
+      </div>
     </div>
   );
 }

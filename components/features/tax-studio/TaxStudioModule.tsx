@@ -21,7 +21,7 @@ import SandboxView from './sandbox/SandboxView';
 import StageSetup from './stages/StageSetup';
 import StageAnalyse from './stages/StageAnalyse';
 import StageReview, { ReviewSearch, ReturnSectionEditor, type PageId, type Reveal } from './stages/StageReview';
-import StageReviewCt600 from './stages/StageReviewCt600';
+import StageReviewCt600, { Ct600ReturnEditor } from './stages/StageReviewCt600';
 import StageSetupCt600 from './stages/StageSetupCt600';
 import StageAnalyseCt600 from './stages/StageAnalyseCt600';
 import StageApprovalCt600 from './stages/StageApprovalCt600';
@@ -305,9 +305,11 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
           </div>
           {previewOpen && ret && (
             <FilingPreview ret={ret} onClose={() => setPreviewOpen(false)}
-              // CT600 preview is currently view + download only (Phase A); click-to-edit
-              // wiring into the CT600 Review editor follows in Phase B.
-              renderEditor={ret.returnType === 'ct600' ? undefined : p => <ReturnSectionEditor page={p} ret={ret} setIncome={u => patch(r => ({ ...r, income: u(r.income) }))} />}
+              // CT600 click-to-edit opens the CT600 return editor in the lightbox;
+              // SA100 opens the per-page ReturnSectionEditor. Both flow edits via patch.
+              renderEditor={ret.returnType === 'ct600'
+                ? () => <Ct600ReturnEditor ret={ret} patch={patch} />
+                : p => <ReturnSectionEditor page={p} ret={ret} setIncome={u => patch(r => ({ ...r, income: u(r.income) }))} />}
               onEditInSetup={goToSetup} />
           )}
 

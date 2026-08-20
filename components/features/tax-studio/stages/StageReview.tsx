@@ -172,7 +172,7 @@ export function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
 
 // ─── Income editor — tabbed SA-page shell ────────────────────────────────────
 export type SetIncome = (u: (i: Sa100Income) => Sa100Income) => void;
-export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional' | 'minister' | 'niassembly' | 'parliament' | 'scottishparliament' | 'welshassembly' | 'lloyds' | 'taxcalc' | 'detailed';
+export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional' | 'minister' | 'niassembly' | 'parliament' | 'scottishparliament' | 'welshassembly' | 'lloyds' | 'taxcalc' | 'detailed' | 'ct600';
 
 const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'core',        label: 'Main Form', code: 'SA100', icon: PiggyBank },
@@ -268,6 +268,7 @@ function pageCounts(income: Sa100Income): Record<PageId, number> {
     lloyds: income.lloyds ? LLOYDS_TABS.reduce((acc, t) => acc + lloydsSectionCount(income.lloyds!, t), 0) : 0,
     taxcalc: income.sa110 ? sa110Count(income.sa110) : 0,
     detailed: 0,
+    ct600: 0, // CT600 has its own editor (StageReviewCt600); not an SA100 income page
   };
 }
 

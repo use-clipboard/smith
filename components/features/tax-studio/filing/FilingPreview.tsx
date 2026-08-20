@@ -62,7 +62,20 @@ const FORM_TO_PAGE: Record<string, PageId> = {
   SA108: 'cgt', SA109: 'residence', SA101: 'additional', SA102M: 'minister', SA102MLA: 'niassembly',
   SA102MP: 'parliament', SA102MSP: 'scottishparliament', SA102MS: 'welshassembly', SA102WAM: 'welshassembly',
   SA110: 'taxcalc',
+  CT600: 'ct600',
 };
+// CT600 uses an editable *allowlist* (the inverse of the SA blocklist): most of
+// the ~120 CT600 boxes are computed totals, supplementary-page flags or company
+// details, so only these — the boxes with a matching input in the CT600 Review
+// editor — are click-to-edit. Keep in sync with the box props in StageReviewCt600.
+const CT600_EDITABLE = new Set([
+  '145',                                            // turnover (Trading)
+  '160', '225', '285', '780', '785',                // Losses → Trading
+  '170', '175', '230', '263', '795',                // Losses → Non-trading loan relationships
+  '190', '805', '790',                              // Losses → Property (+ overseas trading c/f)
+  '195', '830', '205', '210', '215',                // Losses → Intangibles / other income / gains
+  '245', '850',                                     // Losses → Management expenses
+]);
 // Auto-calculated ("blue") boxes per form — never editable (would break the sums).
 // The Review editor already renders these as read-only BoxCalc, so this is belt-
 // and-braces: it also suppresses the purple hover on the preview.
@@ -85,6 +98,8 @@ const COMPUTED_BOXES: Record<string, Set<string>> = {
 };
 function isEditableBox(code: string, num: string, page: string): boolean {
   if (!(code in FORM_TO_PAGE)) return false;
+  // CT600 is an allowlist (see CT600_EDITABLE) rather than a computed-box blocklist.
+  if (code === 'CT600') return CT600_EDITABLE.has(num);
   // SA100 TR1 (personal details — lives in Setup) and TR2 (the derived "what
   // makes up your return" checklist) aren't editable via the Review core editor.
   if (code === 'SA100' && (page === 'TR 1' || page === 'TR 2')) return false;
