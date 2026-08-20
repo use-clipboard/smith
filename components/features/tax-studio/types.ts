@@ -1611,6 +1611,9 @@ export interface TaxReturn {
   preparedBy: string;
   amended?: boolean;
   late?: boolean;
+  /** Soft-archived — hidden from active work but not deleted. Only ever set on
+   *  returns that haven't been submitted. */
+  archived?: boolean;
   context?: string; // free-text standing notes / relevant context
 
   status: ReturnStatus;

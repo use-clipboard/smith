@@ -83,6 +83,7 @@ export const WORKFLOW_COLUMNS: ReturnStatus[] = [
  *  "ready to send" for approval — not filed, and not yet with the client. */
 export function deriveStatus(r: TaxReturn): ReturnStatus {
   if (r.approvalStatus === 'submitted') return r.amended ? 'amended' : 'filed';
+  if (r.archived) return 'archived';
   if (r.approvalStatus === 'approved') return 'ready-to-file';   // client approved → ready to file with HMRC
   if (r.approvalStatus === 'sent') return 'awaiting-approval';   // sent to the client, awaiting their approval
   const done = (s: StageId) => r.stageStatus[s] === 'complete';

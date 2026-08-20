@@ -4,12 +4,13 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft, ArrowRight, ArrowUp, ArrowDown, ArrowUpDown, Download, Loader2,
   Plus, Search, ChevronRight, Users, Mail, CreditCard, FileText, Calculator, ClipboardList,
+  Archive, ArchiveRestore, Trash2, AlertTriangle, X,
 } from 'lucide-react';
 import { StudioCard, StatusBadge } from './primitives';
 import Tooltip from '@/components/ui/Tooltip';
 import { deriveStatus, STATUS_META, returnType, fmtMoney } from './data';
 import { computeSa100Full, paymentPlan } from './calc';
-import { listReturns, type ReturnListItem } from './persistence';
+import { listReturns, deleteReturn, saveReturn, type ReturnListItem } from './persistence';
 import { fetchJson } from '@/lib/fetchJson';
 import ClientEmailLink from '@/components/features/email/ClientEmailLink';
 import { renderSa302Pdf, sa302FileName } from './sa302Pdf';
@@ -124,6 +125,23 @@ export default function PersonalTaxDashboard({ onBack, onOpen, onNewForClient }:
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [confirmDel, setConfirmDel] = useState<ReturnListItem | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Delete / archive — only allowed on returns that haven't been submitted.
+  async function doDelete(item: ReturnListItem) {
+    setBusyId(item.id);
+    try { await deleteReturn(item.id); setReturns(prev => prev.filter(r => r.id !== item.id)); }
+    catch { /* non-fatal */ }
+    finally { setBusyId(null); setConfirmDel(null); }
+  }
+  async function doArchive(item: ReturnListItem, archived: boolean) {
+    setBusyId(item.id);
+    const updated = { ...item.ret, archived };
+    try { await saveReturn(updated); setReturns(prev => prev.map(r => (r.id === item.id ? { ...r, ret: updated } : r))); }
+    catch { /* non-fatal */ }
+    finally { setBusyId(null); }
+  }
 
   // ── Data load (once on mount) ──────────────────────────────────────────────
   useEffect(() => {
@@ -368,6 +386,9 @@ export default function PersonalTaxDashboard({ onBack, onOpen, onNewForClient }:
                     onToggle={() => toggleExpanded(row.client.id)}
                     onOpen={onOpen}
                     onNewForClient={onNewForClient}
+                    busyId={busyId}
+                    onDeleteReturn={(item) => setConfirmDel(item)}
+                    onArchiveReturn={doArchive}
                   />
                 ))
               )}
@@ -383,6 +404,41 @@ export default function PersonalTaxDashboard({ onBack, onOpen, onNewForClient }:
           </div>
         )}
       </StudioCard>
+
+      {confirmDel && (
+        <DeleteReturnModal
+          item={confirmDel}
+          busy={busyId === confirmDel.id}
+          onCancel={() => setConfirmDel(null)}
+          onConfirm={() => doDelete(confirmDel)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Confirm before permanently deleting a return.
+function DeleteReturnModal({ item, busy, onCancel, onConfirm }: {
+  item: ReturnListItem; busy: boolean; onCancel: () => void; onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={() => !busy && onCancel()}>
+      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-[var(--border)] bg-white p-5 shadow-2xl" onMouseDown={e => e.stopPropagation()}>
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600"><AlertTriangle size={18} /></div>
+          <div className="min-w-0">
+            <p className="text-[15px] font-bold text-[var(--text-primary)]">Delete this return?</p>
+            <p className="mt-1 text-[12.5px] text-[var(--text-secondary)]">Permanently delete the <span className="font-semibold text-[var(--text-primary)]">{item.ret.taxYear}</span> return for <span className="font-semibold text-[var(--text-primary)]">{item.ret.clientName}</span>. This can’t be undone.</p>
+          </div>
+          <button onClick={() => !busy && onCancel()} className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-black/5"><X size={16} /></button>
+        </div>
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button onClick={onCancel} disabled={busy} className="btn-secondary bg-white">Cancel</button>
+          <button onClick={onConfirm} disabled={busy} className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50">
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Delete
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -436,7 +492,7 @@ function FilterSelect({ value, onChange, options }: {
 }
 
 // ─── Expandable client row ───────────────────────────────────────────────────
-function ClientRowView({ row, taxYear, expanded, totalCols, onToggle, onOpen, onNewForClient }: {
+function ClientRowView({ row, taxYear, expanded, totalCols, onToggle, onOpen, onNewForClient, busyId, onDeleteReturn, onArchiveReturn }: {
   row: ClientRow;
   taxYear: string;
   expanded: boolean;
@@ -444,6 +500,9 @@ function ClientRowView({ row, taxYear, expanded, totalCols, onToggle, onOpen, on
   onToggle: () => void;
   onOpen: (r: TaxReturn) => void;
   onNewForClient: (client: PersonalTaxClient, taxYear: string) => void;
+  busyId: string | null;
+  onDeleteReturn: (item: ReturnListItem) => void;
+  onArchiveReturn: (item: ReturnListItem, archived: boolean) => void;
 }) {
   const { client, returns, yearReturn, yearStatus } = row;
   return (
@@ -535,7 +594,10 @@ function ClientRowView({ row, taxYear, expanded, totalCols, onToggle, onOpen, on
                 ) : (
                   <div className="space-y-1.5">
                     {returns.map(item => (
-                      <ReturnRow key={item.id} item={item} selectedYear={taxYear} onOpen={onOpen} />
+                      <ReturnRow key={item.id} item={item} selectedYear={taxYear} onOpen={onOpen}
+                        busy={busyId === item.id}
+                        onDelete={() => onDeleteReturn(item)}
+                        onArchive={(archived) => onArchiveReturn(item, archived)} />
                     ))}
                   </div>
                 )}
@@ -559,14 +621,19 @@ function ClientRowView({ row, taxYear, expanded, totalCols, onToggle, onOpen, on
 }
 
 // ─── One tax return: key figures + quick-download shortcuts ──────────────────
-function ReturnRow({ item, selectedYear, onOpen }: {
+function ReturnRow({ item, selectedYear, onOpen, busy: rowBusy, onDelete, onArchive }: {
   item: ReturnListItem;
   selectedYear: string;
   onOpen: (r: TaxReturn) => void;
+  busy: boolean;
+  onDelete: () => void;
+  onArchive: (archived: boolean) => void;
 }) {
   const ret = item.ret;
   const [busy, setBusy] = useState<null | 'sa302' | 'detailed'>(null);
   const status = deriveStatus(ret);
+  // Submitted (filed/amended) returns are locked — no delete/archive.
+  const canModify = ret.approvalStatus !== 'submitted';
   const isSelectedYear = ret.taxYear === selectedYear;
   const c = useMemo(() => computeSa100Full(ret.income, ret.taxYear), [ret.income, ret.taxYear]);
   const plan = useMemo(() => paymentPlan(ret.income, ret.taxYear), [ret.income, ret.taxYear]);
@@ -605,6 +672,22 @@ function ReturnRow({ item, selectedYear, onOpen }: {
         <div className="flex items-center gap-0.5">
           <DownloadIconBtn icon={Calculator} label="Download SA302" loading={busy === 'sa302'} disabled={!!busy} onClick={() => download('sa302')} />
           <DownloadIconBtn icon={ClipboardList} label="Download detailed report" loading={busy === 'detailed'} disabled={!!busy} onClick={() => download('detailed')} />
+          {canModify && (
+            <Tooltip label={ret.archived ? 'Unarchive return' : 'Archive return'}>
+              <button type="button" onClick={() => onArchive(!ret.archived)} disabled={rowBusy} aria-label={ret.archived ? 'Unarchive return' : 'Archive return'}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--accent)]/10 hover:text-[var(--accent)] disabled:opacity-50">
+                {rowBusy ? <Loader2 size={13} className="animate-spin" /> : ret.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+              </button>
+            </Tooltip>
+          )}
+          {canModify && (
+            <Tooltip label="Delete return">
+              <button type="button" onClick={onDelete} disabled={rowBusy} aria-label="Delete return"
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50">
+                <Trash2 size={14} />
+              </button>
+            </Tooltip>
+          )}
         </div>
         <button
           onClick={() => onOpen(ret)}
