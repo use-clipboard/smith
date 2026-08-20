@@ -113,8 +113,15 @@ function isEditableBox(code: string, num: string, page: string): boolean {
 const TR1_SETUP_FIELD: Record<string, string> = {
   '1': 'dob', '2': 'change', '3': 'phone', '4': 'nino',
 };
+// CT600 masthead boxes — company name / registration / tax reference / accounting
+// period — are set from the client record and the new-return wizard, so clicking
+// them on the form jumps to the CT600 Setup stage and focuses the matching field.
+const CT600_SETUP_FIELD: Record<string, string> = {
+  '1': 'company', '2': 'registration', '3': 'utr', '30': 'period', '35': 'period',
+};
 function setupFieldFor(code: string, num: string, page: string): string | null {
   if (code === 'SA100' && page === 'TR 1') return TR1_SETUP_FIELD[num] ?? null;
+  if (code === 'CT600') return CT600_SETUP_FIELD[num] ?? null;
   return null;
 }
 

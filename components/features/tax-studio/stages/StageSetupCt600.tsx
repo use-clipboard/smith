@@ -17,13 +17,33 @@ interface ClientRecord {
 }
 
 export default function StageSetupCt600({
-  ret, patch, advance,
+  ret, patch, advance, reveal,
 }: {
   ret: TaxReturn;
   patch: (u: (r: TaxReturn) => TaxReturn) => void;
   advance: () => void;
+  /** Set when the user clicked a masthead box on the CT600 form preview — scrolls
+   *  to and highlights the matching Setup field (company / registration / utr / period). */
+  reveal?: { field: string; nonce: number } | null;
 }): JSX.Element {
   const [regNumber, setRegNumber] = useState('');
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Reveal a field when arrived-at from a click on the form preview.
+  useEffect(() => {
+    if (!reveal) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const el = root.querySelector<HTMLElement>(`[data-setup-field="${reveal.field}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const input = el.querySelector<HTMLElement>('input, textarea');
+    if (input) setTimeout(() => input.focus(), 320);
+    const prev = el.style.boxShadow;
+    el.style.transition = 'box-shadow 0.25s';
+    el.style.boxShadow = '0 0 0 3px rgba(139,92,246,0.45)';
+    setTimeout(() => { el.style.boxShadow = prev; }, 1400);
+  }, [reveal?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   // Pull the company's registered details from the linked client record and
   // seed any return fields that are still empty (never overwrite existing edits).
   const pulled = useRef(false);
@@ -54,7 +74,7 @@ export default function StageSetupCt600({
   const filingDue = ct600FilingDue(ret.periodEnd);
 
   return (
-    <div className="space-y-4">
+    <div ref={rootRef} className="space-y-4">
       <StudioCard className="p-5">
         <div className="mb-3 flex items-center gap-1.5">
           <Building2 size={15} className="text-[var(--accent)]" />
@@ -62,12 +82,12 @@ export default function StageSetupCt600({
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <ReadField icon={Building2} label="Company name" value={ret.clientName || '—'} />
-          <ReadField icon={FileText} label="Company registration number" value={regNumber || '—'} />
+          <ReadField icon={Building2} label="Company name" value={ret.clientName || '—'} anchor="company" />
+          <ReadField icon={FileText} label="Company registration number" value={regNumber || '—'} anchor="registration" />
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
+          <div data-setup-field="utr">
             <Label>CT Unique Taxpayer Reference</Label>
             <input
               value={ret.utr ?? ''}
@@ -105,7 +125,7 @@ export default function StageSetupCt600({
           <h3 className="text-[15px] font-bold text-[var(--text-primary)]">Accounting period</h3>
         </div>
 
-        <div className="rounded-xl border border-[var(--border)] bg-white/60 px-4 py-3">
+        <div data-setup-field="period" className="rounded-xl border border-[var(--border)] bg-white/60 px-4 py-3">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Period</p>
           <p className="text-[15px] font-bold text-[var(--text-primary)]">
             {fmtDateUK(ret.periodStart ?? '')} – {fmtDateUK(ret.periodEnd ?? '')}
@@ -136,9 +156,9 @@ function Label({ icon: Icon, children }: { icon?: typeof FileText; children: Rea
   );
 }
 
-function ReadField({ icon: Icon, label, value }: { icon: typeof FileText; label: string; value: string }) {
+function ReadField({ icon: Icon, label, value, anchor }: { icon: typeof FileText; label: string; value: string; anchor?: string }) {
   return (
-    <div>
+    <div data-setup-field={anchor}>
       <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]"><Icon size={12} /> {label}</p>
       <p className="rounded-lg border border-[var(--border)] bg-white/60 px-3 py-1.5 text-sm font-semibold text-[var(--text-primary)]">{value}</p>
     </div>

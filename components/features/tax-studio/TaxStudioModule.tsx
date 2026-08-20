@@ -310,14 +310,16 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
               renderEditor={ret.returnType === 'ct600'
                 ? () => <Ct600ReturnEditor ret={ret} patch={patch} />
                 : p => <ReturnSectionEditor page={p} ret={ret} setIncome={u => patch(r => ({ ...r, income: u(r.income) }))} />}
-              onEditInSetup={goToSetup} />
+              // Routing to Setup must close the fullscreen preview so the Setup
+              // stage (and its highlighted field) is actually visible underneath.
+              onEditInSetup={f => { setPreviewOpen(false); goToSetup(f); }} />
           )}
 
           {/* Stage + assistant */}
           <div className="flex gap-4">
             <div className="min-w-0 flex-1">
               {stage === 'setup' && (ret.returnType === 'ct600'
-                ? <StageSetupCt600 ret={ret} patch={patch} advance={() => advanceFrom('setup')} />
+                ? <StageSetupCt600 ret={ret} patch={patch} advance={() => advanceFrom('setup')} reveal={setupReveal} />
                 : <StageSetup ret={ret} patch={patch} advance={() => advanceFrom('setup')} reveal={setupReveal} />)}
               {stage === 'analyse' && (ret.returnType === 'ct600'
                 ? <StageAnalyseCt600 ret={ret} patch={patch} advance={() => advanceFrom('analyse')} />
