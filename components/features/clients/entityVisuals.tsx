@@ -49,14 +49,31 @@ export interface EntityCardData {
 export function EntityCard({
   data,
   placeholder = 'Choose a client',
+  onClick,
 }: {
   data: EntityCardData | null;
   placeholder?: string;
+  /** When the card is a placeholder (no data), makes it a clickable button. */
+  onClick?: () => void;
 }) {
   if (!data) {
+    const base = 'w-full max-w-[300px] flex flex-col items-center justify-center gap-1.5 text-center';
+    if (onClick) {
+      return (
+        <button
+          type="button"
+          onClick={onClick}
+          className={`${base} rounded-[14px] border-2 border-dashed border-slate-300 bg-slate-50 text-slate-400 transition-colors cursor-pointer hover:border-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)]`}
+          style={{ minHeight: 84, padding: '12px 16px' }}
+        >
+          <Search size={16} />
+          <span style={{ fontSize: 12, fontWeight: 500 }}>{placeholder}</span>
+        </button>
+      );
+    }
     return (
       <div
-        className="w-full max-w-[300px] flex flex-col items-center justify-center gap-1.5 text-center"
+        className={base}
         style={{
           minHeight: 84, padding: '12px 16px', borderRadius: 14,
           border: '2px dashed #cbd5e1', background: '#f8fafc', color: '#94a3b8',
@@ -72,18 +89,17 @@ export function EntityCard({
   const Icon = style.Icon;
   const radius = style.shape === 'circle' || style.shape === 'pill' ? 9999 : 14;
 
-  return (
-    <div
-      className="w-full max-w-[300px] flex flex-col items-center justify-center text-center"
-      style={{
-        minHeight: 84, padding: '12px 18px',
-        background: style.bg,
-        border: `2px solid ${style.border}`,
-        borderRadius: radius,
-        color: style.text,
-        boxShadow: '0 2px 6px rgba(0,0,0,0.06)',
-      }}
-    >
+  const cardStyle = {
+    minHeight: 84, padding: '12px 18px',
+    background: style.bg,
+    border: `2px solid ${style.border}`,
+    borderRadius: radius,
+    color: style.text,
+    boxShadow: '0 2px 6px rgba(0,0,0,0.06)',
+  } as const;
+
+  const inner = (
+    <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', opacity: 0.85 }}>
         <Icon size={12} />
         <span>{style.label}</span>
@@ -94,6 +110,18 @@ export function EntityCard({
       {data.client_ref && (
         <div style={{ fontSize: 11, fontFamily: 'ui-monospace, monospace', opacity: 0.7, marginTop: 1 }}>{data.client_ref}</div>
       )}
-    </div>
+    </>
   );
+
+  const base = 'w-full max-w-[300px] flex flex-col items-center justify-center text-center';
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} aria-label={`Change ${data.name}`} className={`${base} transition-shadow cursor-pointer hover:shadow-md`} style={cardStyle}>
+        {inner}
+      </button>
+    );
+  }
+
+  return <div className={base} style={cardStyle}>{inner}</div>;
 }

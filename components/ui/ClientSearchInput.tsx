@@ -42,6 +42,8 @@ interface Props {
   disabled?: boolean;
   /** Restrict results to these business types (e.g. ['individual','sole_trader']). */
   businessTypes?: string[];
+  /** Bump this number (from a parent) to programmatically open the picker. */
+  autoOpenSignal?: number;
 }
 
 const STATUS_COLOURS: Record<string, string> = {
@@ -58,6 +60,7 @@ export default function ClientSearchInput({
   className = '',
   disabled = false,
   businessTypes,
+  autoOpenSignal,
 }: Props) {
   const [open, setOpen]       = useState(false);
   const [search, setSearch]   = useState('');
@@ -104,6 +107,13 @@ export default function ClientSearchInput({
     setOpen(true);
     setTimeout(() => inputRef.current?.focus(), 50);
   }
+
+  // Open the picker when the parent bumps autoOpenSignal (skip the initial mount).
+  useEffect(() => {
+    if (autoOpenSignal === undefined || autoOpenSignal === 0) return;
+    handleOpen();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenSignal]);
 
   function handleSelect(c: ClientOption) {
     onChange(c.id, c.name, c.client_ref, c.business_type ?? null);

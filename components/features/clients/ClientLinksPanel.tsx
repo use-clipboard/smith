@@ -59,19 +59,22 @@ interface PickedClient {
  * arrow (labelled with the forward reading of `linkType`) pointing down.
  */
 function LinkDiagram({
-  subject, object, linkType, onSwap, canSwap,
+  subject, object, linkType, onSwap, canSwap, otherSlot, onChooseOther,
 }: {
   subject: EntityCardData | null;
   object: EntityCardData | null;
   linkType: string;
   onSwap: () => void;
   canSwap: boolean;
+  /** Which node is the changeable "other" client (opens the search on click). */
+  otherSlot?: 'subject' | 'object' | null;
+  onChooseOther?: () => void;
 }) {
   const color = LINK_TYPE_META[linkType as keyof typeof LINK_TYPE_META]?.color ?? '#6b7280';
   const label = linkForwardLabel(linkType);
   return (
     <div className="flex flex-col items-center w-full">
-      <EntityCard data={subject} placeholder="Choose a client" />
+      <EntityCard data={subject} placeholder="Choose a client" onClick={otherSlot === 'subject' ? onChooseOther : undefined} />
       <div className="relative w-full" style={{ height: 66 }}>
         <div className="absolute left-1/2 top-0 bottom-2.5 w-[2px] -translate-x-1/2" style={{ background: color }} />
         <ArrowDown size={18} strokeWidth={3} className="absolute left-1/2 -translate-x-1/2 bottom-0" style={{ color }} />
@@ -93,7 +96,7 @@ function LinkDiagram({
           )}
         </div>
       </div>
-      <EntityCard data={object} placeholder="Choose a client" />
+      <EntityCard data={object} placeholder="Choose a client" onClick={otherSlot === 'object' ? onChooseOther : undefined} />
     </div>
   );
 }
@@ -117,6 +120,7 @@ export default function ClientLinksPanel({
   const [notes, setNotes] = useState('');
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchOpenSignal, setSearchOpenSignal] = useState(0); // bump to open the picker
 
   // Edit-link state
   const [editLink, setEditLink] = useState<ClientLink | null>(null);
@@ -304,6 +308,7 @@ export default function ClientLinksPanel({
               <ClientSearchInput
                 value={picked?.id ?? ''}
                 valueName={picked?.name}
+                autoOpenSignal={searchOpenSignal}
                 onChange={(id, name, clientRef, businessType) => {
                   if (!id) { setPicked(null); setError(null); return; }
                   if (id === clientId) { setError("Can't link a client to itself"); return; }
@@ -328,6 +333,8 @@ export default function ClientLinksPanel({
                   linkType={linkType}
                   canSwap={!!picked}
                   onSwap={() => { setManualSwap(true); setReverse(r => !r); }}
+                  otherSlot={reverse ? 'subject' : 'object'}
+                  onChooseOther={() => setSearchOpenSignal(s => s + 1)}
                 />
               </div>
 
