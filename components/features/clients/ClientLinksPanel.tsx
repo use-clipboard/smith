@@ -9,10 +9,10 @@
  * (fetches /api/clients/[id]/links) so it works wherever it's dropped.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { Plus, Network, X, Pencil, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Plus, Network, X, Pencil, ArrowDown, ArrowUpDown, ChevronDown } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import Tooltip from '@/components/ui/Tooltip';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
@@ -59,7 +59,7 @@ interface PickedClient {
  * arrow (labelled with the forward reading of `linkType`) pointing down.
  */
 function LinkDiagram({
-  subject, object, linkType, onSwap, canSwap, otherSlot, onChooseOther,
+  subject, object, linkType, onSwap, canSwap, otherSlot, onChooseOther, onChangeType,
 }: {
   subject: EntityCardData | null;
   object: EntityCardData | null;
@@ -69,9 +69,36 @@ function LinkDiagram({
   /** Which node is the changeable "other" client (opens the search on click). */
   otherSlot?: 'subject' | 'object' | null;
   onChooseOther?: () => void;
+  /** When provided, the relationship pill becomes a click-to-change menu. */
+  onChangeType?: (type: string) => void;
 }) {
   const color = LINK_TYPE_META[linkType as keyof typeof LINK_TYPE_META]?.color ?? '#6b7280';
   const label = linkForwardLabel(linkType);
+
+  const pillRef = useRef<HTMLButtonElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (pillRef.current?.contains(e.target as Node)) return;
+      if (document.getElementById('link-type-menu')?.contains(e.target as Node)) return;
+      setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
+  }, [menuOpen]);
+
+  function toggleMenu() {
+    if (menuOpen) { setMenuOpen(false); return; }
+    const r = pillRef.current?.getBoundingClientRect();
+    if (r) setMenuPos({ left: r.left + r.width / 2, top: r.bottom + 6 });
+    setMenuOpen(true);
+  }
+
   return (
     <div className="flex flex-col items-center w-full">
       <EntityCard data={subject} placeholder="Choose a client" onClick={otherSlot === 'subject' ? onChooseOther : undefined} />
@@ -79,9 +106,22 @@ function LinkDiagram({
         <div className="absolute left-1/2 top-0 bottom-2.5 w-[2px] -translate-x-1/2" style={{ background: color }} />
         <ArrowDown size={18} strokeWidth={3} className="absolute left-1/2 -translate-x-1/2 bottom-0" style={{ color }} />
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2">
-          <span className="whitespace-nowrap px-3 py-1 rounded-full text-xs font-semibold text-white shadow" style={{ background: color }}>
-            {label}
-          </span>
+          {onChangeType ? (
+            <button
+              ref={pillRef}
+              type="button"
+              onClick={toggleMenu}
+              aria-label="Change relationship type"
+              className="whitespace-nowrap inline-flex items-center gap-1 pl-3 pr-2 py-1 rounded-full text-xs font-semibold text-white shadow cursor-pointer hover:brightness-95 transition"
+              style={{ background: color }}
+            >
+              {label} <ChevronDown size={12} />
+            </button>
+          ) : (
+            <span className="whitespace-nowrap px-3 py-1 rounded-full text-xs font-semibold text-white shadow" style={{ background: color }}>
+              {label}
+            </span>
+          )}
           {canSwap && (
             <Tooltip label="Swap direction">
               <button
@@ -97,6 +137,27 @@ function LinkDiagram({
         </div>
       </div>
       <EntityCard data={object} placeholder="Choose a client" onClick={otherSlot === 'object' ? onChooseOther : undefined} />
+
+      {onChangeType && menuOpen && menuPos && typeof document !== 'undefined' && createPortal(
+        <div
+          id="link-type-menu"
+          className="fixed z-[90] -translate-x-1/2 bg-white rounded-xl shadow-2xl border border-[var(--border)] py-1 max-h-[260px] overflow-y-auto"
+          style={{ left: menuPos.left, top: menuPos.top, minWidth: 200 }}
+        >
+          {LINK_TYPE_OPTIONS.map(o => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => { onChangeType(o.value); setMenuOpen(false); }}
+              className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[var(--accent-light)] transition-colors ${o.value === linkType ? 'font-semibold text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}
+            >
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: LINK_TYPE_META[o.value].color }} />
+              {o.label}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
@@ -317,15 +378,8 @@ export default function ClientLinksPanel({
                 }}
                 placeholder="Search for a client to link…"
               />
-              <select
-                value={linkType}
-                onChange={e => setLinkType(e.target.value)}
-                className="input-base w-full text-sm"
-              >
-                {LINK_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
 
-              {/* Live relationship diagram */}
+              {/* Live relationship diagram — pick the type on the pill, swap direction, click a node to choose */}
               <div className="rounded-xl border border-[var(--border-card)] bg-gray-50/60 px-4 py-4">
                 <LinkDiagram
                   subject={addSubject}
@@ -335,6 +389,7 @@ export default function ClientLinksPanel({
                   onSwap={() => { setManualSwap(true); setReverse(r => !r); }}
                   otherSlot={reverse ? 'subject' : 'object'}
                   onChooseOther={() => setSearchOpenSignal(s => s + 1)}
+                  onChangeType={setLinkType}
                 />
               </div>
 
@@ -367,10 +422,6 @@ export default function ClientLinksPanel({
               </button>
             </div>
             <div className="space-y-3">
-              <select value={editType} onChange={e => setEditType(e.target.value)} className="input-base w-full text-sm">
-                {LINK_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-
               <div className="rounded-xl border border-[var(--border-card)] bg-gray-50/60 px-4 py-4">
                 <LinkDiagram
                   subject={editSubject}
@@ -378,6 +429,7 @@ export default function ClientLinksPanel({
                   linkType={editType}
                   canSwap
                   onSwap={() => setEditReverse(r => !r)}
+                  onChangeType={setEditType}
                 />
               </div>
 
