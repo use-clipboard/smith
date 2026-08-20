@@ -1,13 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Calculator, ArrowRight, Layers, Building2, Sparkles } from 'lucide-react';
+import { Calculator, ArrowRight, Layers, Building2, Sparkles, Download, Loader2 } from 'lucide-react';
 import { StudioCard } from '../primitives';
 import { computeCt600 } from '../calc';
 import { emptyCt600, fmtMoney } from '../data';
 import AccountsImportModal from '../AccountsImportModal';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import RdFilmsCalculator from '../RdFilmsCalculator';
+import { renderCt600CompPdf, ct600CompFileName } from '../ct600ComputationPdf';
 import type { TaxReturn, Ct600Data, Ct600Trading, Ct600Losses, Ct600LossStream } from '../types';
 
 // ─── Local primitives (a trimmed-down mirror of StageReview's box widgets) ─────
@@ -298,7 +299,7 @@ export default function StageReviewCt600({ ret, patch, advance }: {
         </div>
       </StudioCard>
 
-      <Ct600ComputationCard c={c} />
+      <Ct600ComputationCard c={c} ret={ret} />
 
       <div className="flex justify-end">
         <button onClick={advance} className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 py-2 text-[13px] font-bold text-white transition-colors hover:bg-[var(--accent)]/90">
@@ -344,14 +345,36 @@ export default function StageReviewCt600({ ret, patch, advance }: {
 
 // ─── Corporation-tax computation card ──────────────────────────────────────────
 
-function Ct600ComputationCard({ c }: { c: ReturnType<typeof computeCt600> }): JSX.Element {
+function Ct600ComputationCard({ c, ret }: { c: ReturnType<typeof computeCt600>; ret: TaxReturn }): JSX.Element {
+  const [downloading, setDownloading] = useState(false);
+  async function download() {
+    setDownloading(true);
+    try {
+      const blob = await renderCt600CompPdf({
+        clientName: ret.clientName, clientRef: ret.clientRef, utr: ret.utr,
+        periodStart: ret.periodStart, periodEnd: ret.periodEnd, taxYear: ret.taxYear,
+        ct600: ret.ct600, preparedBy: ret.preparedBy,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = ct600CompFileName(ret.clientName, ret.periodEnd);
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } finally { setDownloading(false); }
+  }
   return (
     <StudioCard className="p-5">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-[15px] font-bold text-[var(--text-primary)]">
           <Calculator size={15} /> Tax computation
         </h3>
-        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{c.taxYear}</span>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={download} disabled={downloading}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1 text-[11px] font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--accent)]/5 hover:text-[var(--accent)] disabled:opacity-60">
+            {downloading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} Download computation
+          </button>
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{c.taxYear}</span>
+        </div>
       </div>
 
       <Row label="Turnover" value={fmtMoney(c.turnover)} />
