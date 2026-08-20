@@ -10,51 +10,14 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
-import { X, Building2, User, Landmark, HeartHandshake, Home, Briefcase, HelpCircle } from 'lucide-react';
+import { X } from 'lucide-react';
 import type { GraphNode, GraphEdge } from '@/app/api/clients/[id]/links/graph/route';
+import { ENTITY_STYLE, FALLBACK_STYLE } from '@/components/features/clients/entityVisuals';
+import { LINK_TYPE_EDGE_COLOR, linkForwardLabel } from '@/lib/clientLinks';
 
 // ── Constants ────────────────────────────────────────────────────────────────
-
-const LINK_TYPE_LABELS: Record<string, string> = {
-  director: 'Director of', shareholder: 'Shareholder of', spouse_partner: 'Spouse / Partner of',
-  trustee: 'Trustee of', beneficiary: 'Beneficiary of', associated_company: 'Associated Company',
-  parent_company: 'Parent Company of', subsidiary: 'Subsidiary of', guarantor: 'Guarantor of', other: 'Linked to',
-};
-
-// Hex stroke colours for edges (must be inline values, not CSS vars, for SVG)
-const LINK_TYPE_EDGE_COLOR: Record<string, string> = {
-  director: '#2563eb',
-  shareholder: '#4f46e5',
-  spouse_partner: '#db2777',
-  trustee: '#9333ea',
-  beneficiary: '#7c3aed',
-  associated_company: '#d97706',
-  parent_company: '#ea580c',
-  subsidiary: '#ca8a04',
-  guarantor: '#dc2626',
-  other: '#6b7280',
-};
-
-const ENTITY_STYLE: Record<string, {
-  label: string;
-  bg: string;
-  border: string;
-  text: string;
-  Icon: typeof Building2;
-  shape: 'rounded' | 'circle' | 'diamond' | 'pill';
-}> = {
-  limited_company: { label: 'Ltd Co.',    bg: '#dbeafe', border: '#2563eb', text: '#1e3a8a', Icon: Building2,      shape: 'rounded' },
-  partnership:     { label: 'Partnership', bg: '#fef3c7', border: '#d97706', text: '#78350f', Icon: Briefcase,      shape: 'rounded' },
-  sole_trader:     { label: 'Sole Trader', bg: '#fef9c3', border: '#ca8a04', text: '#713f12', Icon: Briefcase,      shape: 'rounded' },
-  individual:      { label: 'Individual',  bg: '#fce7f3', border: '#db2777', text: '#831843', Icon: User,           shape: 'circle'  },
-  trust:           { label: 'Trust',       bg: '#ede9fe', border: '#7c3aed', text: '#4c1d95', Icon: Landmark,       shape: 'diamond' },
-  charity:         { label: 'Charity',     bg: '#dcfce7', border: '#16a34a', text: '#14532d', Icon: HeartHandshake, shape: 'pill'    },
-  rental_landlord: { label: 'Landlord',    bg: '#cffafe', border: '#0891b2', text: '#164e63', Icon: Home,           shape: 'rounded' },
-};
-
-const FALLBACK_STYLE = {
-  label: 'Other', bg: '#f3f4f6', border: '#6b7280', text: '#374151', Icon: HelpCircle, shape: 'rounded' as const,
-};
+// Entity styling and link colours/labels come from the shared modules above so
+// the connections map and the link editor stay visually identical.
 
 const NODE_WIDTH = 220;
 const NODE_HEIGHT = 108;
@@ -188,7 +151,7 @@ function LinkEdge({ id, sourceX, sourceY, sourcePosition, targetX, targetY, targ
   const hovered = ed?.hovered ?? false;
   const dimmed = ed?.dimmed ?? false;
   const color = LINK_TYPE_EDGE_COLOR[linkType] ?? LINK_TYPE_EDGE_COLOR.other;
-  const label = LINK_TYPE_LABELS[linkType] ?? linkType;
+  const label = linkForwardLabel(linkType);
 
   const midY = (sourceY + targetY) / 2 + laneOffset;
   const [edgePath, labelX, labelY] = getSmoothStepPath({

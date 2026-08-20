@@ -2,17 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { LINK_TYPES as CLIENT_LINK_TYPES } from '@/lib/clientLinks';
 
 const CLIENT_TYPES = [
   'sole_trader', 'partnership', 'limited_company',
   'individual', 'trust', 'charity', 'rental_landlord', '',
 ] as const;
 
-const LINK_TYPES = [
-  'director', 'shareholder', 'spouse_partner', 'trustee',
-  'beneficiary', 'associated_company', 'parent_company',
-  'subsidiary', 'guarantor', 'other', '',
-] as const;
+// Import CSV allows an empty link_type (transformed to 'other' below).
+const LINK_TYPES = [...CLIENT_LINK_TYPES, ''] as const;
 
 const ClientRowSchema = z.object({
   name: z.string().min(1, 'Name is required'),

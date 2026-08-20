@@ -2,16 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-
-const LINK_TYPES = [
-  'director', 'shareholder', 'spouse_partner', 'trustee',
-  'beneficiary', 'associated_company', 'parent_company',
-  'subsidiary', 'guarantor', 'other',
-] as const;
+import { LINK_TYPES } from '@/lib/clientLinks';
 
 const UpdateLinkSchema = z.object({
   link_type: z.enum(LINK_TYPES).optional(),
   notes: z.string().max(500).nullable().optional(),
+  // When true, flip the link's direction (swap subject/object).
+  reverse: z.boolean().optional(),
 });
 
 // PATCH /api/clients/[id]/links/[linkId] — update an existing link's type or notes
@@ -50,9 +47,17 @@ export async function PATCH(
     return NextResponse.json({ error: 'Link not found' }, { status: 404 });
   }
 
+  // Build the update: reverse swaps subject/object; link_type/notes pass through.
+  const { reverse, ...fields } = parsed.data;
+  const updatePayload: Record<string, unknown> = { ...fields };
+  if (reverse) {
+    updatePayload.client_id = existing.linked_client_id;
+    updatePayload.linked_client_id = existing.client_id;
+  }
+
   const { data: link, error } = await supabase
     .from('client_links')
-    .update(parsed.data)
+    .update(updatePayload)
     .eq('id', params.linkId)
     .select()
     .single();

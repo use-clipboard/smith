@@ -307,7 +307,10 @@ export default function ClientOverview({ clientId, client }: { clientId: string;
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {/* Linked Clients — full management (add / edit / remove / org chart) */}
         <div className="xl:col-span-2">
-          <ClientLinksPanel clientId={clientId} />
+          <ClientLinksPanel
+            clientId={clientId}
+            currentClient={{ name: client.name, client_ref: client.client_ref, business_type: client.business_type }}
+          />
         </div>
 
         {/* Tools & Activity — all tools ever used + this month's timeline */}

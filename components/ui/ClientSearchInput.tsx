@@ -34,8 +34,8 @@ interface Props {
   value: string;
   /** Display name for the currently selected client (avoids a refetch) */
   valueName?: string;
-  /** Called with (id, name, clientRef) when a client is selected, or ('', '', '') to clear */
-  onChange: (id: string, name: string, clientRef: string) => void;
+  /** Called with (id, name, clientRef, businessType) when a client is selected, or ('', '', '', null) to clear */
+  onChange: (id: string, name: string, clientRef: string, businessType?: string | null) => void;
   placeholder?: string;
   /** Extra classes applied to the root element */
   className?: string;
@@ -106,14 +106,14 @@ export default function ClientSearchInput({
   }
 
   function handleSelect(c: ClientOption) {
-    onChange(c.id, c.name, c.client_ref);
+    onChange(c.id, c.name, c.client_ref, c.business_type ?? null);
     setOpen(false);
     setSearch('');
   }
 
   function handleClear(e: React.MouseEvent) {
     e.stopPropagation();
-    onChange('', '', '');
+    onChange('', '', '', null);
   }
 
   const displayName = value

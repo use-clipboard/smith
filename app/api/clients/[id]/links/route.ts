@@ -2,17 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-
-const LINK_TYPES = [
-  'director', 'shareholder', 'spouse_partner', 'trustee',
-  'beneficiary', 'associated_company', 'parent_company',
-  'subsidiary', 'guarantor', 'other',
-] as const;
+import { LINK_TYPES } from '@/lib/clientLinks';
 
 const CreateLinkSchema = z.object({
   linked_client_id: z.string().uuid(),
   link_type: z.enum(LINK_TYPES).default('other'),
   notes: z.string().max(500).optional(),
+  // When true the direction is flipped: the picked client becomes the subject
+  // (client_id) and the current client the object (linked_client_id).
+  reverse: z.boolean().optional().default(false),
 });
 
 // GET /api/clients/[id]/links — return all links for this client (both directions)
@@ -107,11 +105,16 @@ export async function POST(
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, { status: 400 });
   }
 
-  const { linked_client_id, link_type, notes } = parsed.data;
+  const { linked_client_id, link_type, notes, reverse } = parsed.data;
 
   if (linked_client_id === params.id) {
     return NextResponse.json({ error: 'Cannot link a client to itself' }, { status: 400 });
   }
+
+  // Resolve the stored direction. Normally the current client is the subject
+  // (client_id) and the picked client the object; `reverse` flips that.
+  const subjectId = reverse ? linked_client_id : params.id;
+  const objectId = reverse ? params.id : linked_client_id;
 
   const supabase = createClient();
 
@@ -147,8 +150,8 @@ export async function POST(
     .from('client_links')
     .insert({
       firm_id: ctx.firmId,
-      client_id: params.id,
-      linked_client_id,
+      client_id: subjectId,
+      linked_client_id: objectId,
       link_type,
       notes: notes || null,
     })
