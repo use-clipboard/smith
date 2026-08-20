@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import type {
   TaxReturn, ReturnTypeId, StageId, StageState, ReturnStatus,
-  Sa100Income, ConnectedSource, TaxSuggestion, ReviewPoint, Ct600Data,
+  Sa100Income, ConnectedSource, TaxSuggestion, ReviewPoint, Ct600Data, Ct600LossStream,
 } from './types';
 import { estimateSa100, employmentBenefits, dividendsTotal } from './calc';
 
@@ -175,6 +175,44 @@ export function emptyCt600(): Ct600Data {
       managementExpenses: {}, interestDistributions: {},
     },
   };
+}
+
+/** Roll a prior CT600 into a fresh period: each loss stream's carried-forward
+ *  becomes the new period's brought-forward. Trading figures start blank. */
+export function rollForwardCt600(prior: Ct600Data): Ct600Data {
+  const bf = (s?: Ct600LossStream): Ct600LossStream => ({ broughtForward: (s?.carriedForward ?? 0) || undefined });
+  const L = prior.losses;
+  return {
+    trading: {},
+    losses: {
+      trading: { broughtForward: (L.trading.carriedForward ?? 0) || undefined },
+      ntlr: bf(L.ntlr),
+      property: bf(L.property),
+      overseasTrading: bf(L.overseasTrading),
+      overseasProperty: bf(L.overseasProperty),
+      intangibles: bf(L.intangibles),
+      otherIncome: bf(L.otherIncome),
+      chargeableGains: bf(L.chargeableGains),
+      managementExpenses: bf(L.managementExpenses),
+      interestDistributions: bf(L.interestDistributions),
+    },
+  };
+}
+
+/** The loss-carried-forward figures a CT600 roll-forward will bring in (for the
+ *  wizard's roll-forward summary). Only non-zero streams. */
+export function ct600RolledLosses(prior: Ct600Data): { label: string; amount: number }[] {
+  const L = prior.losses;
+  const rows: { label: string; amount: number }[] = [
+    { label: 'Trading losses', amount: L.trading.carriedForward ?? 0 },
+    { label: 'Non-trading loan relationship deficits', amount: L.ntlr.carriedForward ?? 0 },
+    { label: 'UK property losses', amount: L.property.carriedForward ?? 0 },
+    { label: 'Overseas losses', amount: (L.overseasTrading.carriedForward ?? 0) + (L.overseasProperty.carriedForward ?? 0) },
+    { label: 'Non-trading intangibles losses', amount: L.intangibles.carriedForward ?? 0 },
+    { label: 'Capital / chargeable-gains losses', amount: L.chargeableGains.carriedForward ?? 0 },
+    { label: 'Excess management expenses', amount: L.managementExpenses.carriedForward ?? 0 },
+  ];
+  return rows.filter(r => r.amount > 0);
 }
 
 // ─── Return factory ──────────────────────────────────────────────────────────

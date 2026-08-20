@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Calculator, ArrowRight, Layers, Building2 } from 'lucide-react';
+import { Calculator, ArrowRight, Layers, Building2, Sparkles } from 'lucide-react';
 import { StudioCard } from '../primitives';
 import { computeCt600 } from '../calc';
 import { emptyCt600, fmtMoney } from '../data';
+import AccountsImportModal from '../AccountsImportModal';
 import type { TaxReturn, Ct600Data, Ct600Trading, Ct600Losses, Ct600LossStream } from '../types';
 
 // ─── Local primitives (a trimmed-down mirror of StageReview's box widgets) ─────
@@ -97,6 +98,7 @@ export default function StageReviewCt600({ ret, patch, advance }: {
 
   const [tab, setTab] = useState<Tab>('trading');
   const [subTab, setSubTab] = useState<SubTab>('trading');
+  const [importOpen, setImportOpen] = useState(false);
 
   const setCt = (u: (c: Ct600Data) => Ct600Data) => patch(r => ({ ...r, ct600: u(r.ct600 ?? emptyCt600()) }));
   const setTrading = (p: Partial<Ct600Trading>) => setCt(c0 => ({ ...c0, trading: { ...c0.trading, ...p } }));
@@ -162,6 +164,13 @@ export default function StageReviewCt600({ ret, patch, advance }: {
         <div className="p-5">
           {tab === 'trading' && (
             <div className="space-y-5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[12px] text-[var(--text-muted)]">Enter the figures, or let SMITH pull them from the company&apos;s Accounts Studio accounts.</p>
+                <button type="button" onClick={() => setImportOpen(true)}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/[0.06] px-3 py-1.5 text-[12px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/10">
+                  <Sparkles size={14} /> Import from Accounts Studio
+                </button>
+              </div>
               <Section title="Trading & Professional Profits">
                 <Field label="Turnover" value={n(t.turnover)} onChange={v => setTrading({ turnover: v })} />
                 <Field label="Profit/(loss) per account" value={n(t.profitPerAccount)} onChange={v => setTrading({ profitPerAccount: v })} />
@@ -283,6 +292,14 @@ export default function StageReviewCt600({ ret, patch, advance }: {
           Continue to approval <ArrowRight size={15} />
         </button>
       </div>
+
+      {importOpen && (
+        <AccountsImportModal
+          ret={ret}
+          onApply={(trading) => setTrading(trading)}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
     </div>
   );
 }

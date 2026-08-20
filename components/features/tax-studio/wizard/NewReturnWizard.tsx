@@ -14,9 +14,10 @@ import {
 } from './wizardData';
 import {
   buildReturn, currentFilingSeason, seedConnectedSources, returnType, emptyIncome, fmtDateUK,
+  rollForwardCt600, ct600RolledLosses, emptyCt600, fmtMoney,
 } from '../data';
 import { listReturns, type ReturnListItem } from '../persistence';
-import type { ReturnTypeId, TaxReturn } from '../types';
+import type { ReturnTypeId, TaxReturn, Ct600Data } from '../types';
 
 function isoDate(d: Date): string { const p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; }
 /** Default CT600 accounting period — the 12 months ending on the most recent 31 March. */
@@ -86,6 +87,17 @@ export default function NewReturnWizard({
   const priorIncome = priorReturn?.ret.income ?? null;
   const priorYear = priorReturn?.ret.taxYear ?? null;
 
+  // The prior CT600 return (a different accounting period) — its carried-forward
+  // losses roll into this return.
+  const priorCt600 = useMemo(() => {
+    if (returnTypeId !== 'ct600' || !client) return null;
+    const hist = allReturns
+      .filter(r => r.ret.clientId === client.id && r.ret.returnType === 'ct600' && r.ret.ct600)
+      .sort((a, b) => ((a.ret.periodEnd ?? a.ret.taxYear) < (b.ret.periodEnd ?? b.ret.taxYear) ? 1 : -1));
+    return hist.find(h => h.ret.periodEnd !== periodEnd) ?? hist[0] ?? null;
+  }, [returnTypeId, client, allReturns, periodEnd]);
+  const priorCt600Label = priorCt600 ? (priorCt600.ret.periodEnd ? fmtDateUK(priorCt600.ret.periodEnd) : priorCt600.ret.taxYear) : null;
+
   // Re-seed roll toggles whenever the client's prior data changes.
   useEffect(() => {
     const next = {} as Record<RollKey, boolean>;
@@ -136,7 +148,7 @@ export default function NewReturnWizard({
       const built: TaxReturn = {
         ...base,
         income: seededIncome,
-        ...(returnTypeId === 'ct600' ? { periodStart, periodEnd, taxYear: taxYearForDate(periodEnd) } : {}),
+        ...(returnTypeId === 'ct600' ? { periodStart, periodEnd, taxYear: taxYearForDate(periodEnd), ct600: priorCt600?.ret.ct600 ? rollForwardCt600(priorCt600.ret.ct600) : emptyCt600() } : {}),
         entityLabel: entityLabelForBusinessType(client.business_type),
         connected: seedConnectedSources(),
         stageStatus: { setup: 'complete', analyse: 'active', review: 'upcoming', approval: 'upcoming', submit: 'upcoming' },
@@ -195,7 +207,8 @@ export default function NewReturnWizard({
       {step === 3 && <StepTaxYear taxYear={taxYear} onChange={setTaxYear} client={client} allReturns={allReturns}
         returnTypeId={returnTypeId} periodStart={periodStart} periodEnd={periodEnd}
         onPeriodChange={(s, e) => { setPeriodStart(s); setPeriodEnd(e); }} />}
-      {step === 4 && <StepRollForward priorYear={priorYear} priorIncome={priorIncome} roll={roll} onToggle={k => setRoll(r => ({ ...r, [k]: !r[k] }))} onSetAll={v => setRoll(r => { const n = { ...r }; for (const c of ROLL_CATEGORIES) if (c.key !== 'personal') n[c.key] = v && (priorIncome ? categoryHasData(c.key, priorIncome) : false); return n; })} client={client} />}
+      {step === 4 && returnTypeId === 'ct600' && <Ct600RollForwardPanel prior={priorCt600?.ret.ct600 ?? null} priorLabel={priorCt600Label} />}
+      {step === 4 && returnTypeId !== 'ct600' && <StepRollForward priorYear={priorYear} priorIncome={priorIncome} roll={roll} onToggle={k => setRoll(r => ({ ...r, [k]: !r[k] }))} onSetAll={v => setRoll(r => { const n = { ...r }; for (const c of ROLL_CATEGORIES) if (c.key !== 'personal') n[c.key] = v && (priorIncome ? categoryHasData(c.key, priorIncome) : false); return n; })} client={client} />}
       {step === 5 && <StepConfirm returnTypeId={returnTypeId} client={client} taxYear={taxYear} seededIncome={seededIncome} roll={roll} hasPrior={!!priorIncome} periodStart={periodStart} periodEnd={periodEnd} />}
 
       {error && <p className="text-right text-[12px] font-medium text-red-600">{error}</p>}
@@ -211,6 +224,36 @@ export default function NewReturnWizard({
           {!creating && step < 5 && <ArrowRight size={15} />}
         </button>
       </div>
+    </div>
+  );
+}
+
+// CT600 roll-forward — losses carried forward from the prior period become
+// brought-forward figures on the new return. Read-only (deterministic, no toggles).
+function Ct600RollForwardPanel({ prior, priorLabel }: { prior: Ct600Data | null; priorLabel: string | null }) {
+  const rolled = prior ? ct600RolledLosses(prior) : [];
+  return (
+    <div className="rounded-2xl bg-white/[0.78] p-5 backdrop-blur-md">
+      <h3 className="text-[16px] font-bold text-[var(--text-primary)]">4. Roll Forward</h3>
+      <p className="mt-0.5 text-[12.5px] text-[var(--text-muted)]">SMITH carries losses forward from the prior period into this return.</p>
+      {!prior ? (
+        <div className="mt-4 rounded-xl border border-[var(--border)] bg-white/60 p-4 text-[12.5px] text-[var(--text-muted)]">First CT600 return in Tax Studio — nothing to carry forward. You&apos;ll build the figures in the workspace.</div>
+      ) : rolled.length === 0 ? (
+        <div className="mt-4 rounded-xl border border-[var(--border)] bg-white/60 p-4 text-[12.5px] text-[var(--text-muted)]">No losses carried forward from {priorLabel ?? 'the prior period'}.</div>
+      ) : (
+        <div className="mt-4 rounded-xl border border-[var(--border)] bg-white/60 p-4">
+          <p className="text-[12px] font-bold text-[var(--text-primary)]">Losses carried forward{priorLabel ? ` from ${priorLabel}` : ''}</p>
+          <div className="mt-2 space-y-1">
+            {rolled.map(r => (
+              <div key={r.label} className="flex items-center justify-between text-[12.5px]">
+                <span className="text-[var(--text-secondary)]">{r.label}</span>
+                <span className="font-semibold tabular-nums text-[var(--text-primary)]">{fmtMoney(r.amount)}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-[var(--text-muted)]">These become brought-forward figures on the new return&apos;s Losses &amp; Excess Amount tabs.</p>
+        </div>
+      )}
     </div>
   );
 }
