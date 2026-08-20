@@ -1660,6 +1660,28 @@ export function computeCt600(data: Ct600Data | undefined, taxYear = '2025/26'): 
   };
 }
 
+/** CT600 corporation-tax payment deadline — 9 months and 1 day after the
+ *  accounting-period end (for companies not paying by instalments). ISO in/out. */
+export function ct600PaymentDue(periodEndIso?: string): string {
+  if (!periodEndIso) return '';
+  const d = new Date(periodEndIso);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setMonth(d.getMonth() + 9);
+  d.setDate(d.getDate() + 1);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** CT600 return filing deadline — 12 months after the accounting-period end. */
+export function ct600FilingDue(periodEndIso?: string): string {
+  if (!periodEndIso) return '';
+  const d = new Date(periodEndIso);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setFullYear(d.getFullYear() + 1);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 // ── Legacy adapters ──────────────────────────────────────────────────────────
 export function estimateSa100(income: Sa100Income, taxYear = '2025/26'): TaxEstimate {
   const c = computeSa100Full(income, taxYear);

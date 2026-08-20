@@ -22,6 +22,10 @@ import StageSetup from './stages/StageSetup';
 import StageAnalyse from './stages/StageAnalyse';
 import StageReview, { ReviewSearch, ReturnSectionEditor, type PageId, type Reveal } from './stages/StageReview';
 import StageReviewCt600 from './stages/StageReviewCt600';
+import StageSetupCt600 from './stages/StageSetupCt600';
+import StageAnalyseCt600 from './stages/StageAnalyseCt600';
+import StageApprovalCt600 from './stages/StageApprovalCt600';
+import StageSubmitCt600 from './stages/StageSubmitCt600';
 import StageApproval from './stages/StageApproval';
 import StageSubmit from './stages/StageSubmit';
 import FilingPreview from './filing/FilingPreview';
@@ -308,12 +312,20 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
           {/* Stage + assistant */}
           <div className="flex gap-4">
             <div className="min-w-0 flex-1">
-              {stage === 'setup' && <StageSetup ret={ret} patch={patch} advance={() => advanceFrom('setup')} reveal={setupReveal} />}
-              {stage === 'analyse' && <StageAnalyse ret={ret} patch={patch} advance={() => advanceFrom('analyse')} />}
+              {stage === 'setup' && (ret.returnType === 'ct600'
+                ? <StageSetupCt600 ret={ret} patch={patch} advance={() => advanceFrom('setup')} />
+                : <StageSetup ret={ret} patch={patch} advance={() => advanceFrom('setup')} reveal={setupReveal} />)}
+              {stage === 'analyse' && (ret.returnType === 'ct600'
+                ? <StageAnalyseCt600 ret={ret} patch={patch} advance={() => advanceFrom('analyse')} />
+                : <StageAnalyse ret={ret} patch={patch} advance={() => advanceFrom('analyse')} />)}
               {stage === 'review' && ret.returnType === 'ct600' && <StageReviewCt600 ret={ret} patch={patch} advance={() => advanceFrom('review')} />}
               {stage === 'review' && ret.returnType !== 'ct600' && <StageReview ret={ret} patch={patch} advance={() => advanceFrom('review')} page={reviewPage} setPage={setReviewPage} reveal={reviewReveal} onNavigate={goToReview} />}
-              {stage === 'approval' && <StageApproval ret={ret} patch={patch} advance={() => advanceFrom('approval')} />}
-              {stage === 'submit' && <StageSubmit ret={ret} patch={patch} />}
+              {stage === 'approval' && (ret.returnType === 'ct600'
+                ? <StageApprovalCt600 ret={ret} patch={patch} advance={() => advanceFrom('approval')} />
+                : <StageApproval ret={ret} patch={patch} advance={() => advanceFrom('approval')} />)}
+              {stage === 'submit' && (ret.returnType === 'ct600'
+                ? <StageSubmitCt600 ret={ret} patch={patch} />
+                : <StageSubmit ret={ret} patch={patch} />)}
             </div>
             {assistantOpen && (
               <div className="hidden w-[340px] shrink-0 xl:block" style={{ height: 'calc(100vh - 240px)' }}>
