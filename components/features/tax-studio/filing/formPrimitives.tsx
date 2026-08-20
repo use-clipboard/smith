@@ -243,7 +243,7 @@ function FitContent({ origin = 'top center', children }: { origin?: string; chil
     </div>
   );
 }
-export function Page({ tag, code = 'SA100', fitOrigin = 'top center', children }: { tag: string; code?: string; fitOrigin?: string; children: React.ReactNode }) {
+export function Page({ tag, code = 'SA100', fitOrigin = 'top center', footerLeft, footerCenter, footerRight, children }: { tag: string; code?: string; fitOrigin?: string; footerLeft?: React.ReactNode; footerCenter?: React.ReactNode; footerRight?: React.ReactNode; children: React.ReactNode }) {
   const t = useTheme();
   const record = useRecord();
   // The HMRC "12/25" print date appears only on the first page of each form
@@ -253,9 +253,9 @@ export function Page({ tag, code = 'SA100', fitOrigin = 'top center', children }
     <div data-sa-code={code} data-sa-page={tag} data-sa-record={record ?? undefined} className={`sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white shadow-sm ${t.dense ? 'px-[11mm]' : 'px-[13mm]'} py-[7mm]`} style={{ border: `1px solid ${t.panelBorder}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
       <FitContent origin={fitOrigin}>{children}</FitContent>
       <div className="mt-1 grid grid-cols-3 items-center text-[11px] font-bold text-black">
-        <span style={{ letterSpacing: '0.18em' }}>{code} 2026</span>
-        <span className="text-center" style={{ letterSpacing: '0.18em' }}>Page {tag}</span>
-        <span className="text-right font-normal text-slate-400" style={{ letterSpacing: '0.12em' }}>{isFirst ? 'HMRC 12/25' : ''}</span>
+        <span style={{ letterSpacing: '0.18em' }}>{footerLeft ?? `${code} 2026`}</span>
+        <span className="text-center" style={{ letterSpacing: '0.18em' }}>{footerCenter ?? `Page ${tag}`}</span>
+        <span className="text-right font-normal text-slate-400" style={{ letterSpacing: '0.12em' }}>{footerRight ?? (isFirst ? 'HMRC 12/25' : '')}</span>
       </div>
     </div>
   );

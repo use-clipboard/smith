@@ -292,9 +292,9 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
             </div>
             <div className="flex items-center gap-2">
               {stage === 'review' && ret.returnType !== 'ct600' && <ReviewSearch onGo={goToReview} />}
-              {stage === 'review' && ret.returnType !== 'ct600' && (
+              {stage === 'review' && (
                 <button onClick={() => setPreviewOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90">
-                  <FileText size={14} /> Tax Return Preview
+                  <FileText size={14} /> {ret.returnType === 'ct600' ? 'CT600 Preview' : 'Tax Return Preview'}
                 </button>
               )}
               <WorkspaceControls
@@ -305,7 +305,9 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
           </div>
           {previewOpen && ret && (
             <FilingPreview ret={ret} onClose={() => setPreviewOpen(false)}
-              renderEditor={p => <ReturnSectionEditor page={p} ret={ret} setIncome={u => patch(r => ({ ...r, income: u(r.income) }))} />}
+              // CT600 preview is currently view + download only (Phase A); click-to-edit
+              // wiring into the CT600 Review editor follows in Phase B.
+              renderEditor={ret.returnType === 'ct600' ? undefined : p => <ReturnSectionEditor page={p} ret={ret} setIncome={u => patch(r => ({ ...r, income: u(r.income) }))} />}
               onEditInSetup={goToSetup} />
           )}
 

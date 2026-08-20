@@ -7,6 +7,7 @@ import type { TaxReturn } from '../types';
 import type { PageId } from '../stages/StageReview';
 import { buildFilingForms, type FilingForm, type FilingRow } from './filingModel';
 import Sa100Facsimile from './Sa100Facsimile';
+import Ct600Facsimile from './Ct600Facsimile';
 import EmploymentFacsimile from './EmploymentFacsimile';
 import SelfEmploymentFacsimile from './SelfEmploymentFacsimile';
 import SelfEmploymentShortFacsimile from './SelfEmploymentShortFacsimile';
@@ -51,6 +52,7 @@ const FORM_NAMES: Record<string, string> = {
   SA103F: 'Self-employment (full)', SA103S: 'Self-employment (short)', SA103L: 'Lloyd’s underwriters',
   SA104F: 'Partnership (full)', SA104S: 'Partnership (short)', SA105: 'UK property', SA106: 'Foreign',
   SA107: 'Trusts etc', SA108: 'Capital gains', SA109: 'Residence & FIG', SA110: 'Tax calculation summary',
+  CT600: 'Company Tax Return',
 };
 
 // Each HMRC form code → the Review & Adjust editor page that edits it.
@@ -227,9 +229,14 @@ function Sheet({ form }: { form: FilingForm }) {
 // e.g. 2026_Personal Tax Return_Adam Cole_DM1082.pdf. Strip any character that
 // isn't allowed in a filename so nothing breaks (the tax year's "/", ":" etc.).
 function pdfFileName(ret: TaxReturn): string {
+  const isCt = ret.returnType === 'ct600';
   const yy = parseInt((ret.taxYear || '').slice(-2), 10);
-  const endYear = Number.isNaN(yy) ? '' : String(2000 + yy); // "2025/26" -> "2026"
-  const raw = `${endYear}_Personal Tax Return_${ret.clientName || 'Client'}_${ret.clientRef || ''}`;
+  // CT600 filenames key off the accounting-period end year; SA100 off the tax year.
+  const endYear = isCt
+    ? (ret.periodEnd ? ret.periodEnd.slice(0, 4) : '')
+    : (Number.isNaN(yy) ? '' : String(2000 + yy)); // "2025/26" -> "2026"
+  const label = isCt ? 'Corporation Tax Return' : 'Personal Tax Return';
+  const raw = `${endYear}_${label}_${ret.clientName || 'Client'}_${ret.clientRef || ''}`;
   const clean = raw
     .replace(/[\/:*?"<>|]/g, '') // strip only filename-illegal characters (keep spaces)
     .replace(/\s+/g, ' ')
@@ -549,7 +556,11 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
           <FileText size={16} className="ml-1 text-[var(--accent)]" />
           <div>
             <p className="text-[13px] font-bold text-slate-900">Tax Return Preview — {ret.clientName}</p>
-            <p className="text-[11px] text-slate-500">SA100 {ret.taxYear} · {totalForms} form{totalForms === 1 ? '' : 's'} · supplementary pages shown only where there are entries</p>
+            {ret.returnType === 'ct600' ? (
+              <p className="text-[11px] text-slate-500">CT600 (2026) · accounting period {ret.periodStart ? `${ret.periodStart} to ${ret.periodEnd}` : ret.taxYear} · Company Tax Return</p>
+            ) : (
+              <p className="text-[11px] text-slate-500">SA100 {ret.taxYear} · {totalForms} form{totalForms === 1 ? '' : 's'} · supplementary pages shown only where there are entries</p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -633,6 +644,10 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
             </p>
           )}
           <div ref={sheetsRef} className="sa-sheets-wrap px-4 py-6" style={{ zoom }}>
+            {ret.returnType === 'ct600' ? (
+              <Ct600Facsimile ret={ret} editable={editablePreview} />
+            ) : (
+             <>
             <Sa100Facsimile ret={ret} editable={editablePreview} />
             {emps.map((e, idx) => <EmploymentFacsimile key={`emp-${idx}`} ret={ret} emp={e} />)}
             {trades.map((tr, idx) => <SelfEmploymentFacsimile key={`se-${idx}`} ret={ret} trade={tr} />)}
@@ -653,8 +668,12 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
             {showAdditional && <AdditionalFacsimile ret={ret} />}
             <TaxCalcSummaryFacsimile ret={ret} />
             {rest.map((f, idx) => <Sheet key={`${f.code}-${idx}`} form={f} />)}
+             </>
+            )}
             <p className="no-print mx-auto mb-8 max-w-[210mm] text-center text-[11px] text-slate-400">
-              This is a working copy of the return as entered. It becomes the client’s filed copy once the return is submitted to HMRC. For mortgage use, provide the tax calculation together with the HMRC Tax Year Overview.
+              {ret.returnType === 'ct600'
+                ? 'This is a working copy of the CT600 as entered, alongside the corporation-tax computation. It becomes the company’s filed copy once the return is submitted to HMRC. The statutory accounts and tax computation must accompany the return in iXBRL format.'
+                : 'This is a working copy of the return as entered. It becomes the client’s filed copy once the return is submitted to HMRC. For mortgage use, provide the tax calculation together with the HMRC Tax Year Overview.'}
             </p>
           </div>
         </div>
