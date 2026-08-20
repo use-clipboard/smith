@@ -1516,6 +1516,12 @@ export interface Ct600Trading {
   rdOrFilmsRelief?: number;             // R&D or Films Relief (calculator)
   capitalAllowances?: number;           // Capital Allowances (calculator)
   rdFilmsTaxCreditSurrender?: number;   // R&D/Films Tax Credit — amount to surrender for conversion
+  /** Working state for the shared Capital Allowances calculator — its total
+   *  feeds `capitalAllowances` and its balancing charge feeds `balancingCharges`. */
+  capitalAllowancesCalc?: CapitalAllowancesState;
+  /** Working state for the R&D / Films Enhanced Expenditure calculator — feeds
+   *  `rdOrFilmsRelief` (additional deduction) or `rdec` (RDEC credit). */
+  rdFilmsCalc?: Ct600RdCalc;
 }
 
 /** The recurring five-column loss "stream" used across the Losses tabs. */
@@ -1562,6 +1568,13 @@ export interface Ct600Losses {
   // Management expenses & interest distributions
   managementExpenses: Ct600LossStream;   // Box 245
   interestDistributions: Ct600LossStream;
+}
+
+/** Working state for the R&D / Films Enhanced Expenditure calculator. */
+export interface Ct600RdCalc {
+  scheme?: 'sme' | 'rdec' | 'creative'; // SME additional deduction / RDEC (merged) credit / creative-sector relief
+  qualifyingExpenditure?: number;       // qualifying R&D or creative expenditure
+  creativeRate?: number;                // additional-deduction % for the creative-sector scheme
 }
 
 /** The full CT600 return data (limited companies). */

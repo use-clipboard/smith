@@ -37,13 +37,16 @@ interface AccountsData {
 }
 
 interface ChatMessage { role: 'user' | 'assistant'; content: string }
-interface ProposalChange { field: keyof Ct600Trading; value: number }
+// Only the numeric trading boxes are mappable here (the calculator working
+// objects — capitalAllowancesCalc / rdFilmsCalc — are not figures).
+type NumericTradingKey = Exclude<keyof Ct600Trading, 'capitalAllowancesCalc' | 'rdFilmsCalc'>;
+interface ProposalChange { field: NumericTradingKey; value: number }
 interface Proposal { summary: string; changes: ProposalChange[] }
 
-type Mapping = Partial<Record<keyof Ct600Trading, number>>;
+type Mapping = Partial<Ct600Trading>;
 
 // The boxes shown as editable rows on the left panel.
-const EDITABLE_ROWS: Array<{ field: keyof Ct600Trading; label: string }> = [
+const EDITABLE_ROWS: Array<{ field: NumericTradingKey; label: string }> = [
   { field: 'turnover', label: 'Turnover' },
   { field: 'profitPerAccount', label: 'Profit/(loss) per account' },
   { field: 'addBack', label: 'Add Back' },
@@ -128,7 +131,7 @@ export default function AccountsImportModal({
           // user's own edits already on the return.
           const existing = ret.ct600?.trading ?? {};
           const seed: Mapping = { ...existing };
-          const setIfUnset = (field: keyof Ct600Trading, value: number) => {
+          const setIfUnset = (field: NumericTradingKey, value: number) => {
             if (!seed[field]) seed[field] = value;
           };
           setIfUnset('turnover', data.turnover);
@@ -206,7 +209,7 @@ export default function AccountsImportModal({
     setMessages(prev => [...prev, { role: 'assistant', content: '✓ Applied. Anything else?' }]);
   }
 
-  function setBox(field: keyof Ct600Trading, raw: string) {
+  function setBox(field: NumericTradingKey, raw: string) {
     const cleaned = raw.replace(/[^0-9.\-]/g, '');
     setMapping(prev => ({ ...prev, [field]: cleaned === '' || cleaned === '-' ? 0 : Number(cleaned) }));
   }

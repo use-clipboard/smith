@@ -6,6 +6,8 @@ import { StudioCard } from '../primitives';
 import { computeCt600 } from '../calc';
 import { emptyCt600, fmtMoney } from '../data';
 import AccountsImportModal from '../AccountsImportModal';
+import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
+import RdFilmsCalculator from '../RdFilmsCalculator';
 import type { TaxReturn, Ct600Data, Ct600Trading, Ct600Losses, Ct600LossStream } from '../types';
 
 // ─── Local primitives (a trimmed-down mirror of StageReview's box widgets) ─────
@@ -33,16 +35,25 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 /** A labelled numeric box — editable by default, or a read-only blue computed box when `calc`. */
-function Field({ label, value, onChange, calc, box }: {
+function Field({ label, value, onChange, calc, box, onCalc }: {
   label: string;
   value: number;
   onChange?: (v: number) => void;
   calc?: boolean;
   box?: string;
+  onCalc?: () => void;
 }) {
   return (
     <div>
-      <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">{label}</label>
+      <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+        {label}
+        {onCalc && (
+          <button type="button" onClick={onCalc} title="Open calculator"
+            className="ml-auto inline-flex shrink-0 items-center gap-0.5 rounded bg-[var(--accent)]/10 px-1 py-px text-[9px] font-bold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/20">
+            <Calculator size={10} /> Calc
+          </button>
+        )}
+      </label>
       {calc ? (
         <div className="input-base flex items-center justify-end py-1 text-right text-[12.5px] font-semibold text-[var(--accent)] bg-[var(--accent)]/5 border-[var(--accent)]/20">
           {fmtMoney(value)}
@@ -99,6 +110,8 @@ export default function StageReviewCt600({ ret, patch, advance }: {
   const [tab, setTab] = useState<Tab>('trading');
   const [subTab, setSubTab] = useState<SubTab>('trading');
   const [importOpen, setImportOpen] = useState(false);
+  const [caOpen, setCaOpen] = useState(false);
+  const [rdOpen, setRdOpen] = useState(false);
 
   const setCt = (u: (c: Ct600Data) => Ct600Data) => patch(r => ({ ...r, ct600: u(r.ct600 ?? emptyCt600()) }));
   const setTrading = (p: Partial<Ct600Trading>) => setCt(c0 => ({ ...c0, trading: { ...c0.trading, ...p } }));
@@ -185,8 +198,8 @@ export default function StageReviewCt600({ ret, patch, advance }: {
                 <Field label="Taxable Video Games Expenditure Credit (VGEC)" value={n(t.vgec)} onChange={v => setTrading({ vgec: v })} />
                 <Field label="Income/(deficit) not assessed under trading profits" value={n(t.incomeNotAssessed)} onChange={v => setTrading({ incomeNotAssessed: v })} />
                 <Field label="Expenditure not in accounts but allowable for taxation purposes" value={n(t.expenditureNotInAccounts)} onChange={v => setTrading({ expenditureNotInAccounts: v })} />
-                <Field label="R&D or Films Relief" value={n(t.rdOrFilmsRelief)} onChange={v => setTrading({ rdOrFilmsRelief: v })} />
-                <Field label="Capital Allowances" value={n(t.capitalAllowances)} onChange={v => setTrading({ capitalAllowances: v })} />
+                <Field label="R&D or Films Relief" value={n(t.rdOrFilmsRelief)} onChange={v => setTrading({ rdOrFilmsRelief: v })} onCalc={() => setRdOpen(true)} />
+                <Field label="Capital Allowances" value={n(t.capitalAllowances)} onChange={v => setTrading({ capitalAllowances: v })} onCalc={() => setCaOpen(true)} />
               </Section>
 
               <Section title="Trading result">
@@ -298,6 +311,31 @@ export default function StageReviewCt600({ ret, patch, advance }: {
           ret={ret}
           onApply={(trading) => setTrading(trading)}
           onClose={() => setImportOpen(false)}
+        />
+      )}
+
+      {caOpen && (
+        <CapitalAllowancesCalculator
+          state={ct.trading.capitalAllowancesCalc}
+          onApply={(state, result) => {
+            setTrading({ capitalAllowancesCalc: state, capitalAllowances: result.total, balancingCharges: result.balancingCharge });
+            setCaOpen(false);
+          }}
+          onClose={() => setCaOpen(false)}
+        />
+      )}
+
+      {rdOpen && (
+        <RdFilmsCalculator
+          state={ct.trading.rdFilmsCalc}
+          onApply={(state, result) => {
+            const patch: Partial<Ct600Trading> = { rdFilmsCalc: state, rdOrFilmsExpenditure: result.qualifying };
+            if (result.scheme === 'rdec') { patch.rdec = result.rdecCredit; patch.rdOrFilmsRelief = 0; }
+            else { patch.rdOrFilmsRelief = result.additionalDeduction; }
+            setTrading(patch);
+            setRdOpen(false);
+          }}
+          onClose={() => setRdOpen(false)}
         />
       )}
     </div>
