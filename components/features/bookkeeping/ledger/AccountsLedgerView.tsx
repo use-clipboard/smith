@@ -23,7 +23,7 @@ import {
   Search, Loader2, Link2, Unlink, Check, X, AlertCircle,
   Users, Building2, ChevronDown, ChevronUp,
   Wallet, ReceiptText, Layers, FileBadge, Coins, Boxes, FolderTree, ShoppingCart,
-  CheckSquare, ArrowRightLeft,
+  CheckSquare, ArrowRightLeft, ShieldCheck,
 } from 'lucide-react';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
 import { TxnRefLink, useBookNavigation } from '../book/BookNavigationContext';
@@ -318,6 +318,22 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
   }, [bookId, ledger, fyStartIso, fyEndIso, dataVersion]);
 
   useEffect(() => { void loadAccounts(); }, [loadAccounts]);
+
+  // Per-account reconciliation status for the viewed period — drives the
+  // "fully reconciled" tick in the Bank account list. Bank ledger only.
+  const [recStatus, setRecStatus] = useState<Record<string, { total: number; reconciled: number }>>({});
+  useEffect(() => {
+    if (ledger !== 'Bank') { setRecStatus({}); return; }
+    let cancelled = false;
+    const qs = new URLSearchParams({ ledger });
+    if (fyStartIso) qs.set('from', fyStartIso);
+    if (fyEndIso)   qs.set('to', fyEndIso);
+    fetch(`/api/bookkeeping/books/${bookId}/reconciled-status?${qs.toString()}`)
+      .then(r => (r.ok ? r.json() : { statuses: {} }))
+      .then(d => { if (!cancelled) setRecStatus(d.statuses ?? {}); })
+      .catch(() => { if (!cancelled) setRecStatus({}); });
+    return () => { cancelled = true; };
+  }, [bookId, ledger, fyStartIso, fyEndIso, dataVersion]);
 
   /** Has the account ever been touched? Different from "current balance is
    *  non-zero" — an account that took 100 in and paid 100 out has a £0
@@ -956,6 +972,8 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
               {filteredAccounts.map(a => {
                 const active = a.id === selectedAccountId;
                 const nonZero = Math.abs(a.balance) > 0.005;
+                const rs = recStatus[a.id];
+                const fullyReconciled = ledger === 'Bank' && !!rs && rs.total > 0 && rs.reconciled === rs.total;
                 const rowButton = (
                   <button
                     type="button"
@@ -975,6 +993,11 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                     }`}
                   >
                     <span className="text-xs truncate flex-1"><AccountCodeTag code={a.code} className="mr-1.5" />{a.name}</span>
+                    {fullyReconciled && (
+                      <Tooltip label="Reconciled for this period — every entry is ticked off">
+                        <ShieldCheck size={13} className="text-emerald-600 shrink-0 ml-1" aria-label="Fully reconciled for this period" />
+                      </Tooltip>
+                    )}
                     <span className={`text-xs tabular-nums shrink-0 ml-2 ${
                       active
                         ? `font-semibold${a.inactive ? ' not-italic' : ''}`
