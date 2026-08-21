@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, Settings2 } from 'lucide-react';
 import { FUND_TYPE_LABEL, type BookFund } from '@/types/bookkeeping';
+import { useBookNavigation } from '../book/BookNavigationContext';
 import type { BalanceAccount } from '@/lib/bookkeeping/balances';
 import BookFundsModal from './BookFundsModal';
 
@@ -31,6 +32,7 @@ interface LedgerRow { ledger: string; byCol: Record<string, number> }
 export default function SofaTab({
   bookId, fromIso, toIso, periodLabel,
 }: { bookId: string; fromIso: string | null; toIso: string | null; periodLabel?: string }) {
+  const dataVersion = useBookNavigation()?.dataVersion;
   const [funds, setFunds] = useState<BookFund[]>([]);
   const [balancesByCol, setBalancesByCol] = useState<Record<string, BalanceAccount[]>>({});
   const [loading, setLoading] = useState(true);
@@ -74,7 +76,8 @@ export default function SofaTab({
       setBalancesByCol(Object.fromEntries(results));
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not load.'); }
     finally { setLoading(false); }
-  }, [bookId, fromIso, toIso]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId, fromIso, toIso, dataVersion]);
 
   useEffect(() => { void load(); }, [load]);
 

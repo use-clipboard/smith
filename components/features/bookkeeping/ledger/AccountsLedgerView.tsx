@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
 import { TxnRefLink, useBookNavigation } from '../book/BookNavigationContext';
+import SourceDocIcon from '../transactions/SourceDocIcon';
 import BankRecPanel from './BankRecPanel';
 import BankReconcileTab from './BankReconcileTab';
 import BankRecHistoryTab from './BankRecHistoryTab';
@@ -89,6 +90,9 @@ interface Entry {
   cleared_in_rec_id: string | null;
   bank_rec_status: 'pending' | 'in_progress' | 'reconciled' | 'abandoned' | null;
   bank_rec_label: string | null;
+  /** Linked source document on the transaction — shows the paperclip. */
+  source_doc_url?: string | null;
+  source_doc_name?: string | null;
 }
 
 interface Props {
@@ -243,6 +247,9 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
   const activePeriod = nav?.activePeriod;
   const fyStartIso = activePeriod?.fyStartIso ?? null;
   const fyEndIso   = activePeriod?.fyEndIso   ?? null;
+  // Global data version — bumps on any post/edit anywhere in the book so the
+  // ledger list + entries refetch even when the change came from elsewhere.
+  const dataVersion = nav?.dataVersion;
 
   // Load accounts + their balances on mount.
   const loadAccounts = useCallback(async () => {
@@ -308,7 +315,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
       setLoadingAccounts(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, ledger, fyStartIso, fyEndIso]);
+  }, [bookId, ledger, fyStartIso, fyEndIso, dataVersion]);
 
   useEffect(() => { void loadAccounts(); }, [loadAccounts]);
 
@@ -385,7 +392,8 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
     } catch {
       setDepnStatus(null);
     }
-  }, [bookId, ledger, isFaLedger, depnFromIso, depnToIso]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId, ledger, isFaLedger, depnFromIso, depnToIso, dataVersion]);
   useEffect(() => { void loadDepnStatus(); }, [loadDepnStatus]);
   // Default tab: now identical for Bank and non-Bank ledgers — Bank gained
   // the FY-aware tab set, so "Current year" is the natural landing when a
@@ -477,7 +485,8 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
     } finally {
       setLoadingEntries(false);
     }
-  }, [bookId, selectedAccountId, statusFilter, fyStartIso, fyEndIso]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId, selectedAccountId, statusFilter, fyStartIso, fyEndIso, dataVersion]);
 
   useEffect(() => { void loadEntries(); }, [loadEntries]);
 
@@ -1324,8 +1333,9 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                             )}
                           </td>
                           <td className="px-3 py-1.5 text-slate-700 tabular-nums">{formatDateUk(e.date)}</td>
-                          <td className="px-3 py-1.5 text-xs">
+                          <td className="px-3 py-1.5 text-xs whitespace-nowrap">
                             <TxnRefLink txn={entryAsTxnStub(e)} className="text-xs" />
+                            <SourceDocIcon url={e.source_doc_url} name={e.source_doc_name} refNo={e.ref_no} size={11} className="ml-0.5 align-middle" />
                             {yearEnd && <YearEndChip />}
                           </td>
                           <td className="px-3 py-1.5 max-w-[300px]">

@@ -65,6 +65,7 @@ function formatDateUkFull(iso: string): string {
 
 export default function FixedAssetsTab({ bookId, active = true }: Props) {
   const nav = useBookNavigation();
+  const dataVersion = nav?.dataVersion;
   const ap = nav?.activePeriod ?? {
     ready: false, fromIso: null, toIso: null, fyStartIso: null, fyEndIso: null, label: '',
   };
@@ -103,7 +104,8 @@ export default function FixedAssetsTab({ bookId, active = true }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [bookId, fromIsoVal, toIsoVal, periodValid]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId, fromIsoVal, toIsoVal, periodValid, dataVersion]);
 
   useEffect(() => { void load(); }, [load]);
 

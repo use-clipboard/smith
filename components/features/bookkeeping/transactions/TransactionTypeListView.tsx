@@ -21,9 +21,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Search, Plus, ReceiptText, ShoppingCart, Wallet, BookOpenCheck, ArrowRightLeft, Eraser, FileBadge } from 'lucide-react';
+import { Loader2, Search, Plus, ReceiptText, ShoppingCart, Wallet, BookOpenCheck, Eraser, FileBadge, Paperclip } from 'lucide-react';
 import { useTransactionRowActions } from './useTransactionRowActions';
-import { AccountLink } from '../book/BookNavigationContext';
+import SourceDocIcon from './SourceDocIcon';
+import { AccountLink, useBookNavigation } from '../book/BookNavigationContext';
 import type { Transaction, TransactionType } from '@/types/bookkeeping';
 
 interface Props {
@@ -75,6 +76,8 @@ export default function TransactionTypeListView({ bookId, type, initialTxnId, on
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(initialTxnId ?? null);
   const [refreshKey, setRefreshKey] = useState(0);
+  // Global data version — bumps on any post/edit anywhere in the book.
+  const dataVersion = useBookNavigation()?.dataVersion;
 
   // Book-level VAT info for the row-actions Edit modal's late-entry detection.
   const [bookVatInfo, setBookVatInfo] = useState<{ vatRegistered: boolean; vatLockDate: string | null }>({
@@ -120,7 +123,7 @@ export default function TransactionTypeListView({ bookId, type, initialTxnId, on
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, type, refreshKey]);
+  }, [bookId, type, refreshKey, dataVersion]);
   useEffect(() => { void load(); }, [load]);
 
   // ── Row actions for the master list ───────────────────────────────────────
@@ -235,7 +238,8 @@ export default function TransactionTypeListView({ bookId, type, initialTxnId, on
                         <span className={`font-mono text-[11px] font-semibold shrink-0 ${active ? 'text-indigo-700' : 'text-slate-700'}`}>
                           {t.ref_no}
                         </span>
-                        <span className="text-[10px] text-slate-500 tabular-nums shrink-0">
+                        <span className="text-[10px] text-slate-500 tabular-nums shrink-0 inline-flex items-center gap-1">
+                          {t.source_doc_url && <Paperclip size={10} className="text-indigo-500" aria-label="Has source document" />}
                           {formatDateUk(t.date)}
                         </span>
                       </div>
@@ -281,6 +285,7 @@ export default function TransactionTypeListView({ bookId, type, initialTxnId, on
                 {Number(selected.vat_total) > 0 && (
                   <span className="text-[10px] text-slate-500 tabular-nums">(VAT £{fmt(Number(selected.vat_total))})</span>
                 )}
+                <SourceDocIcon url={selected.source_doc_url} name={selected.source_doc_name} refNo={selected.ref_no} />
               </div>
               {selected.details && selected.details !== selected.payee_text && (
                 <p className="text-[11px] text-slate-500 mt-1 truncate">{selected.details}</p>

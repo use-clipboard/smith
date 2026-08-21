@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Printer, Download } from 'lucide-react';
 import DateInput, { parseUkDateStrict } from '../input/DateInput';
 import { formatMoney } from '@/lib/bookkeeping/formatMoney';
-import { AccountLink } from '../book/BookNavigationContext';
+import { AccountLink, useBookNavigation } from '../book/BookNavigationContext';
 import ReportPrintHeader from './ReportPrintHeader';
 import { printReport } from './printReport';
 import { exportRowsAsCsv, type CsvRow } from './exportReportCsv';
@@ -52,6 +52,7 @@ const BUCKET_COLS: { key: keyof Totals; label: string }[] = [
 ];
 
 export default function AgedReportTab({ bookId, ledger, defaultAsAtIso }: Props) {
+  const dataVersion = useBookNavigation()?.dataVersion;
   const title = ledger === 'Customers' ? 'Aged Debtors' : 'Aged Creditors';
   const subtitle = ledger === 'Customers'
     ? 'Outstanding customer balances by age'
@@ -81,7 +82,8 @@ export default function AgedReportTab({ bookId, ledger, defaultAsAtIso }: Props)
     } finally {
       setLoading(false);
     }
-  }, [bookId, ledger, asAtIso]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId, ledger, asAtIso, dataVersion]);
   useEffect(() => { void load(); }, [load]);
 
   function handleExport() {

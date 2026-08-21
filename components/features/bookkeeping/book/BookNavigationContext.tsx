@@ -70,6 +70,11 @@ export interface BookNavigation {
   openManualRec?: (accountId: string, accountName: string) => void;
   /** Reporting period selected in the header. Reports default to this. */
   activePeriod?: ActivePeriod;
+  /** Bumped by BookView after ANY post / edit / rollback anywhere in the book
+   *  (quick-entry toast, Input tab, imports, year-end, etc.). Mounted report
+   *  and ledger tabs include this in their fetch deps so they re-load and the
+   *  new entry shows up without the user having to leave and return. */
+  dataVersion?: number;
 }
 
 const BookNavigationContext = createContext<BookNavigation | null>(null);

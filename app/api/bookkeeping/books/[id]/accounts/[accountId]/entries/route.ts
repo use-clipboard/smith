@@ -86,6 +86,8 @@ export async function GET(
       date: string;
       details: string | null;
       book_id: string;
+      source_doc_url: string | null;
+      source_doc_name: string | null;
     } | null;
     match_line: Array<{
       match_id: string;
@@ -113,7 +115,7 @@ export async function GET(
       .from('bookkeeping_transaction_splits')
       .select(`
         id, transaction_id, debit, credit, entry_details, cleared_in_rec_id,
-        transaction:bookkeeping_transactions!inner(id, ref_no, date, details, book_id),
+        transaction:bookkeeping_transactions!inner(id, ref_no, date, details, book_id, source_doc_url, source_doc_name),
         match_line:bookkeeping_match_lines(match_id, match:bookkeeping_matches(id, status)),
         rec:bookkeeping_bank_imports!bookkeeping_transaction_splits_cleared_in_rec_id_fkey(status, display_label, file_name)
       `)
@@ -208,6 +210,10 @@ export async function GET(
      *  Carries no amounts and doesn't move the running balance — the UI draws
      *  it as a rule rather than a ledger row. See the note below. */
     year_end_marker?: boolean;
+    /** Linked source document (Google Drive via Capture/Vault), when set on
+     *  the transaction — surfaces the paperclip icon in the ledger row. */
+    source_doc_url?: string | null;
+    source_doc_name?: string | null;
   };
 
   // ── How the year-end close behaves in a ledger ──────────────────────────────
@@ -305,6 +311,8 @@ export async function GET(
       cleared_in_rec_id: r.cleared_in_rec_id ?? null,
       bank_rec_status: rec?.status ?? null,
       bank_rec_label: rec?.display_label ?? rec?.file_name ?? null,
+      source_doc_url: r.transaction.source_doc_url ?? null,
+      source_doc_name: r.transaction.source_doc_name ?? null,
     });
     closingBalance = runningBalance;
   }

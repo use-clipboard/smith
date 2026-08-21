@@ -115,45 +115,69 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .single();
   if (exErr || !existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  // Bank-rec lock — if any of this transaction's splits has been reconciled
-  // against a bank statement line, editing/replacing the splits would silently
-  // break that reconciliation. Per Bank Rec design decision: locked.
-  // The user has to un-reconcile the line first (in the Bank Rec sub-tab).
-  const { data: reconciledLink } = await supabase
-    .from('bookkeeping_bank_lines')
-    .select(`id, matched_split_id, split:bookkeeping_transaction_splits!bookkeeping_bank_lines_matched_split_id_fkey(transaction_id)`)
-    .not('matched_split_id', 'is', null)
-    .eq('split.transaction_id', params.txId)
-    .limit(1)
-    .maybeSingle();
-  if (reconciledLink && reconciledLink.matched_split_id) {
-    return NextResponse.json({
-      error: 'bank_reconciled',
-      message: 'This transaction is reconciled against a bank statement line. Un-reconcile it on the Bank Rec tab before editing.',
-    }, { status: 409 });
+  // ── Reconciled bank-line protection ──────────────────────────────────────
+  // We protect only the reconciled BANK LINE itself, not the whole
+  // transaction. The user can freely edit the other side of a journal, the
+  // narrative, and any non-bank accounts/amounts. An edit is blocked only when
+  // it would ALTER a reconciled line — change its account or amount, drop it,
+  // or move the transaction's date — because that silently breaks a completed
+  // reconciliation. A line is "reconciled" when it's ticked off in a
+  // reconciled rec (cleared_in_rec_id) or matched to a bank statement line.
+  const { data: existingSplitRows, error: existingSplitsErr } = await supabase
+    .from('bookkeeping_transaction_splits')
+    .select(`
+      id, account_id, debit, credit, line_no, cleared_in_rec_id,
+      rec:bookkeeping_bank_imports!bookkeeping_transaction_splits_cleared_in_rec_id_fkey(status),
+      bank_line:bookkeeping_bank_lines!bookkeeping_bank_lines_matched_split_id_fkey(id)
+    `)
+    .eq('transaction_id', params.txId);
+  // Fail closed: if we can't read the reconciliation status we must NOT proceed
+  // as if the transaction were unlocked — that could wholesale-replace a
+  // reconciled bank line and silently break the rec.
+  if (existingSplitsErr) {
+    return NextResponse.json({ error: existingSplitsErr.message }, { status: 500 });
   }
 
-  // Period-first bank-rec lock — under the new model a split can be cleared
-  // in a rec without a paired bank_lines row. If any of this transaction's
-  // splits sits inside a RECONCILED rec, edits are blocked at this layer
-  // (the user has to reopen the rec from History to make changes).
-  const { data: clearedInClosedRec } = await supabase
-    .from('bookkeeping_transaction_splits')
-    .select(`id, cleared_in_rec_id, rec:bookkeeping_bank_imports!bookkeeping_transaction_splits_cleared_in_rec_id_fkey(id, status, display_label, file_name)`)
-    .eq('transaction_id', params.txId)
-    .not('cleared_in_rec_id', 'is', null);
-  const blockingRec = (clearedInClosedRec ?? []).find(
-    // @ts-expect-error — embed type isn't perfectly inferred
-    s => s.rec?.status === 'reconciled',
-  );
-  if (blockingRec) {
-    return NextResponse.json({
-      error: 'bank_reconciled',
-      // @ts-expect-error — embed type isn't perfectly inferred
-      message: `This transaction is cleared inside a completed reconciliation (${blockingRec.rec.display_label ?? blockingRec.rec.file_name ?? 'rec'}). Reopen the rec from the History tab before editing.`,
-      // @ts-expect-error — embed type isn't perfectly inferred
-      rec_id: blockingRec.rec.id,
-    }, { status: 409 });
+  type ExistingSplit = {
+    id: string; account_id: string; debit: number; credit: number; line_no: number | null;
+    cleared_in_rec_id: string | null;
+    rec: { status: string } | { status: string }[] | null;
+    bank_line: { id: string } | { id: string }[] | null;
+  };
+  const existingSplits = (existingSplitRows ?? []) as ExistingSplit[];
+  const splitIsReconciled = (s: ExistingSplit): boolean => {
+    const rec = Array.isArray(s.rec) ? s.rec[0] : s.rec;
+    const clearedInReconciledRec = !!s.cleared_in_rec_id && rec?.status === 'reconciled';
+    const bl = s.bank_line;
+    const matchedToBankLine = Array.isArray(bl) ? bl.length > 0 : !!bl;
+    return clearedInReconciledRec || matchedToBankLine;
+  };
+  const lockedSplits = existingSplits.filter(splitIsReconciled);
+  const amountsEqual = (a: number, b: number) => Math.abs(a - b) < 0.005;
+
+  const RECONCILED_BLOCK_MESSAGE =
+    'This change isn’t possible — the entry is already reconciled in the bank. Reopen the reconciliation (Bank Rec → History) to change the reconciled line, or leave that line unchanged and edit the rest.';
+
+  if (lockedSplits.length > 0) {
+    // Moving the date would move the reconciled bank line.
+    if (body.date && body.date !== existing.date) {
+      return NextResponse.json({ error: 'bank_reconciled', message: RECONCILED_BLOCK_MESSAGE }, { status: 409 });
+    }
+    // If splits are being replaced, every reconciled line must survive intact
+    // (same account + same debit + same credit).
+    if (body.splits) {
+      const pool = body.splits.map(s => ({ s, used: false }));
+      for (const ls of lockedSplits) {
+        const hit = pool.find(p => !p.used
+          && p.s.account_id === ls.account_id
+          && amountsEqual(p.s.debit, Number(ls.debit))
+          && amountsEqual(p.s.credit, Number(ls.credit)));
+        if (!hit) {
+          return NextResponse.json({ error: 'bank_reconciled', message: RECONCILED_BLOCK_MESSAGE }, { status: 409 });
+        }
+        hit.used = true;
+      }
+    }
   }
 
   // Period lock blocks edits to/from a locked date.
@@ -261,28 +285,77 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .eq('id', params.txId);
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
 
-  // Replace splits wholesale if provided
+  // Write splits if provided. When the transaction has reconciled bank lines we
+  // KEEP those exact rows in place (preserving their cleared_in_rec_id and the
+  // bank_lines link) and only replace the rest, so the reconciliation stays
+  // intact. Otherwise we replace wholesale. Validation above already guaranteed
+  // every reconciled line is preserved unchanged.
   if (body.splits) {
-    const { error: delErr } = await supabase
-      .from('bookkeeping_transaction_splits')
-      .delete()
-      .eq('transaction_id', params.txId);
-    if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
+    if (lockedSplits.length > 0) {
+      const lockedPool = lockedSplits.map(l => ({ l, used: false }));
+      // Insert line numbers continue above the current max so they can never
+      // collide with a preserved row's line_no.
+      let nextLine = existingSplits.reduce((m, s) => Math.max(m, s.line_no ?? 0), 0);
+      const toInsert: Record<string, unknown>[] = [];
+      for (const s of body.splits) {
+        const match = lockedPool.find(p => !p.used
+          && p.l.account_id === s.account_id
+          && amountsEqual(Number(p.l.debit), s.debit)
+          && amountsEqual(Number(p.l.credit), s.credit));
+        if (match) {
+          match.used = true; // preserved in place — nothing to write
+        } else {
+          nextLine += 1;
+          toInsert.push({
+            transaction_id: params.txId,
+            line_no: nextLine,
+            account_id: s.account_id,
+            debit: s.debit,
+            credit: s.credit,
+            entry_details: s.entry_details ?? null,
+            notes: s.notes ?? null,
+            fund_id: s.fund_id ?? null,
+          });
+        }
+      }
+      // Delete only the non-reconciled existing splits.
+      const lockedIds = new Set(lockedSplits.map(l => l.id));
+      const removeIds = existingSplits.filter(s => !lockedIds.has(s.id)).map(s => s.id);
+      if (removeIds.length > 0) {
+        const { error: delErr } = await supabase
+          .from('bookkeeping_transaction_splits')
+          .delete()
+          .in('id', removeIds);
+        if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
+      }
+      if (toInsert.length > 0) {
+        const { error: insErr } = await supabase
+          .from('bookkeeping_transaction_splits')
+          .insert(toInsert);
+        if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+      }
+    } else {
+      const { error: delErr } = await supabase
+        .from('bookkeeping_transaction_splits')
+        .delete()
+        .eq('transaction_id', params.txId);
+      if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
 
-    const newRows = body.splits.map((s, i) => ({
-      transaction_id: params.txId,
-      line_no: i + 1,
-      account_id: s.account_id,
-      debit: s.debit,
-      credit: s.credit,
-      entry_details: s.entry_details ?? null,
-      notes: s.notes ?? null,
-      fund_id: s.fund_id ?? null,
-    }));
-    const { error: insErr } = await supabase
-      .from('bookkeeping_transaction_splits')
-      .insert(newRows);
-    if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+      const newRows = body.splits.map((s, i) => ({
+        transaction_id: params.txId,
+        line_no: i + 1,
+        account_id: s.account_id,
+        debit: s.debit,
+        credit: s.credit,
+        entry_details: s.entry_details ?? null,
+        notes: s.notes ?? null,
+        fund_id: s.fund_id ?? null,
+      }));
+      const { error: insErr } = await supabase
+        .from('bookkeeping_transaction_splits')
+        .insert(newRows);
+      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+    }
   }
 
   // Audit

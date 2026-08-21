@@ -41,6 +41,7 @@ function fmt(n: number): string {
 export default function CashFlowTab({ bookId }: Props) {
   // Period from the header bar via BookNavigation.
   const nav = useBookNavigation();
+  const dataVersion = nav?.dataVersion;
   const activePeriod = nav?.activePeriod ?? { ready: false, fromIso: null, toIso: null, label: '' };
   const period: DateRange = useMemo(() => ({ from: activePeriod.fromIso, to: activePeriod.toIso }), [activePeriod.fromIso, activePeriod.toIso]);
 
@@ -74,7 +75,7 @@ export default function CashFlowTab({ bookId }: Props) {
     }
     void go();
     return () => { cancelled = true; };
-  }, [bookId, activePeriod.ready, period.from, period.to]);
+  }, [bookId, activePeriod.ready, period.from, period.to, dataVersion]);
 
   // ── Forecast ─────────────────────────────────────────────────────────────
   // Take the rolling average of the last `windowMonths` actual months' receipts

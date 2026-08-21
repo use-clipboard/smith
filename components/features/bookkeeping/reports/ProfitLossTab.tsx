@@ -141,6 +141,7 @@ export default function ProfitLossTab({ bookId, onOpenAccount, embedded, onCsvRo
   // Period comes from the header's year/period bar via BookNavigation. The
   // old in-tab PeriodSelector has been removed.
   const nav = useBookNavigation();
+  const dataVersion = nav?.dataVersion;
   const activePeriod = nav?.activePeriod ?? { ready: false, fromIso: null, toIso: null, label: '' };
   const period: DateRange = useMemo(() => ({ from: activePeriod.fromIso, to: activePeriod.toIso }), [activePeriod.fromIso, activePeriod.toIso]);
 
@@ -178,7 +179,7 @@ export default function ProfitLossTab({ bookId, onOpenAccount, embedded, onCsvRo
     // showZero is in the deps so toggling the checkbox triggers a refetch
     // that pulls the zero-balance rows in (rather than relying on
     // post-filter only, which only works for rows already in the cache).
-  }, [bookId, activePeriod.ready, period.from, period.to, showZero]);
+  }, [bookId, activePeriod.ready, period.from, period.to, showZero, dataVersion]);
 
   const priorPeriod = useMemo(() => computePriorPeriod(period), [period.from, period.to]);
 

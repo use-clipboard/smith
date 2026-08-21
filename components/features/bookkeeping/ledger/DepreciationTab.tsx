@@ -62,6 +62,7 @@ export default function DepreciationTab({ bookId, ledger, isAdmin = false, onCha
   const noun = depreciationNoun(ledger); // 'Depreciation' | 'Amortisation'
   const nav = useBookNavigation();
   const ap = nav?.activePeriod;
+  const dataVersion = nav?.dataVersion;
 
   // ── Period (pre-filled from the header) ───────────────────────────────────
   const defaultFrom = ap?.fromIso ?? ap?.fyStartIso ?? '';
@@ -100,7 +101,8 @@ export default function DepreciationTab({ bookId, ledger, isAdmin = false, onCha
     } finally {
       setLoading(false);
     }
-  }, [bookId, ledger, fromIsoVal, toIsoVal, periodValid]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId, ledger, fromIsoVal, toIsoVal, periodValid, dataVersion]);
 
   useEffect(() => { void load(); }, [load]);
 

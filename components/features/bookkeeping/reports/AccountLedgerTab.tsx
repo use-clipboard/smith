@@ -17,6 +17,7 @@ import { Loader2 } from 'lucide-react';
 import PeriodSelector, { type DateRange } from './PeriodSelector';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
 import { TxnRefLink, useBookNavigation } from '../book/BookNavigationContext';
+import SourceDocIcon from '../transactions/SourceDocIcon';
 import { isYearEnd, YearEndChip, YearEndBoundaryRow, YEAR_END_ROW_CLASS } from '../book/YearEndMarker';
 import { AccountCodeTag } from '@/lib/bookkeeping/useAccountCodes';
 import type { Transaction } from '@/types/bookkeeping';
@@ -62,6 +63,9 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
   const [error, setError] = useState('');
   // Bumped by row-actions when something changes so this view refetches.
   const [refreshKey, setRefreshKey] = useState(0);
+  // Global data version — bumps on any post/edit anywhere in the book so this
+  // ledger refetches even when the change was made from another surface.
+  const dataVersion = nav?.dataVersion;
 
   // Book-level VAT info for row-actions edit modal late-entry detection.
   const [bookVatInfo, setBookVatInfo] = useState<{ vatRegistered: boolean; vatLockDate: string | null }>({
@@ -155,7 +159,7 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
     }
     void go();
     return () => { cancelled = true; };
-  }, [bookId, accountId, period.from, period.to, refreshKey]);
+  }, [bookId, accountId, period.from, period.to, refreshKey, dataVersion]);
 
   // ── Compute running balance + per-row debit/credit ───────────────────────
   const rows: LedgerRow[] = useMemo(() => {
@@ -270,8 +274,9 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
                   return (
                     <tr key={txn.id} {...rp} className={`border-t border-gray-100 ${yearEnd ? YEAR_END_ROW_CLASS : 'hover:bg-indigo-50/30'} ${rp.className}`}>
                       <td className="px-2 py-1.5 text-gray-700 tabular-nums">{formatDateUk(txn.date)}</td>
-                      <td className="px-2 py-1.5 text-xs">
+                      <td className="px-2 py-1.5 text-xs whitespace-nowrap">
                         <TxnRefLink txn={txn} className="text-xs" />
+                        <SourceDocIcon url={txn.source_doc_url} name={txn.source_doc_name} refNo={txn.ref_no} size={11} className="ml-0.5 align-middle" />
                         {yearEnd && <YearEndChip />}
                       </td>
                       <td className="px-2 py-1.5 text-gray-900 truncate max-w-[400px]">{txn.details ?? ''}</td>

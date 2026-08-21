@@ -394,7 +394,7 @@ function UniversalEditForm({
         if (res.status === 409 && d.error === 'late_entry_required') {
           throw new Error(d.message ?? 'Late-entry confirmation required.');
         }
-        throw new Error(d.error ?? 'Save failed');
+        throw new Error(d.message ?? d.error ?? 'Save failed');
       }
       const out = await res.json();
       onSaved(out.transaction as Transaction);
@@ -685,7 +685,7 @@ function JournalEditForm({
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        throw new Error(d.error ?? 'Save failed');
+        throw new Error(d.message ?? d.error ?? 'Save failed');
       }
       const out = await res.json();
       onSaved(out.transaction as Transaction);

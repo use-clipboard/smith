@@ -54,6 +54,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export default function ForecastPnl({ bookId, onCsvRows, onBasisChange }: Props) {
   const nav = useBookNavigation();
+  const dataVersion = nav?.dataVersion;
   const ap = nav?.activePeriod ?? { ready: false, fromIso: null, toIso: null, fyStartIso: null, fyEndIso: null, label: '' };
 
   const [actual, setActual] = useState<PlBalance[]>([]);
@@ -95,7 +96,7 @@ export default function ForecastPnl({ bookId, onCsvRows, onBasisChange }: Props)
       }
     })();
     return () => { cancelled = true; };
-  }, [bookId, ap.ready, periodFrom, periodTo, fyStart, fyEnd]);
+  }, [bookId, ap.ready, periodFrom, periodTo, fyStart, fyEnd, dataVersion]);
 
   // Annualisation factor: full FY days ÷ elapsed period days. ~1 when the
   // selected period already is the whole year.

@@ -78,21 +78,26 @@ export default function EntryToastHost({
 
   return (
     <>
-      {/* Open panels — cascade from the bottom-right; last in array on top. */}
-      {openToasts.map((t, i) => {
+      {/* Every panel stays mounted so its half-typed entry survives a minimise/
+          restore (minimising is meant for a quick glance underneath, not a
+          reset). Minimised panels are hidden with CSS, not unmounted. Only the
+          open panels take part in the cascade/z-order. */}
+      {toasts.map(t => {
         const isJournal = JOURNAL_TYPES.has(t.type);
-        // The front panel (last in array → focused) sits at the corner; older
-        // panels peek out up-and-left behind it.
-        const depth = openToasts.length - 1 - i;
+        const openIndex = openToasts.findIndex(o => o.id === t.id);
+        const isOpen = openIndex !== -1;
+        // The front panel (last in the open array → focused) sits at the corner;
+        // older panels peek out up-and-left behind it.
+        const depth = isOpen ? openToasts.length - 1 - openIndex : 0;
         return (
           <div
             key={t.id}
-            className="fixed w-[min(96vw,1440px)] flex flex-col bg-white rounded-xl shadow-2xl border border-slate-200"
+            className={`fixed w-[min(96vw,1440px)] flex-col bg-white rounded-xl shadow-2xl border border-slate-200 ${isOpen ? 'flex' : 'hidden'}`}
             style={{
               bottom: bottomBase + depth * 26,
               right: 16 + depth * 26,
               maxHeight: '82vh',
-              zIndex: 60 + i,
+              zIndex: 60 + (isOpen ? openIndex : 0),
             }}
             onMouseDown={() => onFocus(t.id)}
           >

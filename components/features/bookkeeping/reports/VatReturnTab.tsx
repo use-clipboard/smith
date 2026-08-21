@@ -38,7 +38,7 @@ import VatReturnReviewPanel from './VatReturnReviewPanel';
 import MtdSubmitModal from './MtdSubmitModal';
 import VatObligationsPanel from './VatObligationsPanel';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
-import { TxnRefLink } from '../book/BookNavigationContext';
+import { TxnRefLink, useBookNavigation } from '../book/BookNavigationContext';
 import type { Transaction, TransactionType } from '@/types/bookkeeping';
 
 interface BoxFigure { label: string; value: number; }
@@ -165,6 +165,7 @@ function rateLabel(row: BreakdownRow): string {
 
 // ── Component ───────────────────────────────────────────────────────────────
 export default function VatReturnTab({ bookId, isAdmin, activePeriodLabel, activePeriodFromIso, activePeriodToIso }: Props) {
+  const globalDataVersion = useBookNavigation()?.dataVersion;
   // List state
   const [filings, setFilings] = useState<FiledReturn[]>([]);
   const [filingsLoading, setFilingsLoading] = useState(false);
@@ -241,7 +242,7 @@ export default function VatReturnTab({ bookId, isAdmin, activePeriodLabel, activ
       .catch(() => { if (!cancelled) setFilings([]); })
       .finally(() => { if (!cancelled) setFilingsLoading(false); });
     return () => { cancelled = true; };
-  }, [bookId, refreshKey]);
+  }, [bookId, refreshKey, globalDataVersion]);
 
   // ── Fetch right-pane data ─────────────────────────────────────────────────
   // Depends on mode + period (for compute) or selected filing (for view).
@@ -271,7 +272,7 @@ export default function VatReturnTab({ bookId, isAdmin, activePeriodLabel, activ
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [bookId, mode, period.from, period.to, selectedFilingId, filings, refreshKey]);
+  }, [bookId, mode, period.from, period.to, selectedFilingId, filings, refreshKey, globalDataVersion]);
 
   // ── Lazy-load journal when the Double entry sub-tab opens ─────────────────
   useEffect(() => {

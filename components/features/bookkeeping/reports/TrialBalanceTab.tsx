@@ -95,6 +95,7 @@ export default function TrialBalanceTab({ bookId, onOpenAccount }: Props) {
   // every report at once. The local PeriodSelector that used to live here
   // is gone; the bar is the single source of truth.
   const nav = useBookNavigation();
+  const dataVersion = nav?.dataVersion;
   const activePeriod = nav?.activePeriod ?? { ready: false, fromIso: null, toIso: null, label: '' };
 
   const [accounts, setAccounts] = useState<AccountBalance[]>([]);
@@ -149,7 +150,7 @@ export default function TrialBalanceTab({ bookId, onOpenAccount }: Props) {
     void go();
     return () => { cancelled = true; };
     // showZero re-runs the fetch — server-side filter, can't be done client-only.
-  }, [bookId, activePeriod.ready, activePeriod.fromIso, activePeriod.toIso, showZero]);
+  }, [bookId, activePeriod.ready, activePeriod.fromIso, activePeriod.toIso, showZero, dataVersion]);
 
   // Group by ledger AND sort ledgers in VT's canonical order — P&L first
   // (Income, Cost of sales, Expenses, Taxation), then BS (FA, Customers,

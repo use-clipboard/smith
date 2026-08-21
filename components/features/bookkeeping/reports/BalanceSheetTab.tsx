@@ -139,6 +139,7 @@ export default function BalanceSheetTab({ bookId, onOpenAccount, embedded, onCsv
   // the from date doesn't apply (balances are cumulative from the start
   // of the book).
   const nav = useBookNavigation();
+  const dataVersion = nav?.dataVersion;
   const activePeriod = nav?.activePeriod ?? { ready: false, fromIso: null, toIso: null, label: '' };
   const period: DateRange = useMemo(() => ({ from: activePeriod.fromIso, to: activePeriod.toIso }), [activePeriod.fromIso, activePeriod.toIso]);
 
@@ -185,7 +186,7 @@ export default function BalanceSheetTab({ bookId, onOpenAccount, embedded, onCsv
     // showZero re-runs the fetch so zero-balance rows can come back from
     // the server (the response is filtered by include_zero, so a client-side
     // filter alone can't surface rows that weren't in the original response).
-  }, [bookId, activePeriod.ready, asAtCurrent, asAtPrior, showZero]);
+  }, [bookId, activePeriod.ready, asAtCurrent, asAtPrior, showZero, dataVersion]);
 
   type Row = { id: string; name: string; ledger: string | null; code: string | null; current: number; prior: number };
   /** Within a section, rows are grouped by ledger so the report reads like
