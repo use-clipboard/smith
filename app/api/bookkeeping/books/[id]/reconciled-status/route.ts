@@ -6,14 +6,16 @@ import { getBookkeepingContext } from '@/lib/bookkeeping/server';
  * GET /api/bookkeeping/books/[id]/reconciled-status?ledger=Bank&from=&to=
  *
  * For each account in the given ledger, reports how many of its entries in the
- * date window are reconciled (cleared in a COMPLETED reconciliation) vs the
- * total. The Bank ledger list uses this to show a "fully reconciled for this
- * period" tick next to an account — a quick at-a-glance signal.
+ * date window are "settled" vs the total. Settled means either cleared in a
+ * COMPLETED bank reconciliation (Bank ledger) OR allocated/matched against
+ * another entry (Customers / Suppliers). The account list uses this to show a
+ * "fully settled for this period" tick — a quick at-a-glance signal.
  *
  *   response: { statuses: { [accountId]: { total: number, reconciled: number } } }
  *
- * An account is "fully reconciled for the period" when total > 0 and
- * reconciled === total (decided by the caller).
+ * An account is "fully settled for the period" when total > 0 and
+ * reconciled === total (decided by the caller). `reconciled` is the settled
+ * count regardless of mechanism (rec-clear or match).
  */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = await getBookkeepingContext();
@@ -49,6 +51,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     account_id: string;
     cleared_in_rec_id: string | null;
     rec: { status: string } | { status: string }[] | null;
+    match_line: { match_id: string }[] | { match_id: string } | null;
   };
   const statuses: Record<string, { total: number; reconciled: number }> = {};
   const PAGE = 1000;
@@ -58,7 +61,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       .select(`
         account_id, cleared_in_rec_id,
         transaction:bookkeeping_transactions!inner(date, book_id),
-        rec:bookkeeping_bank_imports!bookkeeping_transaction_splits_cleared_in_rec_id_fkey(status)
+        rec:bookkeeping_bank_imports!bookkeeping_transaction_splits_cleared_in_rec_id_fkey(status),
+        match_line:bookkeeping_match_lines(match_id)
       `)
       .in('account_id', ids)
       .eq('transaction.book_id', params.id);
@@ -71,7 +75,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       const s = (statuses[r.account_id] ??= { total: 0, reconciled: 0 });
       s.total += 1;
       const rec = Array.isArray(r.rec) ? r.rec[0] : r.rec;
-      if (r.cleared_in_rec_id && rec?.status === 'reconciled') s.reconciled += 1;
+      const clearedInReconciledRec = !!r.cleared_in_rec_id && rec?.status === 'reconciled';
+      const ml = r.match_line;
+      const matched = Array.isArray(ml) ? ml.length > 0 : !!ml;
+      if (clearedInReconciledRec || matched) s.reconciled += 1;
     }
     if (batch.length < PAGE) break;
   }

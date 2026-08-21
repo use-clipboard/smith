@@ -319,11 +319,13 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
 
   useEffect(() => { void loadAccounts(); }, [loadAccounts]);
 
-  // Per-account reconciliation status for the viewed period — drives the
-  // "fully reconciled" tick in the Bank account list. Bank ledger only.
+  // Per-account settled status for the viewed period — drives the "fully
+  // reconciled / matched" tick. Bank = reconciled entries; Customers/Suppliers
+  // = allocated (matched) entries.
+  const settleableLedger = ledger === 'Bank' || ledger === 'Customers' || ledger === 'Suppliers';
   const [recStatus, setRecStatus] = useState<Record<string, { total: number; reconciled: number }>>({});
   useEffect(() => {
-    if (ledger !== 'Bank') { setRecStatus({}); return; }
+    if (!settleableLedger) { setRecStatus({}); return; }
     let cancelled = false;
     const qs = new URLSearchParams({ ledger });
     if (fyStartIso) qs.set('from', fyStartIso);
@@ -333,7 +335,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
       .then(d => { if (!cancelled) setRecStatus(d.statuses ?? {}); })
       .catch(() => { if (!cancelled) setRecStatus({}); });
     return () => { cancelled = true; };
-  }, [bookId, ledger, fyStartIso, fyEndIso, dataVersion]);
+  }, [bookId, ledger, settleableLedger, fyStartIso, fyEndIso, dataVersion]);
 
   /** Has the account ever been touched? Different from "current balance is
    *  non-zero" — an account that took 100 in and paid 100 out has a £0
@@ -973,7 +975,10 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                 const active = a.id === selectedAccountId;
                 const nonZero = Math.abs(a.balance) > 0.005;
                 const rs = recStatus[a.id];
-                const fullyReconciled = ledger === 'Bank' && !!rs && rs.total > 0 && rs.reconciled === rs.total;
+                const fullyReconciled = settleableLedger && !!rs && rs.total > 0 && rs.reconciled === rs.total;
+                const settledTooltip = ledger === 'Bank'
+                  ? 'Reconciled for this period — every entry is ticked off'
+                  : 'Fully matched for this period — every entry is allocated';
                 const rowButton = (
                   <button
                     type="button"
@@ -994,8 +999,8 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                   >
                     <span className="text-xs truncate flex-1"><AccountCodeTag code={a.code} className="mr-1.5" />{a.name}</span>
                     {fullyReconciled && (
-                      <Tooltip label="Reconciled for this period — every entry is ticked off">
-                        <ShieldCheck size={13} className="text-emerald-600 shrink-0 ml-1" aria-label="Fully reconciled for this period" />
+                      <Tooltip label={settledTooltip}>
+                        <ShieldCheck size={13} className="text-emerald-600 shrink-0 ml-1" aria-label={settledTooltip} />
                       </Tooltip>
                     )}
                     <span className={`text-xs tabular-nums shrink-0 ml-2 ${
