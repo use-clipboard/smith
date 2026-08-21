@@ -28,6 +28,8 @@ import AccountPicker from '../input/AccountPicker';
 import LedgerPicker from '../input/LedgerPicker';
 import FundPicker from '../input/FundPicker';
 import TransactionDocLink from './TransactionDocLink';
+import RecLockWarningModal from '../ledger/RecLockWarningModal';
+import { checkRecLock, type RecLockHit, type RecLockProbe } from '@/lib/bookkeeping/checkRecLock';
 import DateInput, { parseUkDateStrict, fromIso } from '../input/DateInput';
 import { getTypeConfig, TRANSACTION_TYPE_CONFIG } from '@/lib/bookkeeping/transactionTypeConfig';
 import { buildSplits } from '@/lib/bookkeeping/buildSplits';
@@ -330,6 +332,8 @@ function UniversalEditForm({
 
   const [frsCapital, setFrsCapital] = useState(Boolean(txn.frs_capital_reclaim));
   const isPurchase = ['PIN', 'PAY', 'CHQ', 'PCR'].includes(type);
+  // Warn (don't block) when a save would land a bank line inside a reconciled rec.
+  const [recLockHits, setRecLockHits] = useState<RecLockHit[]>([]);
 
   const total = parseAmount(totalText);
   const rate = showVatColumn ? rateFor(vatTreatment) : 0;
@@ -341,7 +345,7 @@ function UniversalEditForm({
     vatLockDate && isoDate && isoDate <= vatLockDate && showVatColumn && vat > 0,
   );
 
-  async function handleSave() {
+  async function handleSave(skipRecCheck = false) {
     onError('');
     if (!isoDate) { onError('Date is required (dd/mm/yyyy).'); return; }
     if (!primary) { onError(`Pick the ${config.primaryLabel.toLowerCase()}.`); return; }
@@ -349,6 +353,22 @@ function UniversalEditForm({
     if (primary.id === analysis.id) { onError('Primary and analysis must differ.'); return; }
     if (total <= 0) { onError('Amount must be greater than zero.'); return; }
     if (hasFunds && !fund) { onError('Pick a fund.'); return; }
+
+    // Rec-lock probe — warn (not block) if this save lands a bank line inside a
+    // reconciled reconciliation. New reconciled-line CHANGES are blocked by the
+    // server; this is the "adding a fresh entry into a closed period" warning.
+    if (!skipRecCheck) {
+      const probes: RecLockProbe[] = [];
+      for (const acct of [primary, analysis]) {
+        if (acct?.ledger === 'Bank') {
+          probes.push({ accountId: acct.id, date: isoDate, accountName: `${acct.ledger}: ${acct.name}` });
+        }
+      }
+      if (probes.length > 0) {
+        const hits = await checkRecLock(bookId, probes);
+        if (hits.length > 0) { setRecLockHits(hits); return; }
+      }
+    }
 
     setSubmitting(true);
     try {
@@ -562,6 +582,14 @@ function UniversalEditForm({
           {mode === 'edit' ? 'Save changes' : 'Post copy'}
         </button>
       </div>
+
+      {recLockHits.length > 0 && (
+        <RecLockWarningModal
+          hits={recLockHits}
+          onCancel={() => setRecLockHits([])}
+          onConfirm={() => { setRecLockHits([]); void handleSave(true); }}
+        />
+      )}
     </div>
   );
 }
@@ -589,6 +617,8 @@ function JournalEditForm({
   const [date, setDate] = useState(mode === 'duplicate' ? fromIso(todayIso()) : fromIso(txn.date));
   const [headerDetails, setHeaderDetails] = useState(txn.details ?? '');
   const [reversesOn, setReversesOn] = useState(''); // RJN sets this; we don't reconstruct it on edit
+  // Warn (don't block) when a save would land a bank line inside a reconciled rec.
+  const [recLockHits, setRecLockHits] = useState<RecLockHit[]>([]);
 
   const [lines, setLines] = useState<JournalLine[]>(() => {
     const seed = (txn.splits ?? []).map(s => ({
@@ -623,7 +653,7 @@ function JournalEditForm({
     setLines(prev => prev.length <= 2 ? prev : prev.filter(l => l.id !== id));
   }
 
-  async function handleSave() {
+  async function handleSave(skipRecCheck = false) {
     onError('');
     const isoDate = parseUkDateStrict(date);
     if (!isoDate) { onError('Date is required.'); return; }
@@ -646,6 +676,22 @@ function JournalEditForm({
     if (!isBalanced) {
       onError(`Out of balance: Dr ${formatMoneyAbs(totals.dr)} vs Cr ${formatMoneyAbs(totals.cr)} (diff ${formatMoneyAbs(totals.diff)}).`);
       return;
+    }
+
+    // Rec-lock probe — warn (not block) if a bank line lands inside a reconciled
+    // reconciliation. Changes to an already-reconciled line are blocked server-
+    // side; this covers adding a fresh line into a closed period.
+    if (!skipRecCheck) {
+      const probes: RecLockProbe[] = [];
+      for (const l of nonBlank) {
+        if (l.account?.ledger === 'Bank') {
+          probes.push({ accountId: l.account.id, date: isoDate, accountName: `${l.account.ledger}: ${l.account.name}` });
+        }
+      }
+      if (probes.length > 0) {
+        const hits = await checkRecLock(bookId, probes);
+        if (hits.length > 0) { setRecLockHits(hits); return; }
+      }
     }
 
     setSubmitting(true);
@@ -864,6 +910,14 @@ function JournalEditForm({
           {mode === 'edit' ? 'Save changes' : 'Post copy'}
         </button>
       </div>
+
+      {recLockHits.length > 0 && (
+        <RecLockWarningModal
+          hits={recLockHits}
+          onCancel={() => setRecLockHits([])}
+          onConfirm={() => { setRecLockHits([]); void handleSave(true); }}
+        />
+      )}
     </div>
   );
 }

@@ -362,6 +362,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
       openManualRec: openManualRecTab,
       activePeriod,
       dataVersion: refreshKey,
+      bumpDataVersion: bumpRefresh,
     }}>
     <div className="p-4 max-w-[1600px] mx-auto flex gap-3 items-start">
       {/* ── Side rail ───────────────────────────────────────────────────── */}

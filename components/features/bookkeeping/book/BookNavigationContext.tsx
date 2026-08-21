@@ -75,6 +75,11 @@ export interface BookNavigation {
    *  and ledger tabs include this in their fetch deps so they re-load and the
    *  new entry shows up without the user having to leave and return. */
   dataVersion?: number;
+  /** Call after a change made from a descendant (e.g. an inline edit from a
+   *  ledger row) so `dataVersion` bumps and EVERY mounted view refreshes — not
+   *  just the one the edit happened in. Prevents one panel showing a new/edited
+   *  entry while another (e.g. the account balances list) stays stale. */
+  bumpDataVersion?: () => void;
 }
 
 const BookNavigationContext = createContext<BookNavigation | null>(null);

@@ -43,6 +43,7 @@ import RowActionsMenu, { type ActionMenuItem, type AnchorPosition } from './RowA
 import TransactionEditModal from './TransactionEditModal';
 import AuditHistoryDrawer from './AuditHistoryDrawer';
 import ChangeTypeModal from './ChangeTypeModal';
+import { useBookNavigation } from '../book/BookNavigationContext';
 import type { Transaction } from '@/types/bookkeeping';
 
 interface Options {
@@ -57,6 +58,16 @@ interface Options {
 export function useTransactionRowActions({
   bookId, vatRegistered, vatLockDate, onChanged,
 }: Options) {
+  // After any change, refresh THIS list (the caller's onChanged) AND bump the
+  // book-wide data version so every other mounted view (balances, reports,
+  // other ledgers) refreshes too — an edit from one surface must never leave
+  // another surface showing a stale figure.
+  const nav = useBookNavigation();
+  const notifyChanged = useCallback(() => {
+    onChanged();
+    nav?.bumpDataVersion?.();
+  }, [onChanged, nav]);
+
   // Open menu state — which row + where on screen
   const [menuTxn, setMenuTxn] = useState<Transaction | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<AnchorPosition | null>(null);
@@ -94,8 +105,8 @@ export function useTransactionRowActions({
       alert(d.error ?? 'Delete failed');
       return;
     }
-    onChanged();
-  }, [bookId, onChanged]);
+    notifyChanged();
+  }, [bookId, notifyChanged]);
 
   const handleCopyRef = useCallback((t: Transaction) => {
     void navigator.clipboard?.writeText(t.ref_no);
@@ -213,7 +224,7 @@ export function useTransactionRowActions({
           vatRegistered={vatRegistered}
           vatLockDate={vatLockDate}
           onClose={() => setEditingTxn(null)}
-          onSaved={() => { setEditingTxn(null); onChanged(); }}
+          onSaved={() => { setEditingTxn(null); notifyChanged(); }}
         />
       )}
       <AuditHistoryDrawer
@@ -228,7 +239,7 @@ export function useTransactionRowActions({
           bookId={bookId}
           txn={changeTypeTxn}
           onClose={() => setChangeTypeTxn(null)}
-          onSaved={() => { setChangeTypeTxn(null); onChanged(); }}
+          onSaved={() => { setChangeTypeTxn(null); notifyChanged(); }}
         />
       )}
       {toast && (
