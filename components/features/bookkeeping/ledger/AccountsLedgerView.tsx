@@ -251,6 +251,11 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
   // ledger list + entries refetch even when the change came from elsewhere.
   const dataVersion = nav?.dataVersion;
 
+  // Per-account "fully settled for the period" flag drives the tick in the
+  // account list: Bank = reconciled entries, Customers/Suppliers = matched.
+  const settleableLedger = ledger === 'Bank' || ledger === 'Customers' || ledger === 'Suppliers';
+  const [recStatus, setRecStatus] = useState<Record<string, { total: number; reconciled: number }>>({});
+
   // Load accounts + their balances on mount.
   const loadAccounts = useCallback(async () => {
     setLoadingAccounts(true);
@@ -300,6 +305,23 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
         };
       });
       setAccounts(merged);
+
+      // Settled (reconciled / matched) status for the tick. Fetched here so it
+      // shares loadAccounts' triggers — including every match/unmatch/rec
+      // handler, which all call loadAccounts() — so the tick can never go stale.
+      if (settleableLedger) {
+        const rq = new URLSearchParams({ ledger });
+        if (fyStartIso) rq.set('from', fyStartIso);
+        if (fyEndIso)   rq.set('to', fyEndIso);
+        try {
+          const rr = await fetch(`/api/bookkeeping/books/${bookId}/reconciled-status?${rq.toString()}`);
+          const rd = rr.ok ? await rr.json() : { statuses: {} };
+          setRecStatus(rd.statuses ?? {});
+        } catch { setRecStatus({}); }
+      } else {
+        setRecStatus({});
+      }
+
       // Auto-select: respect any pre-selected id from props (TB drill-down
       // sets this); otherwise pick the first account with movement so the
       // pane isn't blank.
@@ -318,24 +340,6 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
   }, [bookId, ledger, fyStartIso, fyEndIso, dataVersion]);
 
   useEffect(() => { void loadAccounts(); }, [loadAccounts]);
-
-  // Per-account settled status for the viewed period — drives the "fully
-  // reconciled / matched" tick. Bank = reconciled entries; Customers/Suppliers
-  // = allocated (matched) entries.
-  const settleableLedger = ledger === 'Bank' || ledger === 'Customers' || ledger === 'Suppliers';
-  const [recStatus, setRecStatus] = useState<Record<string, { total: number; reconciled: number }>>({});
-  useEffect(() => {
-    if (!settleableLedger) { setRecStatus({}); return; }
-    let cancelled = false;
-    const qs = new URLSearchParams({ ledger });
-    if (fyStartIso) qs.set('from', fyStartIso);
-    if (fyEndIso)   qs.set('to', fyEndIso);
-    fetch(`/api/bookkeeping/books/${bookId}/reconciled-status?${qs.toString()}`)
-      .then(r => (r.ok ? r.json() : { statuses: {} }))
-      .then(d => { if (!cancelled) setRecStatus(d.statuses ?? {}); })
-      .catch(() => { if (!cancelled) setRecStatus({}); });
-    return () => { cancelled = true; };
-  }, [bookId, ledger, settleableLedger, fyStartIso, fyEndIso, dataVersion]);
 
   /** Has the account ever been touched? Different from "current balance is
    *  non-zero" — an account that took 100 in and paid 100 out has a £0
@@ -1225,7 +1229,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                   accountId={selectedAccountId}
                   accountName={accountMeta?.name ?? ''}
                   entries={entries}
-                  onReconciliationChanged={() => void loadEntries()}
+                  onReconciliationChanged={() => { void loadEntries(); void loadAccounts(); }}
                 />
               </div>
             ) : statusFilter === 'history' && ledger === 'Bank' && selectedAccountId ? (
@@ -1235,7 +1239,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                   accountId={selectedAccountId}
                   accountName={accountMeta?.name ?? ''}
                   entries={entries}
-                  onChanged={() => void loadEntries()}
+                  onChanged={() => { void loadEntries(); void loadAccounts(); }}
                 />
               </div>
             ) : (
@@ -1564,7 +1568,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
           accountName={accountMeta?.name ?? ''}
           entries={entries}
           onClose={() => setRecDetailImportId(null)}
-          onChanged={() => { void loadEntries(); }}
+          onChanged={() => { void loadEntries(); void loadAccounts(); }}
         />
       )}
 
