@@ -50,12 +50,72 @@ export function el(tag: string, value: string | number | null | undefined, attrs
 }
 
 /**
- * A boolean "flag" box. Most SA100 schema booleans are represented as the string
- * "yes" (the box is simply omitted when false). ⚠ confirm per-box against the XSD
- * — a few use "true"/"1" or an empty presence element.
+ * A boolean "flag" box for the schema's MTR_YesType (enumeration: "yes" only).
+ * The box is present with value "yes" when on, and omitted entirely when off.
  */
 export function flag(tag: string, on: boolean | null | undefined): string {
   return on ? `<${tag}>yes</${tag}>` : '';
+}
+
+/**
+ * A MTR_YesNoType box (enumeration: "yes" | "no"). Unlike flag(), this always
+ * renders (yes or no) when a definite boolean is given — used for the schema's
+ * required yes/no elements (e.g. CompanyDirector). Omitted only when null.
+ */
+export function yesno(tag: string, on: boolean | null | undefined): string {
+  return on == null ? '' : `<${tag}>${on ? 'yes' : 'no'}</${tag}>`;
+}
+
+// HMRC's monetary XSD type (MTR_IRdecimalType) requires an EXACT 2-decimal-place
+// value — "1234.00", never "1234". SA100 boxes still carry whole pounds (income
+// rounded down, expenses/tax rounded up), so we round to the whole pound first,
+// then format to 2dp. A rounded value of 0 drops out (the schema omits empty/zero
+// boxes, and several types are explicitly non-zero).
+
+/** Whole-pound-DOWN money, formatted to the schema's 2dp string. Null when 0/empty. */
+export function moneyDown(n: number | null | undefined): string | null {
+  if (n == null || !Number.isFinite(n)) return null;
+  const v = Math.floor(n);
+  return v === 0 ? null : v.toFixed(2);
+}
+
+/** Whole-pound-UP money, formatted to the schema's 2dp string. Null when 0/empty. */
+export function moneyUp(n: number | null | undefined): string | null {
+  if (n == null || !Number.isFinite(n)) return null;
+  const v = Math.ceil(n);
+  return v === 0 ? null : v.toFixed(2);
+}
+
+/**
+ * Sanitise + length-cap a string to the schema's text type. Every SA string
+ * element derives from MTR_SAstringType, whose pattern only permits
+ * `[A-Za-z0-9 &'()*,-./@£]`. Real free text (notes, descriptions) routinely
+ * contains other characters (`;`, `%`, `:`, `<`, newlines…), which the schema
+ * rejects outright — even when XML-escaped — so we replace any disallowed
+ * character with a space, collapse the whitespace, then trim to `max`.
+ */
+export function clip(s: string | null | undefined, max: number): string | null {
+  if (s == null) return null;
+  const cleaned = String(s)
+    .replace(/[^0-9A-Za-z &'()*,.@£\/-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned ? cleaned.slice(0, max) : null;
+}
+
+/** Keep only the characters allowed by a pattern class, then cap length. */
+export function digitsOnly(s: string | null | undefined, len?: number): string | null {
+  if (s == null) return null;
+  const d = String(s).replace(/[^0-9]/g, '');
+  if (!d) return null;
+  return len ? (d.length === len ? d : null) : d;
+}
+
+/** A telephone number restricted to the schema's [0-9 ] pattern (max 20). */
+export function telephone(s: string | null | undefined): string | null {
+  if (s == null) return null;
+  const t = String(s).replace(/[^0-9 ]/g, '').trim().slice(0, 20);
+  return t ? t : null;
 }
 
 /** A container element that renders only when it has non-empty children. */

@@ -1,54 +1,120 @@
 // SA106 — Foreign. One <SA106> for the return, from income.foreign (Sa106).
 //
-// ⚠ SUMMARY-LEVEL first pass: the real SA106 lists income PER COUNTRY (each
-// ForeignRow = a country with income arising + foreign tax + FTCR claim). Here
-// we sum the country tables into category totals so the material figures file,
-// and defer the per-country row detail + foreign-property per-property detail to
-// the XSD pass. TODO(phase1): emit per-country <Country>/<IncomeArising>/
-// <ForeignTax>/<FTCR> rows. Element names PROVISIONAL pending the 2025/26 XSD.
+// Validated against HMRC's 2025/26 MTR schema (MTR-v1-2.xsd). The SA106 element
+// is a long xsd:sequence of optional containers: the overseas-income tables
+// (OverseasSavings / ForeignCompanies / OverseasPensions / OverseasTrustIncome,
+// each a repeatable <IncomeSource> per country), the foreign land & property
+// section (<OverseasLandAndPropertyIncomeDetails>, one per property, max 6), the
+// foreign loss boxes, <CapitalGains> and <OtherOverseasIncomeAndGains>. Element
+// names and order below are the real schema names, not the earlier guesses.
+//
+// Per-country / per-property detail: the schema's <IncomeSource> requires a
+// <CountryCode> (1..1), so the earlier summary-level TODO (summing every country
+// into a single figure) cannot render valid XML. We now emit one <IncomeSource>
+// per ForeignRow — every column is a real, already-typed field on ForeignRow /
+// ForeignProperty, so no data is invented. Rows without a country code are
+// dropped (they cannot satisfy the required <CountryCode>).
 
 import type { Sa106, ForeignRow, ForeignProperty } from '@/components/features/tax-studio/types';
-import { el, flag, group, poundsDown, poundsUp } from '../xml';
+import { el, flag, group, moneyDown, moneyUp } from '../xml';
 
-const rowsIncome = (rows?: ForeignRow[]) => (rows ?? []).reduce((a, r) => a + (r.incomeArising || 0), 0);
-const rowsTax = (rows?: ForeignRow[]) => (rows ?? []).reduce((a, r) => a + (r.foreignTax || 0), 0);
-const propSum = (props: ForeignProperty[] | undefined, pick: (p: ForeignProperty) => number | undefined) =>
-  (props ?? []).reduce((a, p) => a + (pick(p) || 0), 0);
+/** MTR_SAcountryCodeType — exactly three uppercase letters ([A-Z]{3}). */
+function countryCode(s: string | null | undefined): string | null {
+  if (s == null) return null;
+  const c = String(s).toUpperCase().replace(/[^A-Z]/g, '');
+  return c.length === 3 ? c : null;
+}
+
+/** xsd:positiveInteger counts (number of properties / days / years). */
+function count(n: number | null | undefined): string | null {
+  if (n == null || !Number.isFinite(n)) return null;
+  const v = Math.round(n);
+  return v > 0 ? String(v) : null;
+}
+
+// One <IncomeSource> row (columns A–F). Shared by every overseas-income table:
+// all four containers nest the identical child structure, with the taxable
+// amount carried in <TaxableAmountOnInterestAndOtherSavings>. The row is dropped
+// unless it has a country code (the schema requires <CountryCode>).
+function incomeSource(r: ForeignRow): string {
+  const cc = countryCode(r.country);
+  if (!cc) return '';
+  return group('IncomeSource', [
+    el('CountryCode', cc),
+    el('IncomeBeforeTax', moneyDown(r.incomeArising)),
+    el('ForeignTax', moneyUp(r.foreignTax)),
+    el('SpecialWithholdingTax', moneyUp(r.specialWithholding)),
+    flag('ClaimToFTCR', r.creditRelief),
+    // F — taxable amount is computed as the income arising (col B).
+    el('TaxableAmountOnInterestAndOtherSavings', moneyDown(r.incomeArising)),
+  ]);
+}
+
+/** All <IncomeSource> rows for a table (schema caps each at 1..20). */
+function incomeSources(rows?: ForeignRow[]): string {
+  return (rows ?? []).slice(0, 20).map(incomeSource).join('');
+}
+
+// One <OverseasLandAndPropertyIncomeDetails> block (a foreign SA105), populated
+// from the fields the tool captures per property.
+function propertyDetail(p: ForeignProperty): string {
+  return group('OverseasLandAndPropertyIncomeDetails', [
+    el('TotalRentsAndOtherPropertyReceipts', moneyDown(p.totalRents)),
+    el('AllowablePropertyExpenses', moneyUp(p.expenses)),
+    el('CapitalAllowances', moneyUp(p.capitalAllowances)),
+    el('ResidentialFinanceCosts', moneyUp(p.residentialFinanceCosts)),
+    el('PropertyAbroadCountry', countryCode(p.country)),
+    el('PropertyAbroadForeignTax', moneyUp(p.foreignTax)),
+    el('PropertyAbroadUKtaxTakenOff', moneyUp(p.ukTax)),
+    flag('PropertyAbroadClaimToFTCR', p.creditRelief),
+  ]);
+}
 
 export function buildSa106(sa: Sa106 | undefined): string {
   if (!sa) return '';
-  const props = sa.properties ?? [];
+
+  // ── Foreign land & property (boxes 14–32), one block per property (max 6) ──
+  const properties = (sa.properties ?? []).slice(0, 6).map(propertyDetail).join('');
+
+  // ── Capital gains (boxes 33–40) ───────────────────────────────────────────
+  const capitalGains = group('CapitalGains', [
+    group('ChargeableGainsUKRules', [
+      el('ChargeableGains', moneyDown(sa.cgUkGain)),
+      el('NumberOfDaysOverWhichGainAccrued', count(sa.cgUkDays)),
+    ]),
+    group('ChargeableGainsForeignRules', [
+      el('ChargeableGains', moneyDown(sa.cgForeignGain)),
+      el('NumberOfDaysOverWhichGainAccrued', count(sa.cgForeignDays)),
+    ]),
+    el('ForeignTaxPaid', moneyUp(sa.cgForeignTax)),
+    flag('ForeignTaxCreditReliefClaim', sa.cgClaimFtcr),
+    el('TotalForeignTaxCreditReliefOnGains', moneyUp(sa.cgFtcr)),
+    el('SpecialWithholdingTax', moneyUp(sa.cgSwt)),
+  ]);
+
+  // ── Foreign life insurance gains (boxes 43–45) ────────────────────────────
+  const otherIncomeAndGains = group('OtherOverseasIncomeAndGains', [
+    el('ForeignLifeInsuranceGains', moneyDown(sa.lifeGains)),
+    el('NumberOfYearsSincePolicyMade', count(sa.lifeYears)),
+    el('TaxTreatedAsPaid', moneyUp(sa.lifeTaxPaid)),
+  ]);
+
   return group('SA106', [
-    // Unremittable income + FTCR on income (boxes 1–2)
+    // Unremittable income (box 1) + Foreign Tax Credit Relief on income (box 2)
     flag('UnremittableIncome', sa.unremittable),
-    el('FTCROnIncome', poundsUp(sa.ftcrOnIncome)),
-    // Overseas income category totals (summed across countries)
-    el('InterestIncome', poundsDown(rowsIncome(sa.interest))),
-    el('InterestForeignTax', poundsUp(rowsTax(sa.interest))),
-    el('DividendIncome', poundsDown(rowsIncome(sa.dividends))),
-    el('DividendForeignTax', poundsUp(rowsTax(sa.dividends))),
-    el('PensionIncome', poundsDown(rowsIncome(sa.pensions))),
-    el('PensionForeignTax', poundsUp(rowsTax(sa.pensions))),
-    el('OtherOverseasIncome', poundsDown(rowsIncome(sa.otherAll))),
-    el('OtherOverseasForeignTax', poundsUp(rowsTax(sa.otherAll))),
-    // Foreign land & property (boxes 14–24, summed across properties)
-    el('ForeignPropertyRents', poundsDown(propSum(props, (p) => p.totalRents))),
-    el('ForeignPropertyExpenses', poundsUp(propSum(props, (p) => p.expenses))),
-    el('ForeignPropertyCapitalAllowances', poundsUp(propSum(props, (p) => p.capitalAllowances))),
-    el('ForeignPropertyResidentialFinanceCosts', poundsUp(propSum(props, (p) => p.residentialFinanceCosts))),
-    el('ForeignPropertyLossBroughtForward', poundsDown(sa.propLossBroughtForward)),
-    el('ForeignPropertyLossSetOff', poundsDown(sa.propLossSetOff)),
-    el('ForeignPropertyForeignTax', poundsUp(propSum(props, (p) => p.foreignTax))),
-    // Foreign capital gains (boxes 33–40)
-    el('ForeignCGUKGain', poundsDown(sa.cgUkGain)),
-    el('ForeignCGForeignGain', poundsDown(sa.cgForeignGain)),
-    el('ForeignCGForeignTax', poundsUp(sa.cgForeignTax)),
-    flag('ForeignCGClaimFTCR', sa.cgClaimFtcr),
-    el('ForeignCGFTCR', poundsUp(sa.cgFtcr)),
-    el('ForeignCGSpecialWithholdingTax', poundsUp(sa.cgSwt)),
-    // Foreign life insurance gains (boxes 43–46)
-    el('ForeignLifeGains', poundsDown(sa.lifeGains)),
-    el('ForeignLifeYears', sa.lifeYears),
-    el('ForeignLifeTaxPaid', poundsUp(sa.lifeTaxPaid)),
+    el('ForeignTaxCreditRelief', moneyUp(sa.ftcrOnIncome)),
+    // Overseas income tables (per country) — order fixed by the schema sequence
+    group('OverseasSavings', [incomeSources(sa.interest)]),
+    group('ForeignCompanies', [incomeSources(sa.dividends)]),
+    group('OverseasPensions', [incomeSources(sa.pensions)]),
+    group('OverseasTrustIncome', [incomeSources(sa.otherAll)]),
+    // Foreign land & property blocks
+    properties,
+    // Foreign property losses (boxes 26 & 31)
+    el('LossBroughtForward', moneyUp(sa.propLossBroughtForward)),
+    el('LossSetOffAgainstTotalIncome', moneyUp(sa.propLossSetOff)),
+    // Capital gains + other overseas income & gains
+    capitalGains,
+    otherIncomeAndGains,
   ]);
 }

@@ -26,8 +26,9 @@ import { buildSa110 } from './pages/sa110TaxCalc';
 import { buildSa101 } from './pages/sa101Additional';
 import { el, group } from './xml';
 
-// ⚠ Confirm against the XSD: the SA schema namespace + version for 2025/26.
-const SA_NS = 'http://www.govtalk.gov.uk/taxation/SA/SA100/24-25'; // placeholder — update to the 25-26 URI
+// SA100 return namespace for 2025/26 — matches the targetNamespace of the 2026
+// MTR schema (MTR-v1-2.xsd). The trailing "/1" is the schema major version.
+const SA_NS = 'http://www.govtalk.gov.uk/taxation/SA/SA100/25-26/1';
 
 /** '2025/26' → the 5 April period-end date HMRC keys the return on. */
 export function periodEndFor(taxYear: string): string {
@@ -43,13 +44,15 @@ export interface Sa100BuildResult {
   utr: string | null;
 }
 
-/** Build every supplementary page in schedule order. SA102 is wired; the rest
- *  are TODO (Phase 1 continuation) — each follows sa102Employment.ts's shape. */
+/** Build every supplementary page in the schema's MTR sequence order:
+ *  SA101, SA102, SA103F, SA104F, SA105, SA106, SA107, SA108, SA109, SA110.
+ *  (Order is significant — the MTR type is an xsd:sequence.) All pages are
+ *  validated against MTR-v1-2.xsd. */
 function buildSupplementaryPages(ret: TaxReturn): string {
   const inc = ret.income;
-  // SA110 boxes 1–5 come from SMITH's own computation (HMRC expects the
-  // software's calc on the tax-calculation summary). box1 = the income-tax side
-  // (total due less CGT) net of tax deducted at source; box2 = the overpayment.
+  // The SA110 tax-calculation summary carries SMITH's own computation (HMRC
+  // expects the software's calc). box1 = the income-tax side (total due less
+  // CGT) net of tax deducted at source; box2 = the overpayment.
   const c = computeSa100Full(inc, ret.taxYear);
   const incomeSide = Math.round(c.totalDue) - c.capitalGainsTax;
   const sa110Computed = {
@@ -60,17 +63,17 @@ function buildSupplementaryPages(ret: TaxReturn): string {
     capitalGainsTax: c.capitalGainsTax,
   };
   return [
-    buildSa102(inc.employment),          // Employment
-    buildSa103(inc.selfEmployment),      // Self-employment (full/short)
-    buildSa104(inc.partnerships),        // Partnership
-    buildSa105(inc.property, inc),       // UK property (+ return-level boxes 1–4)
-    buildSa108(inc.sa108),               // Capital gains
-    buildSa106(inc.foreign),             // Foreign (summary-level; per-country detail TODO)
-    buildSa107(inc.sa107),               // Trusts & estates
-    buildSa109(inc.residence),           // Residence / remittance
     buildSa101(inc.additional),          // Additional information
-    buildSa110(inc.sa110, sa110Computed),// Tax calculation summary (computed boxes 1–5 + user boxes 7–17)
-    // "More" schedules (rare, TODO): SA102M / SA102 devolved-legislature / SA103L
+    buildSa102(inc.employment),          // Employment (repeatable)
+    buildSa103(inc.selfEmployment),      // Self-employment (SA103F, repeatable)
+    buildSa104(inc.partnerships),        // Partnership (SA104F, repeatable)
+    buildSa105(inc.property, inc),       // UK property (+ return-level boxes 1–4)
+    buildSa106(inc.foreign),             // Foreign (per-country rows)
+    buildSa107(inc.sa107),               // Trusts & estates
+    buildSa108(inc.sa108),               // Capital gains
+    buildSa109(inc.residence),           // Residence / remittance
+    buildSa110(inc.sa110, sa110Computed),// Tax calculation summary (required)
+    // "More"/rare schedules not yet built: SA102M, SA103S, SA103L, SA104S.
   ].join('');
 }
 
@@ -79,8 +82,9 @@ export function buildSa100Return(ret: TaxReturn): Sa100BuildResult {
   const utr = ret.utr ?? null;
 
   // IRheader — keys the return to the taxpayer + carries the (empty) IRmark.
-  // ⚠ Confirm the exact IRheader shape (Keys/PeriodEnd/Principal/Sender/IRmark
-  //    ordering + the return wrapper) against the XSD.
+  // Element order matches the MTR-v1-2.xsd IRheader sequence (Keys, PeriodEnd,
+  // [Principal, Agent,] DefaultCurrency, [Manifest,] IRmark, Sender). The IRmark
+  // is emitted empty here and filled downstream (irmark.ts).
   const irHeader = group('IRheader', [
     group('Keys', [el('Key', utr ?? undefined, { Type: 'UTR' })]),
     el('PeriodEnd', periodEnd),
@@ -89,9 +93,15 @@ export function buildSa100Return(ret: TaxReturn): Sa100BuildResult {
     el('Sender', 'Agent'),
   ]);
 
+  // The MTR-level Declaration is a REQUIRED child of <MTR> after all SA pages.
+  // It is an xsd:choice: agent filings use <AgentDeclaration>. (TODO: expose an
+  // individual-vs-agent switch once non-agent filing is supported.)
+  const mtrDeclaration = '<Declaration><AgentDeclaration>yes</AgentDeclaration></Declaration>';
+
   const returnBody = group('MTR', [
     buildSa100Core(ret),
     buildSupplementaryPages(ret),
+    mtrDeclaration,
   ]);
 
   const irEnvelope = `<IRenvelope xmlns="${SA_NS}">${irHeader}${returnBody}</IRenvelope>`;
