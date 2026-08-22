@@ -8,7 +8,7 @@ import { resolveMtdItCtx } from '@/lib/hmrc/mtdItServer';
 // "List All Businesses") and the current trade/property → businessId mapping.
 // POST so the browser-collected fraud-prevention data can be sent (ITSA reads
 // also legally require the fraud headers).
-interface HmrcBusiness { typeOfBusiness?: string; businessId?: string; tradingName?: string }
+interface HmrcBusiness { typeOfBusiness?: string; businessId?: string; tradingName?: string; details?: unknown }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const r = await resolveMtdItCtx(params.id);
@@ -27,7 +27,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   const j = result.json as { listOfBusinesses?: HmrcBusiness[]; businesses?: HmrcBusiness[] } | null;
-  const businesses = (j?.listOfBusinesses ?? j?.businesses ?? []).filter(b => b.businessId);
+  const listed = (j?.listOfBusinesses ?? j?.businesses ?? []).filter(b => b.businessId);
+
+  // Enrich each business with its full record — Business Details API v2.0
+  // "Retrieve Business Details" (GET /details/{nino}/{businessId}). Gives the
+  // accounting period, commencement date and quarterly period type. Best-effort:
+  // a per-business failure just leaves that list entry unenriched.
+  const businesses = await Promise.all(listed.map(async (b) => {
+    const dr = await hmrcRequest(conn, `/individuals/business/details/${client.nino}/${b.businessId}`, {
+      version: '2.0', fraudHeaders, testScenario: body.testScenario || undefined,
+    });
+    return dr.status < 400 && dr.json ? { ...b, details: dr.json } : b;
+  }));
 
   // Current mapping so the UI can show which sources are already linked.
   const [{ data: trades }, { data: props }] = await Promise.all([
