@@ -14,7 +14,19 @@
 // the share via calc.ts (propertyTaxable) rather than summing raw figures.
 
 import type { PropertySource, Sa100Income } from '@/components/features/tax-studio/types';
+import {
+  propertyItemised, propertyAdjustedProfit, propertyAdjustedLoss, propertyTaxable,
+} from '@/components/features/tax-studio/calc';
 import { el, flag, group, moneyDown, moneyUp } from '../xml';
+
+// The income to report in box 20. For an itemised property that's the rents; for
+// a property held only as a net accounts profit (no rents/expenses entered), the
+// calc treats `profit` as the reportable income — so we surface it here too, or
+// HMRC would compute tax on less income than our own SA110 figure (self-calc
+// mismatch). Both sides use the SAME `propertyItemised` test to stay in step.
+function reportedIncome(p: PropertySource): number {
+  return propertyItemised(p) ? (p.rents || 0) : (p.profit || 0);
+}
 
 /** Sum one numeric field across all properties. */
 function s(props: PropertySource[], pick: (p: PropertySource) => number | undefined): number {
@@ -35,7 +47,7 @@ export function buildSa105(properties: PropertySource[] | undefined, inc: Sa100I
 
   // ── PropertyIncomeAndExpenses (boxes 20–29) ──
   const incomeAndExpenses = group('PropertyIncomeAndExpenses', [
-    el('TotalRentsAndOtherIncomeFromProperty', moneyDown(s(props, (p) => p.rents))),
+    el('TotalRentsAndOtherIncomeFromProperty', moneyDown(s(props, reportedIncome))),
     el('PropertyIncomeAllowance', moneyUp(s(props, (p) => p.propertyIncomeAllowance))),
     flag('TraditionalAccounting', props.some((p) => p.traditionalAccounting)),
     el('TaxTakenOffAnyIncome', moneyUp(s(props, (p) => p.taxTaken))),
@@ -49,7 +61,18 @@ export function buildSa105(properties: PropertySource[] | undefined, inc: Sa100I
     el('OtherPropertyExpenses', moneyUp(s(props, (p) => p.expOther))),
   ]);
 
-  // ── TaxableProfitOrLoss (boxes 30–45) — computed boxes omitted (HMRC-derived) ──
+  // ── TaxableProfitOrLoss (boxes 30–45) ──
+  // HMRC's business rules REQUIRE the software to supply the computed adjusted
+  // profit/loss and taxable profit (self-calculation): [PRO38] must be present
+  // when the property makes a net profit, etc. We compute them with the same
+  // helpers the SA110 tax calc uses, summed across properties, so the SA105 and
+  // SA110 agree and HMRC's re-derivation matches.
+  const adjustedProfit = s(props, propertyAdjustedProfit);   // box 38
+  const taxableProfit = s(props, propertyTaxable);           // box 40
+  const adjustedLoss = s(props, propertyAdjustedLoss);       // box 41
+  const lossToCarryForward = s(props, (p) =>
+    propertyAdjustedLoss(p) + Math.max(0, (p.lossBroughtForward || 0) - propertyAdjustedProfit(p)));
+
   const profitOrLoss = group('TaxableProfitOrLoss', [
     el('PrivateUseAdjustment', moneyDown(s(props, (p) => p.privateUse))),
     el('BalancingCharges', moneyDown(s(props, (p) => p.balancingCharges))),
@@ -61,8 +84,12 @@ export function buildSa105(properties: PropertySource[] | undefined, inc: Sa100I
     el('EnhancedCapitalAllowances', moneyUp(s(props, (p) => p.capitalAllowances))),
     el('CostsOfReplacingDomesticItems', moneyUp(s(props, (p) => p.domesticItems))),
     el('RentARoomExemptAmount', moneyUp(s(props, (p) => p.rentARoomExempt))),
+    el('AdjustedProfitForTheYear', moneyDown(adjustedProfit)),
     el('LossBroughtForward', moneyUp(s(props, (p) => p.lossBroughtForward))),
+    el('TaxableProfitForTheYear', moneyDown(taxableProfit)),
+    el('AdjustedLossForTheYear', moneyDown(adjustedLoss)),
     el('LossSetOffAgainstTotalIncomeOfTheYear', moneyUp(s(props, (p) => p.lossSetOffTotalIncome))),
+    el('LossToCarryForward', moneyDown(lossToCarryForward)),
     el('ResidentialFinanceCosts', moneyUp(s(props, (p) => p.residentialFinanceCosts))),
     el('UnusedResidentialFinanceCostsBroughtForward', moneyUp(s(props, (p) => p.unusedFinanceCostsBfwd))),
   ]);
