@@ -8,7 +8,10 @@ import { resolveMtdItCtx } from '@/lib/hmrc/mtdItServer';
 // "Update a Foreign Property Detail"
 // (PUT /individuals/business/property/foreign/{nino}/details/{propId}/{taxYear}).
 // Used to rename a property or record that letting has ended (endDate/endReason).
-const END_REASONS = new Set(['no-longer-renting-property-out', 'property-sold', 'other']);
+// HMRC Property Business API v6.0 accepts a single endReason value for a foreign
+// property detail — verified empirically against the sandbox (2026-08-22): every
+// other candidate ('property-sold', 'other', …) is rejected with FORMAT_END_REASON.
+const END_REASONS = new Set(['no-longer-renting-property-out']);
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const r = await resolveMtdItCtx(params.id);
@@ -24,7 +27,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!body.taxYear || !/^\d{4}-\d{2}$/.test(body.taxYear)) return NextResponse.json({ error: 'taxYear is required in the form 2026-27.' }, { status: 400 });
   if (!body.propertyName?.trim()) return NextResponse.json({ error: 'propertyName is required.' }, { status: 400 });
   if (body.endReason && !END_REASONS.has(body.endReason)) {
-    return NextResponse.json({ error: 'endReason must be one of: no-longer-renting-property-out, property-sold, other.' }, { status: 400 });
+    return NextResponse.json({ error: 'endReason must be: no-longer-renting-property-out.' }, { status: 400 });
   }
 
   const vendorPublicIp = await resolveVendorPublicIp();
