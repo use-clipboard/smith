@@ -224,6 +224,46 @@ const WIZARD_STEPS = [
   { n: 4, label: 'Review' },
 ] as const;
 
+/**
+ * DeleteRowButton — per-row delete with an inline "Delete? Yes / No"
+ * confirmation, matching the Tasks list delete. Module-level (not defined inside
+ * the tool component) so each row keeps its own confirm state across re-renders.
+ * The delete itself is still undoable via the tool's undo/redo history.
+ */
+function DeleteRowButton({ onDelete }: { onDelete: () => void }) {
+  const [confirm, setConfirm] = useState(false);
+  if (confirm) {
+    return (
+      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+        <span className="text-[11px] text-red-600 font-medium whitespace-nowrap">Delete?</span>
+        <button
+          onClick={e => { e.stopPropagation(); onDelete(); setConfirm(false); }}
+          className="px-2 py-0.5 text-[11px] bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+        >
+          Yes
+        </button>
+        <button
+          onClick={e => { e.stopPropagation(); setConfirm(false); }}
+          className="px-2 py-0.5 text-[11px] border border-gray-200 text-gray-500 rounded hover:bg-gray-50 transition-colors"
+        >
+          No
+        </button>
+      </div>
+    );
+  }
+  return (
+    <Tooltip label="Delete">
+      <button
+        onClick={e => { e.stopPropagation(); setConfirm(true); }}
+        aria-label="Delete transaction"
+        className="p-1 rounded text-[var(--text-muted)] hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 transition-colors"
+      >
+        <Trash2 size={13} />
+      </button>
+    </Tooltip>
+  );
+}
+
 function WizardStepper({ current, onStep }: { current: number; onStep: (n: number) => void }) {
   return (
     <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap">
@@ -1276,14 +1316,6 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
     </Tooltip>
   );
 
-  const DeleteBtn = ({ onClick }: { onClick: () => void }) => (
-    <Tooltip label="Delete (undoable)">
-      <button onClick={onClick} aria-label="Delete transaction" className="p-1 rounded text-[var(--text-muted)] hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 transition-colors">
-        <Trash2 size={13} />
-      </button>
-    </Tooltip>
-  );
-
   // Bulk action bar for valid transactions
   const BulkBarValid = () => {
     if (selectedValid.size === 0) return null;
@@ -1756,7 +1788,7 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                         <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-0.5">
                             <EditBtn onClick={() => setEditTarget({ type: 'valid', index: origIndex })} />
-                            <DeleteBtn onClick={() => handleDeleteRow(origIndex)} />
+                            <DeleteRowButton onDelete={() => handleDeleteRow(origIndex)} />
                           </div>
                         </td>
                       );
@@ -1928,7 +1960,7 @@ function FullAnalysisTool({ seed, userEmail, onBack }: { seed: SeedAnalysis | nu
                         <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-0.5">
                             <EditBtn onClick={() => setEditTarget({ type: 'valid', index: origIndex })} />
-                            <DeleteBtn onClick={() => handleDeleteRow(origIndex)} />
+                            <DeleteRowButton onDelete={() => handleDeleteRow(origIndex)} />
                           </div>
                         </td>
                       );
