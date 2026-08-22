@@ -99,7 +99,12 @@ export function buildSa100Core(ret: TaxReturn): string {
 
   // ── TaxReliefs → Pensions, CharitableGiving, BlindPersonsAllowance ────────
   const pensionReliefs = group('Pensions', [
-    el('PaymentsToRegisteredPensionSchemes', moneyDown(total(inc.pensionContributionsItems, inc.pensionContributions))),
+    // Relief-at-source pensions: the box wants the GROSS figure (payments PLUS
+    // basic-rate relief), and HMRC extends the basic-rate band by the box value
+    // as-is (it does not gross it — unlike Gift Aid). Our model stores the net
+    // amount, so gross it up (÷ 0.8 = × 1.25) to match the calc's band extension,
+    // or HMRC's re-calc extends the band by too little (self-calc mismatch).
+    el('PaymentsToRegisteredPensionSchemes', moneyDown(total(inc.pensionContributionsItems, inc.pensionContributions) * 1.25)),
     el('OneOffRegisteredPensionSchemesPayments', moneyDown(inc.pensionOneOff)),
     el('RetirementAnnuityContractPayments', moneyDown(sum(inc.pensionRetirementAnnuityItems))),
     el('EmployerPensionSchemePayments', moneyDown(sum(inc.pensionEmployerSchemeItems))),
