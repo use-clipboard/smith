@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Send, CheckCircle2, Clock, FileText, PenLine, Mail, ArrowRight } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { fmtMoney, fmtDateUK } from '../data';
 import { computeSa100Full, paymentPlan } from '../calc';
+import { markApprovalSent } from '../persistence';
 import SendApprovalModal from '../SendApprovalModal';
 import type { TaxReturn } from '../types';
 
@@ -16,22 +17,56 @@ export default function StageApproval({
   advance: () => void;
 }) {
   const [showSend, setShowSend] = useState(false);
+  const [sentToast, setSentToast] = useState<{ viaCompose?: boolean } | null>(null);
   const c = computeSa100Full(ret.income, ret.taxYear);
   const plan = paymentPlan(ret.income, ret.taxYear);
   const janRefund = plan.janDue < -0.5;
   const sent = ret.approvalStatus === 'sent' || ret.approvalStatus === 'approved' || ret.approvalStatus === 'submitted';
   const approved = ret.approvalStatus === 'approved' || ret.approvalStatus === 'submitted';
 
-  function onSent() {
-    patch(r => ({
+  // Auto-dismiss the confirmation toast after a few seconds.
+  useEffect(() => {
+    if (!sentToast) return;
+    const t = setTimeout(() => setSentToast(null), 6000);
+    return () => clearTimeout(t);
+  }, [sentToast]);
+
+  // When the compose window actually sends this client's approval email, flip the
+  // return to 'sent'. This honors the compose hand-off contract: a prepared draft
+  // (still sitting in the compose window) is never recorded as sent.
+  useEffect(() => {
+    function onComposeSent(ev: Event) {
+      const ids = ((ev as CustomEvent).detail?.clientIds ?? []) as string[];
+      if (ret.clientId && ids.length && !ids.includes(ret.clientId)) return;
+      recordSent();
+    }
+    window.addEventListener('smith:compose-sent', onComposeSent);
+    return () => window.removeEventListener('smith:compose-sent', onComposeSent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ret.clientId, ret.id]);
+
+  // Flip the return to 'sent' + log the timeline once (idempotent).
+  function recordSent() {
+    markApprovalSent(ret.id).catch(() => { /* local patch keeps the UI in step */ });
+    patch(r => (r.approvalStatus === 'sent' || r.approvalStatus === 'approved' || r.approvalStatus === 'submitted' ? r : {
       ...r, approvalStatus: 'sent', sentAt: new Date().toISOString(),
       timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'sent', label: 'Approval pack sent to client' }],
     }));
   }
+
+  // The send modal handed off. Direct send (no Email Triage) → the email really
+  // went out, so record it. Email Triage hand-off → it's in the compose window;
+  // we pop a toast (like the MTD IT tool) and let the preparer carry on — the
+  // status flips when it's actually sent (the compose-sent listener above).
+  function handleSent(info?: { viaCompose?: boolean }) {
+    if (!info?.viaCompose) recordSent();
+    setSentToast({ viaCompose: info?.viaCompose });
+    setShowSend(false);
+  }
   function markApproved() {
     patch(r => ({
       ...r, approvalStatus: 'approved', approvedAt: new Date().toISOString(),
-      timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'approved', label: 'Client approval recorded' }],
+      timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'approved', label: 'Client approval recorded (approved outside SMITH)' }],
     }));
   }
 
@@ -81,7 +116,7 @@ export default function StageApproval({
                   <Send size={15} /> {sent ? 'Resend for approval' : 'Send for approval'}
                 </button>
               )}
-              {sent && !approved && (
+              {!approved && (
                 <button onClick={markApproved} className="btn-secondary w-full justify-center">
                   <CheckCircle2 size={15} /> Record approval manually
                 </button>
@@ -93,13 +128,31 @@ export default function StageApproval({
               )}
             </div>
             <p className="mt-2 text-[10.5px] text-[var(--text-muted)]">
-              The client reviews a branded portal and approves by typing their name (e-signature). You&apos;re notified when they respond. Use &quot;Record approval manually&quot; only if they approve offline.
+              The client reviews a branded portal and approves by typing their name (e-signature) — you&apos;re notified when they respond. If they&apos;ve approved another way (email, phone or a signed copy), use <strong>Record approval manually</strong> to proceed straight to submission — sending the SMITH email is optional.
             </p>
           </StudioCard>
         </div>
       </div>
 
-      {showSend && <SendApprovalModal ret={ret} onClose={() => setShowSend(false)} onSent={() => { onSent(); setShowSend(false); }} />}
+      {showSend && <SendApprovalModal ret={ret} onClose={() => setShowSend(false)} onSent={(info) => handleSent(info)} />}
+
+      {/* Confirmation toast — anchored top-centre so it clears the bottom-right
+          compose window during the Email Triage hand-off. Auto-dismisses. */}
+      {sentToast && (
+        <div className="fixed left-1/2 top-6 z-[70] flex max-w-sm -translate-x-1/2 items-start gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-[0_16px_50px_rgba(31,38,88,0.22)]">
+          <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-600" />
+          <div className="text-[13px]">
+            <div className="font-semibold text-[var(--text-primary)]">
+              {sentToast.viaCompose ? 'Ready in your compose window' : 'Approval email sent'}
+            </div>
+            <div className="mt-0.5 text-[11.5px] text-[var(--text-secondary)]">
+              {sentToast.viaCompose
+                ? <>The approval email is drafted with the pack attached. Review it and hit <strong>Send</strong> when you&apos;re ready.</>
+                : <>The client will be notified. You can also record approval manually if they respond another way.</>}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

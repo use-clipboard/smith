@@ -1,14 +1,14 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Send, Download, Loader2, Mail } from 'lucide-react';
 import { useModules } from '@/components/ui/ModulesProvider';
 import { useComposeWindow } from '@/components/features/email/ComposeWindowProvider';
 import { renderSa100ApprovalPdf, blobToBase64, packSummaryLines } from './approvalPdf';
-import { sendForApproval, markApprovalSent } from './persistence';
+import { sendForApproval } from './persistence';
 import type { TaxReturn } from './types';
 
-export default function SendApprovalModal({ ret, onClose, onSent }: { ret: TaxReturn; onClose: () => void; onSent: (approvalUrl?: string) => void }) {
+export default function SendApprovalModal({ ret, onClose, onSent }: { ret: TaxReturn; onClose: () => void; onSent: (info?: { viaCompose?: boolean; approvalUrl?: string }) => void }) {
   const { isModuleActive } = useModules();
   const compose = useComposeWindow();
   const triageActive = isModuleActive('email-triage');
@@ -18,7 +18,6 @@ export default function SendApprovalModal({ ret, onClose, onSent }: { ret: TaxRe
   const [sending, setSending] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState('');
-  const pending = useRef(false);
 
   // Default the recipient from the client record.
   useEffect(() => {
@@ -27,19 +26,6 @@ export default function SendApprovalModal({ ret, onClose, onSent }: { ret: TaxRe
     fetch(`/api/clients/${ret.clientId}`).then(r => (r.ok ? r.json() : null)).then(d => { if (!cancelled && d?.client?.contact_email) setEmail(d.client.contact_email); }).catch(() => {});
     return () => { cancelled = true; };
   }, [ret.clientId]);
-
-  // Flip to 'sent' only when the compose window really sends.
-  useEffect(() => {
-    function handler(ev: Event) {
-      if (!pending.current) return;
-      const ids = ((ev as CustomEvent).detail?.clientIds ?? []) as string[];
-      if (ret.clientId && ids.length && !ids.includes(ret.clientId)) return;
-      pending.current = false;
-      markApprovalSent(ret.id).finally(() => { onSent(); onClose(); });
-    }
-    window.addEventListener('smith:compose-sent', handler);
-    return () => window.removeEventListener('smith:compose-sent', handler);
-  }, [ret.id, ret.clientId, onSent, onClose]);
 
   function buildInput() {
     return {
@@ -72,7 +58,6 @@ export default function SendApprovalModal({ ret, onClose, onSent }: { ret: TaxRe
 
       if (triageActive) {
         const res = await sendForApproval(ret.id, { recipientEmail: email.trim(), coverNote: coverNote || null, summaryLines, prepareOnly: true });
-        pending.current = true;
         compose.open({
           defaultTo: [{ name: ret.clientName, email: email.trim() }],
           defaultClients: ret.clientId ? [{ id: ret.clientId, name: ret.clientName, client_ref: ret.clientRef ?? '', contact_email: email.trim(), risk_rating: null }] : null,
@@ -80,11 +65,14 @@ export default function SendApprovalModal({ ret, onClose, onSent }: { ret: TaxRe
           defaultHtmlBody: res.htmlBody ?? null,
           defaultAttachments: [new File([blob], filename, { type: 'application/pdf' })],
         });
-        // The compose-sent listener flips status + closes. Leave the modal open until then.
+        // Hand-off complete — mirror the MTD IT tool: the parent flips the status,
+        // pops a toast, and the user carries on. The email itself goes out when
+        // they review it and hit Send in the compose window.
+        onSent({ viaCompose: true });
       } else {
         const pdfBase64 = await blobToBase64(blob);
         const res = await sendForApproval(ret.id, { recipientEmail: email.trim(), coverNote: coverNote || null, pdfBase64, summaryLines, prepareOnly: false });
-        onSent(res.approvalUrl); onClose();
+        onSent({ viaCompose: false, approvalUrl: res.approvalUrl });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not send for approval.');
