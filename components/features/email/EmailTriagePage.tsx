@@ -137,6 +137,11 @@ export default function EmailTriagePage() {
   const [senderFilter, setSenderFilter] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<EmailCategory | null>(null);
+  // The exact row ids the server returned for the ACTIVE category filter. The
+  // list can still hold untriaged rows merged in by a background poll from a
+  // previous view; scoping the category list to this authoritative set stops
+  // those untriaged rows leaking into a category the user never put them in.
+  const [categoryResultIds, setCategoryResultIds] = useState<Set<string>>(new Set());
 
   // Per-user customisable triage categories (name / colour / icon / order).
   // The middle set comes from config; the two anchors (Untriaged first, No
@@ -1131,6 +1136,13 @@ export default function EmailTriagePage() {
         setThreads(prev => dedupeById([...newThreads, ...prev]));
       } else {
         setThreads(dedupeById(newThreads));
+      }
+      // Record the server-authoritative membership for a specific category
+      // filter. The flat-view category fetch returns the WHOLE set (no
+      // pagination), so each fetch fully re-establishes it — a load-more
+      // continuation (pageToken) is only ever a non-category fetch, so leave it.
+      if (!pageToken && categoryFilter && categoryFilter !== 'untriaged') {
+        setCategoryResultIds(new Set(newThreads.map(t => t.id)));
       }
       // Paint replied/forwarded LIST markers from the server — these reflect
       // replies/forwards made from ANY client (phone, Outlook, Gmail web), so the
@@ -2489,9 +2501,15 @@ export default function EmailTriagePage() {
     if (categoryFilter === 'untriaged') return displayedThreads.filter(isUntriaged);
     return displayedThreads.filter(t => {
       const ov = categoryOverrides[t.id];
-      return !ov || ov.category === categoryFilter;
+      // Re-categorised to a different bucket this session → leaves the list.
+      if (ov && ov.category !== categoryFilter) return false;
+      // Show only rows the server actually returned for this category, or ones
+      // the user just moved here this session. Anything else (e.g. an untriaged
+      // row merged in by a poll from a previous view) is NOT a member and must
+      // not appear — the earlier "show rows with no override" rule leaked those.
+      return categoryResultIds.has(t.id) || ov?.category === categoryFilter;
     });
-  }, [displayedThreads, categoryFilter, categoryOverrides, isUntriaged]);
+  }, [displayedThreads, categoryFilter, categoryOverrides, categoryResultIds, isUntriaged]);
 
   if (connected === null) {
     return (
