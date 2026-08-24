@@ -24,6 +24,12 @@ import {
   type LinkDirection,
 } from '@/lib/clientLinks';
 
+// Business-type display labels (mirrors CLIENT_TYPE_LABELS on the Clients list).
+const CLIENT_TYPE_LABELS: Record<string, string> = {
+  sole_trader: 'Sole Trader', partnership: 'Partnership', limited_company: 'Limited Company', llp: 'LLP',
+  individual: 'Individual', trust: 'Trust', charity: 'Charity', rental_landlord: 'Rental Landlord',
+};
+
 interface LinkedClient {
   id: string;
   name: string;
@@ -334,7 +340,13 @@ export default function ClientLinksPanel({
                   <Avatar name={l.other_client.name} size={32} />
                   <Link href={`/clients/${l.other_client.id}`} className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-[var(--text-primary)] truncate hover:text-[var(--accent)]">{l.other_client.name}</p>
-                    {l.other_client.client_ref && <p className="text-xs text-[var(--text-muted)] truncate">{l.other_client.client_ref}</p>}
+                    {(() => {
+                      const typeLabel = l.other_client.business_type
+                        ? (CLIENT_TYPE_LABELS[l.other_client.business_type] ?? l.other_client.business_type)
+                        : null;
+                      const subtitle = [l.other_client.client_ref, typeLabel].filter(Boolean).join(' · ');
+                      return subtitle ? <p className="text-xs text-[var(--text-muted)] truncate">{subtitle}</p> : null;
+                    })()}
                   </Link>
                 </div>
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
