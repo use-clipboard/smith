@@ -75,19 +75,32 @@ async function scanOneBankFile(file: File, clientId: string | null, clientCode: 
   return { ok: true, transactions: ((data.transactions || []) as BankCsvTransaction[]).filter(Boolean), truncated: !!data.truncated };
 }
 
-// Split an oversized PDF into page-chunks that each fit under the upload limit.
-// Non-PDFs, small files, and single-page PDFs pass straight through. Page ranges
-// are halved recursively until each saved chunk is small enough — this copes
-// with pdf-lib duplicating shared resources (fonts/images) into each chunk.
+// A long statement is split into runs of at most this many pages so each part
+// is a quick, self-contained request — this keeps a big PDF from timing out or
+// having its output truncated, even when the file itself is small (text-based
+// statements are tiny on disk but can be dozens of pages / thousands of rows).
+const MAX_PAGES_PER_CHUNK = 6;
+
+// Split a PDF into page-chunks so each part processes quickly and fits under
+// both the upload limit and the model's output limit. A PDF is split when it's
+// either too big on disk OR longer than MAX_PAGES_PER_CHUNK pages. Non-PDFs and
+// single-page PDFs pass straight through. Each page-run is also halved
+// recursively if the saved bytes are still over the upload limit — this copes
+// with pdf-lib duplicating shared resources (fonts/images) into each chunk, and
+// with heavy scanned pages. Parts stay in page order so the merged rows are
+// chronological.
 async function splitPdfIfNeeded(file: File): Promise<File[]> {
   const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
-  if (!isPdf || (file.size * 4) / 3 <= BANK_UPLOAD_LIMIT) return [file];
+  if (!isPdf) return [file];
   try {
     const { PDFDocument } = await import('pdf-lib');
     const srcBytes = new Uint8Array(await file.arrayBuffer());
     const src = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
     const pageCount = src.getPageCount();
-    if (pageCount <= 1) return [file];
+    const overSize = (file.size * 4) / 3 > BANK_UPLOAD_LIMIT;
+    const overLength = pageCount > MAX_PAGES_PER_CHUNK;
+    // Nothing to gain from splitting a single page or a short, small statement.
+    if (pageCount <= 1 || (!overSize && !overLength)) return [file];
     const base = file.name.replace(/\.pdf$/i, '');
     const out: File[] = [];
     const emit = async (indices: number[]): Promise<void> => {
@@ -103,7 +116,12 @@ async function splitPdfIfNeeded(file: File): Promise<File[]> {
       await emit(indices.slice(0, mid));
       await emit(indices.slice(mid));
     };
-    await emit(Array.from({ length: pageCount }, (_, i) => i));
+    // First break the document into page-runs (bounds request time + output
+    // size), then let emit() further halve any run that's still too big on disk.
+    const allIndices = Array.from({ length: pageCount }, (_, i) => i);
+    for (let start = 0; start < pageCount; start += MAX_PAGES_PER_CHUNK) {
+      await emit(allIndices.slice(start, start + MAX_PAGES_PER_CHUNK));
+    }
     return out.length > 0 ? out : [file];
   } catch {
     return [file];
