@@ -18,6 +18,8 @@ export default function SaFilingSettings() {
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState('');
+  // Inline confirmation (native confirm() is unreliable in embedded browsers).
+  const [pendingAction, setPendingAction] = useState<null | 'save' | 'remove'>(null);
 
   useEffect(() => {
     fetch('/api/firms/sa-filing')
@@ -32,9 +34,14 @@ export default function SaFilingSettings() {
       .catch(() => setHasCreds(false));
   }, []);
 
-  async function handleSave() {
+  function requestSave() {
+    setError('');
     if (!senderId.trim() || !password.trim()) return;
-    if (!confirm('Save your HMRC filing credentials?\n\nSMITH will refresh so the change takes effect everywhere. Any work in progress — for example a return part-way through analysis — may be lost.')) return;
+    setPendingAction('save');
+  }
+
+  async function doSave() {
+    setPendingAction(null);
     setSaving(true); setError('');
     try {
       const res = await fetch('/api/firms/sa-filing', {
@@ -57,8 +64,8 @@ export default function SaFilingSettings() {
     }
   }
 
-  async function handleRemove() {
-    if (!confirm('Remove the firm’s HMRC filing credentials?\n\nSA100 online filing will stop working until new credentials are added. SMITH will refresh to apply this — any work in progress may be lost.')) return;
+  async function doRemove() {
+    setPendingAction(null);
     setRemoving(true); setError('');
     try {
       const res = await fetch('/api/firms/sa-filing', { method: 'DELETE' });
@@ -135,7 +142,7 @@ export default function SaFilingSettings() {
                 onChange={e => setPassword(e.target.value)}
                 placeholder="Government Gateway password"
                 className="input-base pr-10 font-mono text-sm"
-                onKeyDown={e => { if (e.key === 'Enter') void handleSave(); }}
+                onKeyDown={e => { if (e.key === 'Enter') requestSave(); }}
               />
               <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
                 <Tooltip label={showPw ? 'Hide password' : 'Show password'} side="left">
@@ -151,7 +158,7 @@ export default function SaFilingSettings() {
               </div>
             </div>
             <button
-              onClick={handleSave}
+              onClick={requestSave}
               disabled={saving || !senderId.trim() || !password.trim()}
               className="btn-primary shrink-0"
             >
@@ -161,13 +168,32 @@ export default function SaFilingSettings() {
         </div>
         {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
         <p className="text-[11px] text-[var(--text-muted)]">Saving or removing credentials refreshes SMITH so the change applies everywhere — finish any work in progress first.</p>
+
+        {/* Inline confirmation (shared by Save + Remove) */}
+        {pendingAction && (
+          <div className={`rounded-xl border px-4 py-3 ${pendingAction === 'remove' ? 'border-rose-200 bg-rose-50/70' : 'border-amber-200 bg-amber-50/70'}`}>
+            <p className="text-[12.5px] font-semibold text-[var(--text-primary)]">
+              {pendingAction === 'remove' ? 'Remove the firm’s HMRC filing credentials?' : 'Save your HMRC filing credentials?'}
+            </p>
+            <p className="mt-0.5 text-[11.5px] text-[var(--text-muted)]">
+              {pendingAction === 'remove' ? 'SA100 online filing will stop working until new credentials are added. ' : ''}
+              SMITH will refresh to apply this — any work in progress (for example a return part-way through analysis) may be lost.
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <button onClick={() => setPendingAction(null)} className="btn-secondary bg-white">Cancel</button>
+              <button onClick={pendingAction === 'remove' ? doRemove : doSave} className="btn-primary flex-1 justify-center">
+                {pendingAction === 'remove' ? 'Remove & refresh' : 'Save & refresh'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Remove */}
       {hasCreds && source === 'firm' && (
         <div className="pt-1 border-t border-[var(--border)]">
           <button
-            onClick={handleRemove}
+            onClick={() => { setError(''); setPendingAction('remove'); }}
             disabled={removing}
             className="flex items-center gap-1.5 text-xs text-[var(--danger)] hover:opacity-80 transition-opacity"
           >
@@ -182,7 +208,7 @@ export default function SaFilingSettings() {
         <p className="text-xs text-[var(--text-muted)] flex items-start gap-1.5">
           <Info size={13} className="shrink-0 mt-0.5" />
           <span>
-            Your password is stored encrypted and is never shown again or sent to your browser. Each client you file for must be authorised to your agent account (form <strong>64-8</strong> / online agent authorisation) at HMRC.
+            Your password is stored encrypted and is never shown again or sent to your browser.
           </span>
         </p>
       </div>

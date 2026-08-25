@@ -179,7 +179,7 @@ function SaFilingCard({ ret, patch, approved, issues }: { ret: TaxReturn; patch:
         </button>
 
         <p className="mt-3 text-[10.5px] text-[var(--text-muted)]">
-          Files the SA100 (with any supplementary pages) to HMRC’s Transaction Engine as a GovTalk submission, signed with an IRmark. Requires the firm’s Government Gateway SA-agent credentials and the client’s 64-8 authorisation. Currently in TPVS test mode until HMRC recognition is granted. For clients on Making Tax Digital, use the MTD IT tool instead.
+          Files the SA100 (with any supplementary pages) to HMRC’s Transaction Engine as a GovTalk submission, signed with an IRmark. Requires the firm’s Government Gateway SA-agent credentials. Currently in TPVS test mode until HMRC recognition is granted. For clients on Making Tax Digital, use the MTD IT tool instead.
         </p>
       </div>
 
