@@ -16,7 +16,6 @@ export default function SaFilingSettings() {
   const [showPw, setShowPw] = useState(false);
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -33,6 +32,7 @@ export default function SaFilingSettings() {
 
   async function handleSave() {
     if (!senderId.trim() || !password.trim()) return;
+    if (!confirm('Save your HMRC filing credentials?\n\nSMITH will refresh so the change takes effect everywhere. Any work in progress — for example a return part-way through analysis — may be lost.')) return;
     setSaving(true); setError('');
     try {
       const res = await fetch('/api/firms/sa-filing', {
@@ -43,36 +43,32 @@ export default function SaFilingSettings() {
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         setError(d.error ?? 'Failed to save credentials');
+        setSaving(false);
         return;
       }
-      setHasCreds(true);
-      setSource('firm');
-      setPassword('');
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      // Hard refresh so every view (e.g. the Tax Studio Submit card, which reads
+      // the filing-credential status once on mount) picks up the change.
+      window.location.reload();
     } catch {
       setError('Failed to save. Please try again.');
-    } finally {
       setSaving(false);
     }
   }
 
   async function handleRemove() {
-    if (!confirm('Remove the firm’s HMRC filing credentials? SA100 online filing will stop working until new credentials are added.')) return;
+    if (!confirm('Remove the firm’s HMRC filing credentials?\n\nSA100 online filing will stop working until new credentials are added. SMITH will refresh to apply this — any work in progress may be lost.')) return;
     setRemoving(true); setError('');
     try {
       const res = await fetch('/api/firms/sa-filing', { method: 'DELETE' });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         setError(d.error ?? 'Failed to remove credentials');
+        setRemoving(false);
         return;
       }
-      setHasCreds(false);
-      setSource(null);
-      setSenderId('');
+      window.location.reload();
     } catch {
       setError('Failed to remove. Please try again.');
-    } finally {
       setRemoving(false);
     }
   }
@@ -158,12 +154,8 @@ export default function SaFilingSettings() {
             </button>
           </div>
         </div>
-        {saved && (
-          <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
-            <CheckCircle2 size={12} /> Credentials saved securely.
-          </p>
-        )}
         {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+        <p className="text-[11px] text-[var(--text-muted)]">Saving or removing credentials refreshes SMITH so the change applies everywhere — finish any work in progress first.</p>
       </div>
 
       {/* Remove */}
