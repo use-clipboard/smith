@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Layers, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy, LayoutDashboard, Archive, Clock, Landmark, House, ReceiptText, Stamp } from 'lucide-react';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Layers, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy, LayoutDashboard, Archive, Clock, Landmark, House, ReceiptText, Calculator } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
 import DeleteAccountSection from '@/components/features/settings/DeleteAccountSection';
@@ -139,7 +139,7 @@ export default function SettingsClient({
     { id: 'billing-tool' as Tab, label: 'Billing',      icon: ReceiptText,    adminOnly: true,  hidden: !billingModuleActive,      group: 'tools' as TabGroup },
     { id: 'bookkeeping' as Tab,  label: 'Bookkeeping',  icon: BookCopy,       adminOnly: true,  hidden: !bookkeepingActive,        group: 'tools' as TabGroup },
     { id: 'accounts-studio-defaults' as Tab, label: 'Accounts Studio', icon: Landmark, adminOnly: true, hidden: !accountsStudioAllowed, group: 'tools' as TabGroup },
-    { id: 'sa-filing' as Tab,    label: 'Tax Studio',   icon: Stamp,          adminOnly: true,  hidden: !taxStudioActive,          group: 'tools' as TabGroup },
+    { id: 'sa-filing' as Tab,    label: 'Tax Studio',   icon: Calculator,     adminOnly: true,  hidden: !taxStudioActive,          group: 'tools' as TabGroup },
     { id: 'agent-smith' as Tab,  label: 'Agent Smith',  icon: AgentHatIcon,   adminOnly: true,  hidden: false,                     group: 'tools' as TabGroup },
     // Community is cross-firm and always available — sits in General, not Tools.
     { id: 'community' as Tab,    label: 'Community',    icon: MessagesSquare, adminOnly: false, hidden: false,                     group: 'general' as TabGroup },
