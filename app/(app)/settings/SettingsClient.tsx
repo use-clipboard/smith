@@ -126,7 +126,7 @@ export default function SettingsClient({
     { id: 'calendar' as Tab,    label: 'Calendar',    icon: CalendarDays,      adminOnly: false, hidden: !calendarModuleActive,    group: 'tools' as TabGroup },
     { id: 'staff-hire' as Tab,  label: 'Staff Hire',  icon: UserPlus,          adminOnly: true,  hidden: !staffHireModuleActive,   group: 'tools' as TabGroup },
     { id: 'tasks' as Tab,        label: 'Tasks',        icon: CheckSquare,    adminOnly: true,  hidden: !tasksModuleActive,        group: 'tools' as TabGroup },
-    { id: 'services' as Tab,     label: 'Services',     icon: Layers,         adminOnly: true,  hidden: false,                     group: 'tools' as TabGroup },
+    { id: 'services' as Tab,     label: 'Services',     icon: Layers,         adminOnly: true,  hidden: false,                     group: 'general' as TabGroup },
     { id: 'timesheets' as Tab,   label: 'Timesheets',   icon: Clock,          adminOnly: true,  hidden: !timesheetsAccess,         group: 'tools' as TabGroup },
     { id: 'email-triage' as Tab, label: 'Email', icon: Mail,           adminOnly: false, hidden: !emailTriageModuleActive,  group: 'tools' as TabGroup },
     // Archive — matches the Document Vault icon in the Tools sidebar (config/navItems.ts).
@@ -142,7 +142,7 @@ export default function SettingsClient({
     { id: 'bookkeeping' as Tab,  label: 'Bookkeeping',  icon: BookCopy,       adminOnly: true,  hidden: !bookkeepingActive,        group: 'tools' as TabGroup },
     { id: 'accounts-studio-defaults' as Tab, label: 'Accounts Studio', icon: Landmark, adminOnly: true, hidden: !accountsStudioAllowed, group: 'tools' as TabGroup },
     { id: 'sa-filing' as Tab,    label: 'Tax Studio',   icon: Calculator,     adminOnly: true,  hidden: !taxStudioActive,          group: 'tools' as TabGroup },
-    { id: 'agent-smith' as Tab,  label: 'Agent Smith',  icon: AgentHatIcon,   adminOnly: true,  hidden: false,                     group: 'tools' as TabGroup },
+    { id: 'agent-smith' as Tab,  label: 'Agent Smith',  icon: AgentHatIcon,   adminOnly: true,  hidden: false,                     group: 'general' as TabGroup },
     // Community is cross-firm and always available — sits in General, not Tools.
     { id: 'community' as Tab,    label: 'Community',    icon: MessagesSquare, adminOnly: false, hidden: false,                     group: 'general' as TabGroup },
   ];
