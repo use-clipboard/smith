@@ -27,6 +27,7 @@ import { useComposeWindow } from '@/components/features/email/ComposeWindowProvi
 import Avatar from '@/components/ui/Avatar';
 import Tooltip from '@/components/ui/Tooltip';
 import ClientLinksPanel from './ClientLinksPanel';
+import ServicesSummaryCard from './services/ServicesSummaryCard';
 import FinancialSnapshot from './FinancialSnapshot';
 import type { KeyContact } from './KeyContactsEditor';
 
@@ -145,7 +146,7 @@ function formatKeyInfo(field: KIField, client: ClientForOverview): string {
 
 const C_OVER = '#ef4444', C_WEEK = '#f59e0b', C_LATER = '#6366f1';
 
-export default function ClientOverview({ clientId, client }: { clientId: string; client: ClientForOverview }) {
+export default function ClientOverview({ clientId, client, onOpenServices }: { clientId: string; client: ClientForOverview; onOpenServices?: () => void }) {
   const { isModuleActive } = useModules();
   const composeWindow = useComposeWindow();
   const hasTasks = isModuleActive('tasks');
@@ -312,6 +313,9 @@ export default function ClientOverview({ clientId, client }: { clientId: string;
             currentClient={{ name: client.name, client_ref: client.client_ref, business_type: client.business_type }}
           />
         </div>
+
+        {/* Services summary — links across to the Services tab */}
+        <ServicesSummaryCard clientId={clientId} onOpen={onOpenServices} />
 
         {/* Tools & Activity — all tools ever used + this month's timeline */}
         <Card title="Tools &amp; Activity">

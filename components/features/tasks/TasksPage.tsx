@@ -77,6 +77,8 @@ export default function TasksPage() {
     });
   }
   const [tasks, setTasks] = useState<Task[]>([]);
+  // Set after deleting a task linked to a client Service — prompts to end it too.
+  const [endServicePrompt, setEndServicePrompt] = useState<{ id: string; name: string; clientId: string } | null>(null);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [clients, setClients] = useState<ClientRef[]>([]);
@@ -315,8 +317,10 @@ export default function TasksPage() {
   async function handleDelete(taskId: string) {
     const r = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
     if (!r.ok) throw new Error('Failed to delete task');
+    const d = await r.json().catch(() => ({}));
     setSelectedTask(null);
     setTasks(prev => prev.filter(t => t.id !== taskId));
+    if (d?.linkedService) setEndServicePrompt(d.linkedService);
   }
 
   async function handleStopRecurrence(taskId: string) {
@@ -497,6 +501,23 @@ export default function TasksPage() {
     <TaskDeadlineLinksProvider>
     <TaskClientStatusPolicyProvider>
     <ViewModeProvider viewMode={viewMode} setViewMode={handleSetViewMode}>
+    {endServicePrompt && (
+      <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setEndServicePrompt(null)}>
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-[var(--border)] p-5" onClick={e => e.stopPropagation()}>
+          <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Task deleted</h3>
+          <p className="text-sm text-[var(--text-secondary)]">This task was linked to the service <strong>&ldquo;{endServicePrompt.name}&rdquo;</strong>. Do you also want to <strong>end that service</strong>?</p>
+          <div className="flex justify-end gap-2 mt-4">
+            <button onClick={() => setEndServicePrompt(null)} className="btn-ghost text-xs">Keep service active</button>
+            <button
+              onClick={async () => { const p = endServicePrompt; setEndServicePrompt(null); await fetch(`/api/clients/${p.clientId}/services/${p.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'ended' }) }).catch(() => {}); }}
+              className="text-xs px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700"
+            >
+              End the service too
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     <div className="flex h-full">
       {/* Sidebar nav */}
       <aside className="w-52 border-r border-[var(--border)] bg-white/[0.78] backdrop-blur-md flex flex-col flex-shrink-0">

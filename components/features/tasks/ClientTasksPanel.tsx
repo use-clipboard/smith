@@ -667,6 +667,9 @@ interface Props {
 
 export default function ClientTasksPanel({ clientId, assigneeId }: Props) {
   const [tasks, setTasks]           = useState<Task[]>([]);
+  // Set after deleting a task that was linked to a client Service — prompts to
+  // end the service too.
+  const [endServicePrompt, setEndServicePrompt] = useState<{ id: string; name: string; clientId: string } | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading]       = useState(true);
   const [currentUserId, setCurrentUserId]   = useState('');
@@ -772,7 +775,10 @@ export default function ClientTasksPanel({ clientId, assigneeId }: Props) {
   const handleDelete = useCallback(async (taskId: string) => {
     const r = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
     if (!r.ok) throw new Error('Failed to delete task');
+    const d = await r.json().catch(() => ({}));
     setTasks(prev => prev.filter(t => t.id !== taskId));
+    // The task was linked to a client Service — offer to end that service too.
+    if (d?.linkedService) setEndServicePrompt(d.linkedService);
   }, []);
 
   const handleStopRecurrence = useCallback(async (taskId: string) => {
@@ -886,6 +892,29 @@ export default function ClientTasksPanel({ clientId, assigneeId }: Props) {
 
   return (
     <div className="space-y-5">
+
+      {/* Deleted a task that was linked to a client Service → offer to end it. */}
+      {endServicePrompt && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setEndServicePrompt(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-[var(--border)] p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Task deleted</h3>
+            <p className="text-sm text-[var(--text-secondary)]">This task was linked to the service <strong>“{endServicePrompt.name}”</strong>. Do you also want to <strong>end that service</strong>?</p>
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setEndServicePrompt(null)} className="btn-ghost text-xs">Keep service active</button>
+              <button
+                onClick={async () => {
+                  const p = endServicePrompt;
+                  setEndServicePrompt(null);
+                  await fetch(`/api/clients/${p.clientId}/services/${p.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'ended' }) }).catch(() => {});
+                }}
+                className="text-xs px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700"
+              >
+                End the service too
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Show/hide completed toggle — completed tasks are hidden by default. */}
       {completedCount > 0 && (

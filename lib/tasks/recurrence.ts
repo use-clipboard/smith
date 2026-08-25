@@ -105,6 +105,8 @@ export async function spawnNextRecurrence(
     // The next cycle clones this occurrence's (possibly customised) steps, so
     // carry the client-specific flag forward too.
     workflow_customised: completed.workflow_customised ?? false,
+    // Keep the new occurrence linked to the same client Service as its parent.
+    service_id: completed.service_id ?? null,
   }).select().single();
 
   if (error || !newTask) { console.error('spawnNextRecurrence', error); return; }

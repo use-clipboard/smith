@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import ClientOverview from '@/components/features/clients/ClientOverview';
+import ClientServicesPanel from '@/components/features/clients/services/ClientServicesPanel';
 import ClientHeaderCards from '@/components/features/clients/ClientHeaderCards';
 import KeyContactsEditor, { type KeyContact } from '@/components/features/clients/KeyContactsEditor';
 import TimelineSummaryCard from '@/components/features/clients/TimelineSummaryCard';
@@ -950,7 +951,7 @@ export default function ClientDetailPage() {
   const [outputs, setOutputs] = useState<Output[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'outputs' | 'documents' | 'timeline' | 'details' | 'tasks'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'outputs' | 'documents' | 'timeline' | 'details' | 'tasks' | 'services'>('overview');
 
   // Documents tab
   const [docsTabLoading, setDocsTabLoading] = useState(false);
@@ -1610,6 +1611,7 @@ export default function ClientDetailPage() {
           ['overview',  'Overview'],
           ['timeline',  'Timeline'],
           ['tasks',     'Tasks'],
+          ['services',  'Services'],
           ['outputs',   'AI Outputs'],
           ['documents', 'Documents'],
         ] as const)
@@ -1624,7 +1626,7 @@ export default function ClientDetailPage() {
 
       {/* ── Overview Tab ──────────────────────────────────────────────────────── */}
       {activeTab === 'overview' && clientId && (
-        <ClientOverview key={`ov-${overviewRefresh}`} clientId={clientId} client={client} />
+        <ClientOverview key={`ov-${overviewRefresh}`} clientId={clientId} client={client} onOpenServices={() => setActiveTab('services')} />
       )}
 
       {/* ── Outputs Tab ───────────────────────────────────────────────────────── */}
@@ -1930,6 +1932,11 @@ export default function ClientDetailPage() {
       {/* ── Tasks Tab ─────────────────────────────────────────────────────────── */}
       {activeTab === 'tasks' && isModuleActive('tasks') && (
         <ClientTasksPanel clientId={clientId} />
+      )}
+
+      {/* ── Services Tab ──────────────────────────────────────────────────────── */}
+      {activeTab === 'services' && clientId && (
+        <ClientServicesPanel clientId={clientId} isAdmin={isAdminUser} />
       )}
 
       {/* ── Edit Modal ────────────────────────────────────────────────────────── */}

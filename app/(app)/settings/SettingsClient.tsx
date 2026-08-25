@@ -18,6 +18,7 @@ import SaFilingSettings from '@/components/features/settings/SaFilingSettings';
 import CalendarSettingsTab from './tabs/CalendarSettingsTab';
 import StaffHireSettingsTab from './tabs/StaffHireSettingsTab';
 import TasksSettingsTab from './tabs/TasksSettingsTab';
+import ServicesSettingsTab from './tabs/ServicesSettingsTab';
 import MtdItSettingsTab from './tabs/MtdItSettingsTab';
 import LandlordSettingsTab from './tabs/LandlordSettingsTab';
 import TimesheetsSettingsTab from './tabs/TimesheetsSettingsTab';
@@ -33,7 +34,7 @@ import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 import AgentHatIcon from '@/components/ui/AgentHatIcon';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'tiers' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'timesheets' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'landlord' | 'billing-tool' | 'agent-smith' | 'community' | 'bookkeeping' | 'document-vault' | 'accounts-studio-defaults' | 'sa-filing';
+type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'tiers' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'timesheets' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'landlord' | 'billing-tool' | 'agent-smith' | 'community' | 'bookkeeping' | 'document-vault' | 'accounts-studio-defaults' | 'sa-filing' | 'services';
 
 interface Props {
   userId: string;
@@ -125,6 +126,7 @@ export default function SettingsClient({
     { id: 'calendar' as Tab,    label: 'Calendar',    icon: CalendarDays,      adminOnly: false, hidden: !calendarModuleActive,    group: 'tools' as TabGroup },
     { id: 'staff-hire' as Tab,  label: 'Staff Hire',  icon: UserPlus,          adminOnly: true,  hidden: !staffHireModuleActive,   group: 'tools' as TabGroup },
     { id: 'tasks' as Tab,        label: 'Tasks',        icon: CheckSquare,    adminOnly: true,  hidden: !tasksModuleActive,        group: 'tools' as TabGroup },
+    { id: 'services' as Tab,     label: 'Services',     icon: Layers,         adminOnly: true,  hidden: false,                     group: 'tools' as TabGroup },
     { id: 'timesheets' as Tab,   label: 'Timesheets',   icon: Clock,          adminOnly: true,  hidden: !timesheetsAccess,         group: 'tools' as TabGroup },
     { id: 'email-triage' as Tab, label: 'Email', icon: Mail,           adminOnly: false, hidden: !emailTriageModuleActive,  group: 'tools' as TabGroup },
     // Archive — matches the Document Vault icon in the Tools sidebar (config/navItems.ts).
@@ -621,6 +623,11 @@ export default function SettingsClient({
           initialEmailFromName={emailSenderName ?? null}
           initialEmailFromAddress={emailSenderAddress ?? null}
         />
+      )}
+
+      {/* Services catalogue — admin only */}
+      {activeTab === 'services' && isAdmin && (
+        <ServicesSettingsTab />
       )}
 
       {/* Timesheets tab — admin only, preview allowlist */}

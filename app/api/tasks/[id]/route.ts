@@ -180,10 +180,11 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 
   const supabase = createClient();
 
-  // Snapshot title/client for the audit row before we mark the task deleted
+  // Snapshot title/client for the audit row before we mark the task deleted.
+  // Also grab service_id so the UI can offer to end the linked client Service.
   const { data: existing } = await supabase
     .from('tasks')
-    .select('id, title, client_id')
+    .select('id, title, client_id, service_id')
     .eq('id', params.id)
     .eq('firm_id', ctx.firmId)
     .single();
@@ -213,5 +214,15 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     }).catch(err => console.error('logTaskDeleted failed', err));
   }
 
-  return NextResponse.json({ success: true });
+  // If the deleted task was linked to a client Service, tell the UI (with the
+  // service name + client) so it can ask whether to end that service too.
+  let linkedService: { id: string; name: string; clientId: string } | null = null;
+  const serviceId = (existing as { service_id?: string | null } | null)?.service_id ?? null;
+  if (serviceId) {
+    const { data: svc } = await supabase
+      .from('client_services').select('id, name, client_id').eq('id', serviceId).single();
+    if (svc) linkedService = { id: svc.id, name: svc.name, clientId: svc.client_id };
+  }
+
+  return NextResponse.json({ success: true, linkedService });
 }
