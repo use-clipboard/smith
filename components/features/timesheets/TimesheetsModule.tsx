@@ -20,17 +20,22 @@ const BASE_TABS: { id: TimesheetTab; label: string; icon: typeof Clock }[] = [
 ];
 
 export default function TimesheetsModule() {
-  const { ready, timers, nowMs, canAddTimer, isAdmin, hasReports, weekStatuses, userId, openStartModal } = useTimesheets();
+  const { ready, timers, nowMs, canAddTimer, isAdmin, hasReports, weekStatuses, userId, approvalMode, openStartModal } = useTimesheets();
   const [tab, setTab] = useState<TimesheetTab>('overview');
   // The timer currently counting (if any) — shown live in the header.
   const activeTimer = timers.find(t => !t.paused) ?? null;
 
-  // Admins approve anyone (and any week with no manager); managers approve
-  // weeks routed to them.
+  // The Approvals tab stays visible for admins/managers, but the PENDING COUNT
+  // must match what the user can actually approve under the firm's approval mode
+  // (and the Approvals list itself): in 'admins' mode any admin approves every
+  // submitted week; in 'manager' mode a manager approves only the weeks routed to
+  // them — so an admin who manages no one correctly shows 0 (no `isAdmin ||`).
   const isManager = hasReports || Object.values(weekStatuses).some(w => w.managerId === userId);
   const canApprove = isAdmin || isManager;
+  const canSeeApproval = (w: { managerId: string | null }) =>
+    approvalMode === 'admins' ? isAdmin : w.managerId === userId;
   const pendingApprovals = Object.values(weekStatuses)
-    .filter(w => w.status === 'submitted' && (isAdmin || w.managerId === userId)).length;
+    .filter(w => w.status === 'submitted' && canSeeApproval(w)).length;
   const tabs = canApprove
     ? [...BASE_TABS, { id: 'approvals' as TimesheetTab, label: 'Approvals', icon: ShieldCheck }]
     : BASE_TABS;
