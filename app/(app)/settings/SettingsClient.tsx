@@ -625,9 +625,9 @@ export default function SettingsClient({
         />
       )}
 
-      {/* Services catalogue — admin only */}
+      {/* Services catalogue — admin only. Shared with Proposals. */}
       {activeTab === 'services' && isAdmin && (
-        <ServicesSettingsTab />
+        <ServicesSettingsTab isAdmin={isAdmin} />
       )}
 
       {/* Timesheets tab — admin only, preview allowlist */}

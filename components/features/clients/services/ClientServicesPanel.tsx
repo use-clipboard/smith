@@ -15,7 +15,7 @@ import { openTaskInTool } from '@/lib/notificationTarget';
 import { serviceIcon } from './serviceIcons';
 import ServiceEditModal from './ServiceEditModal';
 import {
-  FREQUENCY_LABEL, FREQUENCY_UNIT, HEALTH_COLOR, HEALTH_LABEL,
+  FREQUENCY_LABEL, FREQUENCY_UNIT, HEALTH_COLOR, HEALTH_LABEL, vatSuffix,
   monthlyRecurringPence, annualValuePence,
   type ClientService, type ClientServiceNote, type ServiceFrequency, type ServiceHealth, type ServiceStatus,
 } from '@/lib/services/serviceTypes';
@@ -83,8 +83,12 @@ export default function ClientServicesPanel({ clientId, isAdmin }: { clientId: s
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     if (!isAdmin) return;
-    fetch('/api/services/settings').then(r => (r.ok ? r.json() : { templates: [] }))
-      .then(d => setTemplates(d.templates ?? [])).catch(() => {});
+    // Bundles come from the shared catalogue's packages (proposal_packages).
+    fetch('/api/proposals/packages').then(r => (r.ok ? r.json() : { packages: [] }))
+      .then(d => setTemplates((d.packages ?? []).map((p: { id: string; name: string; items?: { service_id: string }[] }) => ({
+        id: p.id, name: p.name, catalogueIds: (p.items ?? []).map(it => it.service_id),
+      }))))
+      .catch(() => {});
   }, [isAdmin]);
 
   async function applyTemplate(t: { catalogueIds: string[] }) {
@@ -260,7 +264,12 @@ export default function ClientServicesPanel({ clientId, isAdmin }: { clientId: s
                         </td>
                         <td className="px-3 py-3 text-right tabular-nums">
                           <span className="font-medium text-[var(--text-primary)]">{fmtMoney(svc.pricePence)}</span>
-                          {svc.pricePence != null && svc.frequency && <span className="block text-[11px] text-[var(--text-muted)]">{FREQUENCY_UNIT[svc.frequency as ServiceFrequency]}</span>}
+                          {svc.pricePence != null && (
+                            <span className="block text-[11px] text-[var(--text-muted)]">
+                              {svc.frequency ? FREQUENCY_UNIT[svc.frequency as ServiceFrequency] : ''}
+                              {vatSuffix(svc.vatTreatment) && <> · {vatSuffix(svc.vatTreatment)}</>}
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-3">
                           <span className="text-[var(--text-secondary)] tabular-nums">{fmtDateUk(svc.nextDue)}</span>

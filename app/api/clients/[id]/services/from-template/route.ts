@@ -6,8 +6,8 @@ import { createServiceClient } from '@/lib/supabase-server';
 const Schema = z.object({ catalogue_ids: z.array(z.string().uuid()).min(1) });
 
 // POST /api/clients/[id]/services/from-template — create client services in bulk
-// from a set of catalogue items (a template/bundle). Admin only. Skips catalogue
-// items the client already has, so re-applying a template doesn't duplicate.
+// from a set of SHARED catalogue services (proposal_services ids), e.g. a
+// package/template. Admin only. Skips catalogue services the client already has.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
@@ -22,13 +22,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { data: client } = await service.from('clients').select('id').eq('id', params.id).eq('firm_id', ctx.firmId).single();
   if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
 
-  // Load the chosen catalogue items (firm-scoped, not archived).
+  // Load the chosen catalogue services (firm-scoped, active).
   const { data: items } = await service
-    .from('firm_service_catalogue').select('*')
-    .in('id', parsed.data.catalogue_ids).eq('firm_id', ctx.firmId).eq('archived', false);
+    .from('proposal_services').select('id, name, description, base_price, frequency, vat_treatment')
+    .in('id', parsed.data.catalogue_ids).eq('firm_id', ctx.firmId).eq('active', true);
   if (!items || items.length === 0) return NextResponse.json({ created: 0 });
 
-  // Skip catalogue items the client already has.
+  // Skip catalogue services the client already has.
   const { data: have } = await service.from('client_services').select('catalogue_id').eq('client_id', params.id);
   const haveSet = new Set((have ?? []).map(r => r.catalogue_id).filter(Boolean));
   const { data: last } = await service
@@ -41,9 +41,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     catalogue_id: i.id,
     name: i.name,
     description: i.description ?? null,
-    icon: i.icon ?? null,
-    frequency: i.default_frequency ?? null,
-    price_pence: i.default_price_pence ?? null,
+    frequency: i.frequency ?? null,
+    price_pence: i.base_price != null ? Math.round(Number(i.base_price) * 100) : null,
+    vat_treatment: i.vat_treatment ?? null,
     status: 'active',
     created_by: ctx.userId,
     sort_order: ++sort,

@@ -9,6 +9,7 @@ const PatchSchema = z.object({
   icon: z.string().max(60).nullable().optional(),
   frequency: z.string().max(30).nullable().optional(),
   price_pence: z.number().int().min(0).nullable().optional(),
+  vat_treatment: z.string().max(30).nullable().optional(),
   status: z.enum(['active', 'paused', 'ended']).optional(),
   next_due: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),

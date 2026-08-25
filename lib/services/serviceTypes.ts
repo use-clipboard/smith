@@ -1,27 +1,46 @@
 // Client Services — shared types, frequency maths, and derived health.
 // Pure module (no React/lucide) so API routes and client components can share it.
 
+// 'annual' is the proposals-catalogue term (== yearly); both accepted so a
+// service shared from proposal_services maps cleanly.
 export type ServiceFrequency =
-  | 'weekly' | 'bi_weekly' | 'monthly' | 'quarterly' | 'yearly' | 'one_off' | 'custom';
+  | 'weekly' | 'bi_weekly' | 'monthly' | 'quarterly' | 'yearly' | 'annual' | 'one_off' | 'custom';
 
+// The shared catalogue offers these four; the extras stay valid for legacy rows.
 export const SERVICE_FREQUENCIES: ServiceFrequency[] =
-  ['monthly', 'quarterly', 'yearly', 'bi_weekly', 'weekly', 'one_off', 'custom'];
+  ['monthly', 'quarterly', 'annual', 'one_off'];
 
 export const FREQUENCY_LABEL: Record<ServiceFrequency, string> = {
   weekly: 'Weekly', bi_weekly: 'Bi-Weekly', monthly: 'Monthly', quarterly: 'Quarterly',
-  yearly: 'Yearly', one_off: 'One-off', custom: 'Custom',
+  yearly: 'Yearly', annual: 'Yearly', one_off: 'One-off', custom: 'Custom',
 };
 
 /** How many times a year the fee recurs (drives Monthly Recurring + Annual Value). */
 export const FREQUENCY_PER_YEAR: Record<ServiceFrequency, number> = {
-  weekly: 52, bi_weekly: 26, monthly: 12, quarterly: 4, yearly: 1, one_off: 0, custom: 0,
+  weekly: 52, bi_weekly: 26, monthly: 12, quarterly: 4, yearly: 1, annual: 1, one_off: 0, custom: 0,
 };
 
 /** Short "/ month", "/ quarter" suffix shown under a price. */
 export const FREQUENCY_UNIT: Record<ServiceFrequency, string> = {
   weekly: '/ week', bi_weekly: '/ fortnight', monthly: '/ month', quarterly: '/ quarter',
-  yearly: '/ year', one_off: 'one-off', custom: '',
+  yearly: '/ year', annual: '/ year', one_off: 'one-off', custom: '',
 };
+
+// ── VAT treatment (shared with proposal_services) ────────────────────────────
+export type ServiceVatTreatment = 'firm_default' | 'inclusive' | 'exclusive' | 'exempt';
+export const VAT_TREATMENTS: ServiceVatTreatment[] = ['exclusive', 'inclusive', 'exempt', 'firm_default'];
+export const VAT_TREATMENT_LABEL: Record<ServiceVatTreatment, string> = {
+  exclusive: 'Plus VAT (ex VAT)', inclusive: 'VAT inclusive', exempt: 'VAT exempt', firm_default: 'Firm default',
+};
+/** Short badge shown next to a price: exclusive → "+ VAT", inclusive → "inc VAT". */
+export function vatSuffix(t: string | null | undefined): string {
+  switch (t) {
+    case 'exclusive': return 'ex VAT';
+    case 'inclusive': return 'inc VAT';
+    case 'exempt': return 'no VAT';
+    default: return '';
+  }
+}
 
 export type ServiceStatus = 'active' | 'paused' | 'ended';
 export const SERVICE_STATUSES: ServiceStatus[] = ['active', 'paused', 'ended'];
@@ -95,6 +114,7 @@ export interface ClientService {
   icon: string | null;
   frequency: ServiceFrequency | null;
   pricePence: number | null;
+  vatTreatment: string | null;
   status: ServiceStatus;
   /** Manually-set due date; only used when there are no open linked tasks. */
   manualNextDue: string | null;

@@ -5,11 +5,13 @@ import { createPortal } from 'react-dom';
 import { X, Check } from 'lucide-react';
 import { serviceIcon, SERVICE_ICON_KEYS } from './serviceIcons';
 import {
-  SERVICE_FREQUENCIES, FREQUENCY_LABEL,
-  type ClientService, type CatalogueItem, type ServiceFrequency, type ServiceStatus,
+  SERVICE_FREQUENCIES, FREQUENCY_LABEL, VAT_TREATMENTS, VAT_TREATMENT_LABEL,
+  type ClientService, type ServiceFrequency, type ServiceStatus, type ServiceVatTreatment,
 } from '@/lib/services/serviceTypes';
 
 interface ClientTask { id: string; title: string; status: string; service_id: string | null; }
+// The shared catalogue = the Proposals module's proposal_services.
+interface CatalogueSvc { id: string; name: string; description: string | null; base_price: number; frequency: string; vat_treatment: string; active: boolean; }
 
 export default function ServiceEditModal({
   clientId, mode, service, onClose, onSaved,
@@ -20,7 +22,7 @@ export default function ServiceEditModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
+  const [catalogue, setCatalogue] = useState<CatalogueSvc[]>([]);
   const [tasks, setTasks] = useState<ClientTask[]>([]);
 
   const [catalogueId, setCatalogueId] = useState<string | null>(service?.catalogueId ?? null);
@@ -29,6 +31,7 @@ export default function ServiceEditModal({
   const [icon, setIcon] = useState<string>(service?.icon ?? 'briefcase');
   const [frequency, setFrequency] = useState<ServiceFrequency | ''>((service?.frequency as ServiceFrequency) ?? 'monthly');
   const [priceText, setPriceText] = useState(service?.pricePence != null ? (service.pricePence / 100).toFixed(2) : '');
+  const [vatTreatment, setVatTreatment] = useState<ServiceVatTreatment>((service?.vatTreatment as ServiceVatTreatment) ?? 'exclusive');
   const [status, setStatus] = useState<ServiceStatus>(service?.status ?? 'active');
   const [nextDue, setNextDue] = useState(service?.manualNextDue ?? '');
   const [notes, setNotes] = useState(service?.notes ?? '');
@@ -39,7 +42,7 @@ export default function ServiceEditModal({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/services/catalogue').then(r => r.ok ? r.json() : { items: [] }).then(d => setCatalogue((d.items ?? []).filter((i: CatalogueItem) => !i.archived))).catch(() => {});
+    fetch('/api/proposals/services').then(r => r.ok ? r.json() : { services: [] }).then(d => setCatalogue((d.services ?? []).filter((i: CatalogueSvc) => i.active))).catch(() => {});
     fetch(`/api/tasks?client_id=${clientId}`).then(r => r.ok ? r.json() : { tasks: [] })
       .then(d => setTasks((d.tasks ?? []).map((t: { id: string; title: string; status: string; service_id?: string | null }) => ({ id: t.id, title: t.title, status: t.status, service_id: t.service_id ?? null }))))
       .catch(() => {});
@@ -57,9 +60,9 @@ export default function ServiceEditModal({
     if (!item) return;
     setName(item.name);
     setDescription(item.description ?? '');
-    if (item.icon) setIcon(item.icon);
-    if (item.defaultFrequency) setFrequency(item.defaultFrequency);
-    if (item.defaultPricePence != null) setPriceText((item.defaultPricePence / 100).toFixed(2));
+    if (item.frequency) setFrequency(item.frequency as ServiceFrequency);
+    if (item.base_price != null) setPriceText(Number(item.base_price).toFixed(2));
+    if (item.vat_treatment) setVatTreatment(item.vat_treatment as ServiceVatTreatment);
   }
 
   async function save() {
@@ -73,6 +76,7 @@ export default function ServiceEditModal({
       icon,
       frequency: frequency || null,
       price_pence: Number.isFinite(pricePence as number) ? pricePence : null,
+      vat_treatment: vatTreatment,
       status,
       next_due: nextDue || null,
       notes: notes.trim() || null,
@@ -141,12 +145,19 @@ export default function ServiceEditModal({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Price (excl VAT)</label>
+              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Price</label>
               <div className="relative">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[var(--text-muted)]">£</span>
                 <input value={priceText} onChange={e => setPriceText(e.target.value)} inputMode="decimal" className="input-base w-full text-sm pl-6" placeholder="0.00" />
               </div>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">VAT</label>
+            <select value={vatTreatment} onChange={e => setVatTreatment(e.target.value as ServiceVatTreatment)} className="input-base w-full text-sm">
+              {VAT_TREATMENTS.map(v => <option key={v} value={v}>{VAT_TREATMENT_LABEL[v]}</option>)}
+            </select>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Briefcase, Package, SlidersHorizontal, AlertTriangle, Loader2, Plus, Trash2, Edit3, Check, X, Info,
+  SlidersHorizontal, AlertTriangle, Loader2, Plus, Trash2, Edit3, Check, X, Info,
   Palette, Image as ImageIcon, Upload, FileSignature, ClipboardList, GripVertical, ChevronDown, ChevronRight,
   Mail,
 } from 'lucide-react';
@@ -51,6 +51,7 @@ interface ProposalSettings {
   auto_tasks_template_id: string | null;
   auto_generate_loe: boolean;
   auto_create_billing: boolean;
+  pre_populate_services: boolean;
   default_post_acceptance_action: 'none' | 'send_onboarding' | 'auto_create_client';
   collect_payment_on_accept: boolean;
   stripe_account_id: string | null;
@@ -75,7 +76,7 @@ interface ProposalSettings {
 }
 
 export default function ProposalsSettingsTab({ isAdmin, tasksModuleActive }: Props) {
-  const [section, setSection] = useState<Section>('services');
+  const [section, setSection] = useState<Section>('general');
 
   return (
     <div className="space-y-5 max-w-5xl">
@@ -85,10 +86,12 @@ export default function ProposalsSettingsTab({ isAdmin, tasksModuleActive }: Pro
           <div>Proposal settings are admin-only.</div>
         </div>
       )}
+      <div className="flex items-start gap-3 p-3 rounded-xl bg-[var(--accent-light)] border border-[var(--accent)]/20 text-xs text-[var(--accent)]">
+        <Info size={14} className="shrink-0 mt-0.5" />
+        <p>Your <strong>service catalogue and packages</strong> now live in <strong>Settings → Services</strong> — they&rsquo;re shared between Proposals and each client&rsquo;s Services tab.</p>
+      </div>
       <div className="flex flex-wrap gap-2">
         {[
-          { id: 'services' as Section, label: 'Service catalogue', icon: Briefcase },
-          { id: 'packages' as Section, label: 'Packages', icon: Package },
           { id: 'branding' as Section, label: 'Branding & look', icon: Palette },
           { id: 'onboarding' as Section, label: 'Onboarding forms', icon: ClipboardList },
           { id: 'email' as Section, label: 'Email', icon: Mail },
@@ -109,8 +112,6 @@ export default function ProposalsSettingsTab({ isAdmin, tasksModuleActive }: Pro
         ))}
       </div>
 
-      {section === 'services' && <ServicesSection isAdmin={isAdmin} />}
-      {section === 'packages' && <PackagesSection isAdmin={isAdmin} />}
       {section === 'branding' && <BrandingSection isAdmin={isAdmin} />}
       {section === 'onboarding' && <OnboardingFormsSection isAdmin={isAdmin} />}
       {section === 'email' && <EmailSection isAdmin={isAdmin} />}
@@ -922,7 +923,7 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 // ── Services ──────────────────────────────────────────────────────────────
-function ServicesSection({ isAdmin }: { isAdmin: boolean }) {
+export function ServicesSection({ isAdmin }: { isAdmin: boolean }) {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -1131,7 +1132,7 @@ function ServiceForm({ initial, isAdmin, onCancel, onSaved }: {
 }
 
 // ── Packages ──────────────────────────────────────────────────────────────
-function PackagesSection({ isAdmin }: { isAdmin: boolean }) {
+export function PackagesSection({ isAdmin }: { isAdmin: boolean }) {
   const [packages, setPackages] = useState<PackageRow[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1404,6 +1405,12 @@ function GeneralSection({ isAdmin, tasksModuleActive }: { isAdmin: boolean; task
           disabled={!billingModuleActive}
         />
         <p className="text-[11px] text-[var(--text-muted)] mt-2 italic">Recurring fees become recurring invoice schedules (with a first draft invoice); one-off fees become a draft invoice — all in the Billing tool for review.</p>
+        <Toggle
+          label="Pre-populate the client's Services from the proposal"
+          value={settings.pre_populate_services}
+          onChange={v => update('pre_populate_services', v)}
+        />
+        <p className="text-[11px] text-[var(--text-muted)] mt-2 italic">Each catalogue service in the accepted proposal is added to the client&rsquo;s Services tab (fee, frequency and VAT copied over).</p>
       </Card>
 
       <Card title="Payment on acceptance (Stripe)">

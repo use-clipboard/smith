@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase-server';
 import { createNotification } from '@/lib/notifications';
 import { instantiateTaskFromTemplate } from '@/lib/instantiateTaskFromTemplate';
 import { createBillingFromProposal } from '@/lib/billing/fromProposal';
+import { createServicesFromProposal } from '@/lib/services/fromProposal';
 
 const Body = z.object({
   form_id: z.string().uuid(),
@@ -189,6 +190,19 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     });
     if (billing.error) sideEffectLog.billing_error = billing.error;
     else sideEffectLog.billing = { recurring: billing.recurringCreated, invoices: billing.invoiceCreated };
+  }
+
+  // ── Side-effect 7: pre-populate the client's Services from the proposal ──
+  // Each catalogue-derived line item (service_id set) becomes a client_service.
+  if (settings?.pre_populate_services && graduatedClientId) {
+    const svc = await createServicesFromProposal(service, {
+      firmId: proposal.firm_id,
+      proposalId: proposal.id,
+      clientId: graduatedClientId,
+      createdBy: proposal.created_by,
+    });
+    if (svc.error) sideEffectLog.services_error = svc.error;
+    else sideEffectLog.services = { created: svc.created };
   }
 
   // Persist the response
