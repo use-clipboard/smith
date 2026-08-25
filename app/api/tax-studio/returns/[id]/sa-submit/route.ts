@@ -7,7 +7,8 @@ import type { TaxReturn } from '@/components/features/tax-studio/types';
 import { buildSa100Return } from '@/lib/hmrc-sa/sa100Return';
 import { markIrEnvelope } from '@/lib/hmrc-sa/irmark';
 import { buildSubmissionEnvelope, submitToGateway, pollGateway, deleteFromGateway, type SaGatewayResult } from '@/lib/hmrc-sa/gateway';
-import { isSaFilingConfigured, saGatewayTestFlag } from '@/lib/hmrc-sa/config';
+import { saGatewayTestFlag, type SaCreds } from '@/lib/hmrc-sa/config';
+import { getSaCredsForFirm, SaFilingNotConfiguredError } from '@/lib/hmrc-sa/getSaCredsForFirm';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -23,7 +24,15 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
   if (!canAccessTaxStudio(ctx.activeModules)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
-  if (!isSaFilingConfigured()) return NextResponse.json({ error: 'SA online filing is not configured yet (missing Government Gateway credentials / Vendor ID).' }, { status: 400 });
+
+  // Resolve the firm's Government Gateway credentials (firm store → env fallback).
+  let saCreds: SaCreds;
+  try {
+    saCreds = await getSaCredsForFirm(ctx.firmId);
+  } catch (e) {
+    if (e instanceof SaFilingNotConfiguredError) return NextResponse.json({ error: e.message }, { status: 400 });
+    throw e;
+  }
 
   const service = createServiceClient();
   const { data: row } = await service
@@ -39,7 +48,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
   // Build → IRmark → envelope.
   const { base64: irmark, body } = markIrEnvelope(built.irEnvelope);
-  const envelope = buildSubmissionEnvelope(body, built.utr);
+  const envelope = buildSubmissionEnvelope(body, built.utr, saCreds);
   const isTest = saGatewayTestFlag() === '1';
 
   // Submit, then poll while the gateway is still processing.
@@ -52,14 +61,14 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       const wait = Math.min(Math.max(result.pollSeconds ?? 10, 2), 20) * 1000;
       if (Date.now() + wait > deadline) break;
       await sleep(wait);
-      result = await pollGateway(correlationId, endpoint);
+      result = await pollGateway(correlationId, endpoint, saCreds);
       if (result.status !== 'submitted') break; // accepted / rejected / error
     }
   }
 
   // On a final acceptance, clear the correlation from HMRC's queue.
   if (result.status === 'accepted' && (result.correlationId || correlationId)) {
-    await deleteFromGateway((result.correlationId || correlationId)!, endpoint).catch(() => { /* best-effort */ });
+    await deleteFromGateway((result.correlationId || correlationId)!, endpoint, saCreds).catch(() => { /* best-effort */ });
   }
 
   // Record the attempt (any outcome).

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Layers, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy, LayoutDashboard, Archive, Clock, Landmark, House, ReceiptText } from 'lucide-react';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Layers, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy, LayoutDashboard, Archive, Clock, Landmark, House, ReceiptText, Stamp } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
 import DeleteAccountSection from '@/components/features/settings/DeleteAccountSection';
@@ -14,6 +14,7 @@ import TiersTab from './tabs/TiersTab';
 import BillingTab from './tabs/BillingTab';
 import TeamTab from './tabs/TeamTab';
 import ApiKeySettings from '@/components/features/settings/ApiKeySettings';
+import SaFilingSettings from '@/components/features/settings/SaFilingSettings';
 import CalendarSettingsTab from './tabs/CalendarSettingsTab';
 import StaffHireSettingsTab from './tabs/StaffHireSettingsTab';
 import TasksSettingsTab from './tabs/TasksSettingsTab';
@@ -32,7 +33,7 @@ import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 import AgentHatIcon from '@/components/ui/AgentHatIcon';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'tiers' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'timesheets' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'landlord' | 'billing-tool' | 'agent-smith' | 'community' | 'bookkeeping' | 'document-vault' | 'accounts-studio-defaults';
+type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'tiers' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'timesheets' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'landlord' | 'billing-tool' | 'agent-smith' | 'community' | 'bookkeeping' | 'document-vault' | 'accounts-studio-defaults' | 'sa-filing';
 
 interface Props {
   userId: string;
@@ -57,6 +58,7 @@ interface Props {
   billingModuleActive?: boolean;
   bookkeepingActive?: boolean;
   documentVaultActive?: boolean;
+  taxStudioActive?: boolean;
   emailSenderName?: string | null;
   emailSenderAddress?: string | null;
 }
@@ -71,7 +73,7 @@ const TIER_LABELS: Record<string, string> = {
 export default function SettingsClient({
   userId, firmId, userEmail, userName, avatarUrl, userRole,
   firmName, firmLogoUrl, subscriptionTier, activeModules, seatCount,
-  calendarModuleActive, staffHireModuleActive, tasksModuleActive, emailTriageModuleActive, hrModuleActive, proposalsModuleActive, mtdItModuleActive, landlordModuleActive, billingModuleActive, bookkeepingActive, documentVaultActive,
+  calendarModuleActive, staffHireModuleActive, tasksModuleActive, emailTriageModuleActive, hrModuleActive, proposalsModuleActive, mtdItModuleActive, landlordModuleActive, billingModuleActive, bookkeepingActive, documentVaultActive, taxStudioActive,
   emailSenderName, emailSenderAddress,
 }: Props) {
   const isAdmin = userRole === 'admin';
@@ -137,6 +139,7 @@ export default function SettingsClient({
     { id: 'billing-tool' as Tab, label: 'Billing',      icon: ReceiptText,    adminOnly: true,  hidden: !billingModuleActive,      group: 'tools' as TabGroup },
     { id: 'bookkeeping' as Tab,  label: 'Bookkeeping',  icon: BookCopy,       adminOnly: true,  hidden: !bookkeepingActive,        group: 'tools' as TabGroup },
     { id: 'accounts-studio-defaults' as Tab, label: 'Accounts Studio', icon: Landmark, adminOnly: true, hidden: !accountsStudioAllowed, group: 'tools' as TabGroup },
+    { id: 'sa-filing' as Tab,    label: 'Tax Studio',   icon: Stamp,          adminOnly: true,  hidden: !taxStudioActive,          group: 'tools' as TabGroup },
     { id: 'agent-smith' as Tab,  label: 'Agent Smith',  icon: AgentHatIcon,   adminOnly: true,  hidden: false,                     group: 'tools' as TabGroup },
     // Community is cross-firm and always available — sits in General, not Tools.
     { id: 'community' as Tab,    label: 'Community',    icon: MessagesSquare, adminOnly: false, hidden: false,                     group: 'general' as TabGroup },
@@ -662,6 +665,12 @@ export default function SettingsClient({
       {/* Accounts Studio defaults — admin only, preview allowlist */}
       {activeTab === 'accounts-studio-defaults' && isAdmin && accountsStudioAllowed && (
         <AccountsStudioDefaultsTab />
+      )}
+
+      {activeTab === 'sa-filing' && isAdmin && taxStudioActive && (
+        <div className="max-w-2xl">
+          <SaFilingSettings />
+        </div>
       )}
 
       {/* Agent Smith tab — admin only */}

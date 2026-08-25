@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Send, CheckCircle2, Loader2, ShieldCheck, Archive, Lock, FileCheck2,
   Landmark, AlertTriangle, ChevronDown, PenLine, Code2, X,
@@ -66,7 +66,14 @@ function ReadinessCard({ ret, approved, issues }: { ret: TaxReturn; approved: bo
 // ─── Legacy SA100 online filing (GovTalk / Transaction Engine) ───────────────
 // MTD-ITSA lives in the MTD IT tool; Tax Studio files the legacy SA100 return.
 function SaFilingCard({ ret, patch, approved, issues }: { ret: TaxReturn; patch: Patch; approved: boolean; issues: FieldIssue[] }) {
-  const canFile = approved && issues.length === 0 && !!ret.utr;
+  const [credsConfigured, setCredsConfigured] = useState<boolean | null>(null);
+  useEffect(() => {
+    fetch('/api/firms/sa-filing')
+      .then(r => r.json())
+      .then(d => setCredsConfigured(d.hasCredentials ?? false))
+      .catch(() => setCredsConfigured(false));
+  }, []);
+  const canFile = approved && issues.length === 0 && !!ret.utr && credsConfigured === true;
   const [phase, setPhase] = useState<'idle' | 'filing'>('idle');
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState('');
@@ -125,6 +132,12 @@ function SaFilingCard({ ret, patch, approved, issues }: { ret: TaxReturn; patch:
 
       <div className="px-5 py-4">
         <RequiredFieldsBanner issues={issues} />
+        {credsConfigured === false && (
+          <p className="mb-3 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] text-amber-700">
+            <AlertTriangle size={13} /> HMRC filing credentials aren’t set up. An admin can add them in{' '}
+            <a href="/settings?tab=sa-filing" className="font-semibold underline">Settings → Tax Studio</a>.
+          </p>
+        )}
         {!approved && (
           <p className="mb-3 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] text-amber-700">
             <AlertTriangle size={13} /> Record client approval before filing.

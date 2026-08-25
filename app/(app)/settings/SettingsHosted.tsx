@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { canAccessBookkeeping } from '@/lib/bookkeeping/access';
+import { canAccessTaxStudio } from '@/lib/tax-studio/access';
 import SettingsClient from './SettingsClient';
 
 interface Bootstrap {
@@ -63,6 +64,7 @@ export default function SettingsHosted() {
       billingModuleActive={data.activeModules.includes('billing')}
       bookkeepingActive={canAccessBookkeeping(data.activeModules)}
       documentVaultActive={data.activeModules.includes('document-vault')}
+      taxStudioActive={canAccessTaxStudio(data.activeModules)}
       emailSenderName={data.emailSenderName}
       emailSenderAddress={data.emailSenderAddress}
     />

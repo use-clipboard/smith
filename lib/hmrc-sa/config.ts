@@ -8,6 +8,16 @@
 /** GovTalk message Class for the SA100 individual return. */
 export const SA_CLASS = 'HMRC-SA-SA100';
 
+/** Resolved Government Gateway credentials for a submission (firm store or env). */
+export interface SaCreds {
+  /** Gateway user id (goes in <SenderID>). */
+  senderId: string;
+  /** Gateway password (sent with Method=clear over TLS). */
+  password: string;
+  /** HMRC-issued Vendor ID (goes in ChannelRouting <URI>). Global to SMITH. */
+  vendorId: string;
+}
+
 /** Transaction Engine endpoint. Default = TPVS (test); set HMRC_SA_ENV=production for live. */
 export function saGatewayUrl(): string {
   return process.env.HMRC_SA_ENV === 'production'
