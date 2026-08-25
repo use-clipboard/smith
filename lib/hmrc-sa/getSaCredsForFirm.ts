@@ -22,17 +22,16 @@ export class SaFilingNotConfiguredError extends Error {
 interface FirmSaRow { sa_gateway_sender_id: string | null; sa_gateway_password_enc: string | null }
 
 /**
- * Resolve creds (firm store → env fallback). Returns null if incomplete.
- * Throws only if firm-stored ciphertext exists but cannot be decrypted.
+ * Gateway credentials only (SenderID + password), firm store → env fallback,
+ * INDEPENDENT of the global Vendor ID. Returns null if none are stored.
+ * Throws SaFilingNotConfiguredError only if firm-stored ciphertext won't decrypt.
  */
-export async function resolveSaCreds(firmId: string): Promise<(SaCreds & { source: 'firm' | 'env' }) | null> {
+async function readGatewayCreds(firmId: string): Promise<{ senderId: string; password: string; source: 'firm' | 'env' } | null> {
   const service = createServiceClient();
   const { data } = await service
     .from('firms').select('sa_gateway_sender_id, sa_gateway_password_enc').eq('id', firmId).single();
   const row = (data ?? null) as FirmSaRow | null;
-  const vendorId = saVendorId(); // global — SMITH's software id
 
-  // Firm-stored credentials take precedence.
   if (row?.sa_gateway_sender_id && row?.sa_gateway_password_enc) {
     let password: string;
     try {
@@ -40,13 +39,23 @@ export async function resolveSaCreds(firmId: string): Promise<(SaCreds & { sourc
     } catch {
       throw new SaFilingNotConfiguredError('Your stored HMRC credentials could not be decrypted (the server encryption key is missing or has changed). Please re-enter them in Settings → Tax Studio.');
     }
-    if (vendorId) return { senderId: row.sa_gateway_sender_id, password, vendorId, source: 'firm' };
+    return { senderId: row.sa_gateway_sender_id, password, source: 'firm' };
   }
 
-  // Fallback: env vars (internal single-firm pilot).
   const envSender = saSenderId(), envPw = saPassword();
-  if (envSender && envPw && vendorId) return { senderId: envSender, password: envPw, vendorId, source: 'env' };
+  if (envSender && envPw) return { senderId: envSender, password: envPw, source: 'env' };
 
+  return null;
+}
+
+/**
+ * Full creds incl. the global Vendor ID (firm store → env). Returns null if the
+ * Gateway credentials OR the Vendor ID are missing — both are needed to file.
+ */
+export async function resolveSaCreds(firmId: string): Promise<(SaCreds & { source: 'firm' | 'env' }) | null> {
+  const creds = await readGatewayCreds(firmId);
+  const vendorId = saVendorId(); // global — SMITH's software id
+  if (creds && vendorId) return { senderId: creds.senderId, password: creds.password, vendorId, source: creds.source };
   return null;
 }
 
@@ -58,16 +67,27 @@ export async function getSaCredsForFirm(firmId: string): Promise<SaCreds> {
   return { senderId, password, vendorId };
 }
 
-/** Non-throwing status for the settings UI / filing card. Never returns the password. */
+/**
+ * Non-throwing status for the settings UI / filing card. Never returns the
+ * password. Distinguishes "credentials stored" from "Vendor ID present" so the UI
+ * can tell "not entered" apart from "saved but the server Vendor ID is missing".
+ */
 export async function getSaFilingStatus(firmId: string): Promise<{
-  configured: boolean; senderId: string | null; source: 'firm' | 'env' | null; vendorIdConfigured: boolean;
+  credentialsStored: boolean; senderId: string | null; source: 'firm' | 'env' | null;
+  vendorIdConfigured: boolean; ready: boolean;
 }> {
   const vendorIdConfigured = !!saVendorId();
   try {
-    const creds = await resolveSaCreds(firmId);
-    return { configured: !!creds, senderId: creds?.senderId ?? null, source: creds?.source ?? null, vendorIdConfigured };
+    const creds = await readGatewayCreds(firmId);
+    return {
+      credentialsStored: !!creds,
+      senderId: creds?.senderId ?? null,
+      source: creds?.source ?? null,
+      vendorIdConfigured,
+      ready: !!creds && vendorIdConfigured,
+    };
   } catch {
-    // Undecryptable stored ciphertext ⇒ surface as not configured (admin must re-enter).
-    return { configured: false, senderId: null, source: null, vendorIdConfigured };
+    // Undecryptable stored ciphertext ⇒ effectively unusable; prompt re-entry.
+    return { credentialsStored: false, senderId: null, source: null, vendorIdConfigured, ready: false };
   }
 }

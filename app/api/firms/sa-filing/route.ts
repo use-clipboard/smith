@@ -25,7 +25,10 @@ export async function GET() {
 
   const status = await getSaFilingStatus(firmId!);
   return NextResponse.json({
-    hasCredentials: status.configured,
+    // Whether the firm's Gateway credentials are stored (independent of Vendor ID)…
+    hasCredentials: status.credentialsStored,
+    // …vs fully ready to file (credentials + the global Vendor ID both present).
+    ready: status.ready,
     source: status.source,
     vendorIdConfigured: status.vendorIdConfigured,
     // The SenderID (a username) is shown only to admins, on the settings screen.

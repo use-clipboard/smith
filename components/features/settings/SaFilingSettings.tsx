@@ -9,6 +9,7 @@ import Tooltip from '@/components/ui/Tooltip';
 // Engine. The password is stored encrypted server-side and never returned here.
 export default function SaFilingSettings() {
   const [hasCreds, setHasCreds] = useState<boolean | null>(null);
+  const [ready, setReady] = useState(false);
   const [source, setSource] = useState<'firm' | 'env' | null>(null);
   const [vendorOk, setVendorOk] = useState(true);
   const [senderId, setSenderId] = useState('');
@@ -23,6 +24,7 @@ export default function SaFilingSettings() {
       .then(r => r.json())
       .then(d => {
         setHasCreds(d.hasCredentials ?? false);
+        setReady(d.ready ?? false);
         setSource(d.source ?? null);
         setVendorOk(d.vendorIdConfigured ?? false);
         if (d.senderId) setSenderId(d.senderId as string);
@@ -87,16 +89,19 @@ export default function SaFilingSettings() {
         </div>
       </div>
 
-      {/* Current status */}
+      {/* Current status — three states: ready · saved-but-not-ready · not entered */}
       <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm ${
-        hasCreds
+        ready
           ? 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/30 text-emerald-700 dark:text-emerald-400'
           : 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 text-amber-700 dark:text-amber-400'
       }`}>
-        {hasCreds
-          ? <><CheckCircle2 size={15} className="shrink-0" /> <span>Filing credentials configured{source === 'env' ? ' (system default)' : senderId ? ` — User ID ${senderId}` : ''} — SA100 online filing is enabled.</span></>
-          : <><AlertCircle size={15} className="shrink-0" /> <span>No filing credentials set — SA100 online filing is disabled until you add them.</span></>
-        }
+        {ready ? (
+          <><CheckCircle2 size={15} className="shrink-0" /> <span>Filing credentials configured{source === 'env' ? ' (system default)' : senderId ? ` — User ID ${senderId}` : ''} — SA100 online filing is enabled.</span></>
+        ) : hasCreds ? (
+          <><AlertCircle size={15} className="shrink-0" /> <span>Credentials saved, but SA100 online filing isn’t active yet — see the note below.</span></>
+        ) : (
+          <><AlertCircle size={15} className="shrink-0" /> <span>No filing credentials set — SA100 online filing is disabled until you add them.</span></>
+        )}
       </div>
 
       {!vendorOk && (

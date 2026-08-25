@@ -70,7 +70,7 @@ function SaFilingCard({ ret, patch, approved, issues }: { ret: TaxReturn; patch:
   useEffect(() => {
     fetch('/api/firms/sa-filing')
       .then(r => r.json())
-      .then(d => setCredsConfigured(d.hasCredentials ?? false))
+      .then(d => setCredsConfigured(d.ready ?? false))
       .catch(() => setCredsConfigured(false));
   }, []);
   const canFile = approved && issues.length === 0 && !!ret.utr && credsConfigured === true;
@@ -134,7 +134,7 @@ function SaFilingCard({ ret, patch, approved, issues }: { ret: TaxReturn; patch:
         <RequiredFieldsBanner issues={issues} />
         {credsConfigured === false && (
           <p className="mb-3 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] text-amber-700">
-            <AlertTriangle size={13} /> HMRC filing credentials aren’t set up. An admin can add them in{' '}
+            <AlertTriangle size={13} /> HMRC filing isn’t fully set up yet. Check{' '}
             <a href="/settings?tab=sa-filing" className="font-semibold underline">Settings → Tax Studio</a>.
           </p>
         )}
