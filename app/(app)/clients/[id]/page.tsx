@@ -1626,7 +1626,7 @@ export default function ClientDetailPage() {
 
       {/* ── Overview Tab ──────────────────────────────────────────────────────── */}
       {activeTab === 'overview' && clientId && (
-        <ClientOverview key={`ov-${overviewRefresh}`} clientId={clientId} client={client} onOpenServices={() => setActiveTab('services')} />
+        <ClientOverview key={`ov-${overviewRefresh}`} clientId={clientId} client={client} />
       )}
 
       {/* ── Outputs Tab ───────────────────────────────────────────────────────── */}
