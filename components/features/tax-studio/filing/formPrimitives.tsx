@@ -16,11 +16,18 @@ export const MONEY_TINT = '#d4e9e6';
 export const CELL_SHADOW = '0 1px 1.5px rgba(0,0,0,0.13)';
 export const RED = '#d4351c';
 
-export interface FormTheme { panelBg: string; panelBorder: string; dense?: boolean }
+// `variant` switches the chip/heading/money styling between the SA-form look
+// (white box-number chips, teal-underlined headings — the default) and the CT600
+// look (solid-teal chips with white numbers, plain black headings, wider money
+// combs). `moneyCells` sets the default digit-cell count for £ boxes.
+export interface FormTheme { panelBg: string; panelBorder: string; dense?: boolean; variant?: 'sa' | 'ct600'; moneyCells?: number }
 export const TEAL_THEME: FormTheme = { panelBg: '#eaf4f3', panelBorder: '#bcdedb' };
 export const PINK_THEME: FormTheme = { panelBg: '#fbe4ea', panelBorder: '#eec2ce' };
 export const CREAM_THEME: FormTheme = { panelBg: '#faf3e6', panelBorder: '#e6dcc4' };
 export const PEACH_THEME: FormTheme = { panelBg: '#fce9e2', panelBorder: '#f0d3c6' };
+// CT600 (Company Tax Return) — same pale-teal panels, but HMRC's CT600 house
+// style for chips, headings and money boxes.
+export const CT600_THEME: FormTheme = { panelBg: '#e9f3f2', panelBorder: '#bcdedb', variant: 'ct600', moneyCells: 12 };
 export const FormThemeContext = createContext<FormTheme>(TEAL_THEME);
 const useTheme = () => useContext(FormThemeContext);
 const useDense = () => useContext(FormThemeContext).dense;
@@ -33,6 +40,9 @@ export const RecordContext = createContext<string | null>(null);
 const useRecord = () => useContext(RecordContext);
 
 export function Teal({ children }: { children: React.ReactNode }) {
+  const t = useTheme();
+  // CT600 section headings are plain black and larger, with no teal underline.
+  if (t.variant === 'ct600') return <h3 className={`text-[18px] font-normal leading-tight text-black ${t.dense ? 'mb-1.5 mt-1' : 'mb-2 mt-1.5'}`}>{children}</h3>;
   return <h3 className={`border-b-2 pb-1 text-[15px] font-bold ${useDense() ? 'mb-1.5' : 'mb-2'}`} style={{ color: TEAL, borderColor: TEAL }}>{children}</h3>;
 }
 export function SubHead({ children }: { children: React.ReactNode }) {
@@ -63,16 +73,23 @@ export function Panel({ children, className = '', divided }: { children: React.R
   );
 }
 export function BoxNum({ n }: { n: React.ReactNode }) {
+  const t = useTheme();
   // min-w keeps single-digit boxes at the standard size; long codes (e.g. 52EG.1)
   // grow the box instead of overflowing it.
-  return <span data-boxnum={n != null ? String(n) : undefined} className="flex h-[15px] min-w-[19px] shrink-0 items-center justify-center whitespace-nowrap px-[2px] text-[9.5px] font-bold text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{n}</span>;
+  // CT600: solid teal chip with a white number. SA: white chip, black number.
+  const ct = t.variant === 'ct600';
+  return <span data-boxnum={n != null ? String(n) : undefined} className={`flex shrink-0 items-center justify-center whitespace-nowrap text-[9.5px] font-bold ${ct ? 'h-[16px] min-w-[20px] px-[3px] text-white' : 'h-[15px] min-w-[19px] px-[2px] text-black'}`} style={ct ? { background: TEAL } : { border: `1px solid ${CELL}`, background: '#fff' }}>{n}</span>;
 }
 export function Label({ n, children, ghost }: { n?: React.ReactNode; children: React.ReactNode; ghost?: boolean }) {
+  // CT600 keeps chips at the panel's inner padding (aligned with the tick rows);
+  // SA forms pull them out to the panel edge (-ml-3).
+  const ct = useContext(FormThemeContext).variant === 'ct600';
+  const chipCls = ct ? 'mr-1.5' : '-ml-3 mr-1';
   return (
     <div className="mb-1 flex items-start text-[10.5px] font-bold leading-tight text-black">
-      {/* The chip is pulled to the panel's left edge (-ml-3); the label text is a
-          flex sibling so it always clears the chip, however wide the code is. */}
-      {n != null && <span className="-ml-3 mr-1 mt-[1px] shrink-0"><BoxNum n={n} /></span>}
+      {/* The chip sits by the panel's left edge; the label text is a flex sibling
+          so it always clears the chip, however wide the code is. */}
+      {n != null && <span className={`${chipCls} mt-[1px] shrink-0`}><BoxNum n={n} /></span>}
       {/* `ghost` keeps the label text in the layout (so a box lines up with its
           twin in another column) but hides it — used for the SA103F disallowable
           column, which shows only box numbers against the allowable labels. */}
@@ -80,32 +97,50 @@ export function Label({ n, children, ghost }: { n?: React.ReactNode; children: R
     </div>
   );
 }
-export function Money({ n, label, value, cells = 8, minus, ghost }: { n?: React.ReactNode; label?: React.ReactNode; value?: number | null; cells?: number; minus?: boolean; ghost?: boolean }) {
+export function Money({ n, label, value, cells, minus, ghost }: { n?: React.ReactNode; label?: React.ReactNode; value?: number | null; cells?: number; minus?: boolean; ghost?: boolean }) {
+  const t = useTheme();
+  const ct = t.variant === 'ct600';
+  const nCells = cells ?? t.moneyCells ?? 8;
   const neg = (value || 0) < 0;
   const digits = value ? Math.round(Math.abs(value)).toString() : '';
-  const arr: string[] = Array(cells).fill('');
-  for (let k = 0; k < digits.length && k < cells; k++) arr[cells - 1 - k] = digits[digits.length - 1 - k];
+  const arr: string[] = Array(nCells).fill('');
+  for (let k = 0; k < digits.length && k < nCells; k++) arr[nCells - 1 - k] = digits[digits.length - 1 - k];
   const base: React.CSSProperties = { border: `1px solid ${CELL}`, boxShadow: CELL_SHADOW };
+  // CT600 tints the £ and pence cells pale teal (the digit cells stay white).
+  const tint: React.CSSProperties = ct ? { ...base, background: MONEY_TINT } : base;
   const dense = useDense();
+  const boxRow = (
+    <div className="fac-boxrow flex items-stretch gap-[3px]" style={{ height: 20 }}>
+      <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={tint}><span className="fac-boxval">£</span></span>
+      {/* HMRC "sign" box: a pre-printed white bar by default; a hand-entered
+          style minus only when the figure is actually negative. */}
+      {minus && (
+        <span className="flex w-[14px] items-center justify-center" style={{ ...base, background: MONEY_TINT }}>
+          {neg ? <span className="text-[12px] font-bold text-black">−</span> : <span className="block" style={{ width: 9, height: 3, background: '#fff' }} />}
+        </span>
+      )}
+      {arr.map((d, idx) => (
+        <span key={idx} className="flex w-[15px] items-center justify-center bg-white text-[11.5px] font-medium text-black" style={base}><span className="fac-boxval">{d}</span></span>
+      ))}
+      <span className="flex w-[6px] items-end justify-center pb-[2px] text-[13px] font-bold text-black">·</span>
+      <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={tint}><span className="fac-boxval">0</span></span>
+      <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={tint}><span className="fac-boxval">0</span></span>
+    </div>
+  );
+  // CT600 lays the label on the left and the £ box on the right of the same row;
+  // SA forms stack the box under the label.
+  if (ct) {
+    return (
+      <div className="mb-2.5 flex items-center justify-between gap-4">
+        <div className="min-w-0 flex-1">{(n != null || label != null) && <Label n={n} ghost={ghost}>{label}</Label>}</div>
+        <div className="shrink-0">{boxRow}</div>
+      </div>
+    );
+  }
   return (
     <div className={dense ? 'mb-2.5' : 'mb-4'}>
       {(n != null || label != null) && <Label n={n} ghost={ghost}>{label}</Label>}
-      <div className="fac-boxrow flex items-stretch gap-[3px]" style={{ height: 20 }}>
-        <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={base}><span className="fac-boxval">£</span></span>
-        {/* HMRC "sign" box: a pre-printed white bar by default; a hand-entered
-            style minus only when the figure is actually negative. */}
-        {minus && (
-          <span className="flex w-[14px] items-center justify-center" style={{ ...base, background: MONEY_TINT }}>
-            {neg ? <span className="text-[12px] font-bold text-black">−</span> : <span className="block" style={{ width: 9, height: 3, background: '#fff' }} />}
-          </span>
-        )}
-        {arr.map((d, idx) => (
-          <span key={idx} className="flex w-[15px] items-center justify-center bg-white text-[11.5px] font-medium text-black" style={base}><span className="fac-boxval">{d}</span></span>
-        ))}
-        <span className="flex w-[6px] items-end justify-center pb-[2px] text-[13px] font-bold text-black">·</span>
-        <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={base}><span className="fac-boxval">0</span></span>
-        <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={base}><span className="fac-boxval">0</span></span>
-      </div>
+      {boxRow}
     </div>
   );
 }
@@ -122,36 +157,64 @@ export function Ruled({ n, label, lines = 3 }: { n?: React.ReactNode; label?: Re
   );
 }
 export function Line({ n, label, value, lines = 1, watermark }: { n?: React.ReactNode; label?: React.ReactNode; value?: string; lines?: number; watermark?: string }) {
+  const t = useTheme();
+  const box = (
+    <div className={t.variant === 'ct600' ? 'w-full' : ''}>
+      {Array.from({ length: lines }).map((_, k) => (
+        <div key={k} className="fac-boxrow flex items-center overflow-hidden whitespace-pre px-1.5 text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, borderTop: k === 0 ? `1px solid ${CELL}` : 'none', background: '#fff', height: 19 }}>
+          {k === 0 && value ? <span className="fac-boxval">{value}</span> : (k === lines - 1 && watermark ? <span className="font-normal text-slate-300">{watermark}</span> : '')}
+        </div>
+      ))}
+    </div>
+  );
+  // CT600 single-line boxes fill the width to the right of the label.
+  if (t.variant === 'ct600' && lines === 1) {
+    return (
+      <div className="mb-2 flex items-center gap-3">
+        {label != null && <div className="shrink-0">{<Label n={n}>{label}</Label>}</div>}
+        <div className="min-w-0 flex-1">{box}</div>
+      </div>
+    );
+  }
   return (
     <div className={useDense() ? 'mb-2' : 'mb-2.5'}>
       {label != null && <Label n={n}>{label}</Label>}
-      <div>
-        {Array.from({ length: lines }).map((_, k) => (
-          <div key={k} className="fac-boxrow flex items-center overflow-hidden whitespace-pre px-1.5 text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, borderTop: k === 0 ? `1px solid ${CELL}` : 'none', background: '#fff', height: 19 }}>
-            {k === 0 && value ? <span className="fac-boxval">{value}</span> : (k === lines - 1 && watermark ? <span className="font-normal text-slate-300">{watermark}</span> : '')}
-          </div>
-        ))}
-      </div>
+      {box}
     </div>
   );
 }
-export function Cells({ n, label, groups, value = '', sep }: { n?: React.ReactNode; label?: React.ReactNode; groups: number[]; value?: string; sep?: string }) {
+export function Cells({ n, label, groups, value = '', sep, stack }: { n?: React.ReactNode; label?: React.ReactNode; groups: number[]; value?: string; sep?: string; stack?: boolean }) {
+  const t = useTheme();
   const chars = (value || '').toUpperCase().replace(/\s/g, '').split('');
   let idx = 0;
+  const cellRow = (
+    <div className="fac-boxrow flex items-center" style={{ gap: sep ? 6 : 10 }}>
+      {groups.map((g, gi) => (
+        <div key={gi} className="flex items-center gap-[3px]">
+          {gi > 0 && sep && <span className="mr-1 text-[12px] font-bold text-black">{sep}</span>}
+          {Array.from({ length: g }).map((_, k) => {
+            const ch = chars[idx++] || '';
+            return <span key={k} className="flex h-[18px] w-[16px] items-center justify-center text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, background: '#fff', boxShadow: CELL_SHADOW }}><span className="fac-boxval">{ch}</span></span>;
+          })}
+        </div>
+      ))}
+    </div>
+  );
+  // CT600 lays the label on the left and the comb cells on the right of the row,
+  // except where `stack` is set (e.g. the "from/to DD MM YYYY" period boxes, whose
+  // label is really a header sitting above its date cells).
+  if (t.variant === 'ct600' && !stack) {
+    return (
+      <div className="mb-2 flex items-center justify-between gap-4">
+        <div className="min-w-0 flex-1">{label != null && <Label n={n}>{label}</Label>}</div>
+        <div className="shrink-0">{cellRow}</div>
+      </div>
+    );
+  }
   return (
     <div className={useDense() ? 'mb-2' : 'mb-2.5'}>
       {label != null && <Label n={n}>{label}</Label>}
-      <div className="fac-boxrow flex items-center" style={{ gap: sep ? 6 : 10 }}>
-        {groups.map((g, gi) => (
-          <div key={gi} className="flex items-center gap-[3px]">
-            {gi > 0 && sep && <span className="mr-1 text-[12px] font-bold text-black">{sep}</span>}
-            {Array.from({ length: g }).map((_, k) => {
-              const ch = chars[idx++] || '';
-              return <span key={k} className="flex h-[18px] w-[16px] items-center justify-center text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, background: '#fff', boxShadow: CELL_SHADOW }}><span className="fac-boxval">{ch}</span></span>;
-            })}
-          </div>
-        ))}
-      </div>
+      {cellRow}
     </div>
   );
 }

@@ -12,7 +12,7 @@ import type React from 'react';
 import type { TaxReturn } from '../types';
 import { computeCt600, ct600PaymentDue, ct600FilingDue, computeCapitalAllowances } from '../calc';
 import {
-  FormThemeContext, TEAL_THEME, TEAL,
+  FormThemeContext, CT600_THEME, TEAL,
   Page, Panel, Teal, SubHead, Note, Label, BoxNum, Money, Tick, Line, Cells, HmrcLogo, toDDMMYYYY,
 } from './formPrimitives';
 
@@ -55,6 +55,16 @@ function ct600FyRows(startIso: string | undefined, endIso: string | undefined, p
 
 const r0 = (n: number) => Math.round(n);
 
+/** A CT600 tick row: box chip + bold label on the left, tick box far right. */
+function TickRow({ n, label, on }: { n: React.ReactNode; label: string; on?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-[10.5px] font-bold text-black">
+      <span className="flex items-center gap-1.5"><BoxNum n={n} /> <span>{label}</span></span>
+      <Tick on={on} />
+    </div>
+  );
+}
+
 // ── the form ─────────────────────────────────────────────────────────────────
 
 export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boolean }) {
@@ -89,55 +99,53 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
   const foot = (tag: string) => ({ code: 'CT600', footerLeft: 'CT600(2026) Version 3', footerCenter: `Page ${tag}`, footerRight: 'HMRC 04/26' });
 
   return (
-    <FormThemeContext.Provider value={TEAL_THEME}>
+    <FormThemeContext.Provider value={CT600_THEME}>
       {/* ── Page 1 — Company information / About this return ── */}
       <Page {...foot('1')} tag="1">
         <div className="mb-3 flex items-start justify-between">
           <HmrcLogo />
           <div className="text-right">
-            <h2 className="text-[22px] font-bold leading-none text-black">Company Tax Return</h2>
-            <p className="mt-1.5 text-[12px] font-bold text-black">CT600 (2026) Version 3</p>
-            <p className="mt-0.5 text-[10px] text-black">for accounting periods starting on or after 1 April 2015</p>
+            <h2 className="text-[26px] font-bold leading-none" style={{ color: TEAL }}>Company Tax Return</h2>
+            <p className="mt-1.5 text-[13px] font-bold" style={{ color: TEAL }}>CT600 (2026) Version 3</p>
+            <p className="mt-0.5 text-[10px] font-semibold" style={{ color: TEAL }}>for accounting periods starting on or after 1 April 2015</p>
           </div>
         </div>
-        <p className="mb-2 text-[13px] font-bold" style={{ color: TEAL }}>Your Company Tax Return</p>
+        <p className="mb-2 text-[17px] font-bold" style={{ color: TEAL }}>Your Company Tax Return</p>
         <Note>If we send the company a ‘Notice’ to deliver a Company Tax Return it has to comply by the filing date or we charge a penalty, even if there is no tax to pay.</Note>
         <Note>A return includes a Company Tax Return form, any supplementary pages, accounts, computations and any relevant information. The CT600 Guide tells you how the return must be formatted and delivered.</Note>
 
         <Teal>Company information</Teal>
         <Panel>
-          <div className="grid grid-cols-2 gap-x-8">
-            <Line n={1} label="Company name" value={ret.clientName} />
-            <Cells n={2} label="Company registration number" groups={[8]} value={''} />
-            <Cells n={3} label="Tax reference" groups={[10]} value={ret.utr || ''} />
-            <Cells n={4} label="Type of company" groups={[2]} value={''} />
-          </div>
+          <Line n={1} label="Company name" value={ret.clientName} />
+          <Cells n={2} label="Company registration number" groups={[8]} value={''} />
+          <Cells n={3} label="Tax reference" groups={[10]} value={ret.utr || ''} />
+          <Cells n={4} label="Type of company" groups={[2]} value={''} />
           <SubHead>Put an ‘X’ in the appropriate boxes below</SubHead>
-          <div className="grid grid-cols-2 gap-x-8 text-[10.5px] text-black">
-            <div className="flex items-center gap-2"><BoxNum n={5} /> NI trading activity <Tick /></div>
-            <div className="flex items-center gap-2"><BoxNum n={6} /> SME <Tick /></div>
-            <div className="flex items-center gap-2"><BoxNum n={7} /> NI employer <Tick /></div>
-            <div className="flex items-center gap-2"><BoxNum n={8} /> Special circumstances <Tick /></div>
+          <div className="grid grid-cols-2 gap-x-8 gap-y-1.5">
+            <TickRow n={5} label="NI trading activity" />
+            <TickRow n={6} label="SME" />
+            <TickRow n={7} label="NI employer" />
+            <TickRow n={8} label="Special circumstances" />
           </div>
         </Panel>
 
         <Teal>About this return</Teal>
         <Panel>
-          <p className="mb-1 text-[10.5px] text-black">This is the tax return for the company named above, for the period below</p>
+          <p className="mb-2 text-[10.5px] text-black">This is the tax return for the company named above, for the period below</p>
           <div className="grid grid-cols-2 gap-x-8">
-            <Cells n={30} label="from DD MM YYYY" groups={[2, 2, 4]} value={periodFrom} />
-            <Cells n={35} label="to DD MM YYYY" groups={[2, 2, 4]} value={periodTo} />
+            <Cells n={30} label="from DD MM YYYY" groups={[2, 2, 4]} value={periodFrom} stack />
+            <Cells n={35} label="to DD MM YYYY" groups={[2, 2, 4]} value={periodTo} stack />
           </div>
           <SubHead>Put an ‘X’ in the appropriate boxes below</SubHead>
-          <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-[10px] text-black">
-            <div className="flex items-center gap-2"><BoxNum n={40} /> A repayment is due for this return period <Tick /></div>
-            <div className="flex items-center gap-2"><BoxNum n={45} /> Claim or relief affecting an earlier period <Tick /></div>
-            <div className="flex items-center gap-2"><BoxNum n={50} /> Making more than one return now <Tick /></div>
-            <div className="flex items-center gap-2"><BoxNum n={55} /> This return contains estimated figures <Tick /></div>
-            <div className="flex items-center gap-2"><BoxNum n={60} /> Company part of a group that is not small <Tick /></div>
-            <div className="flex items-center gap-2"><BoxNum n={65} /> Notice of disclosable avoidance schemes <Tick /></div>
-            <div className="flex items-center gap-2"><BoxNum n={70} /> Compensating adjustment claimed <Tick /></div>
-            <div className="flex items-center gap-2"><BoxNum n={75} /> Company qualifies for SME exemption <Tick /></div>
+          <div className="space-y-1.5">
+            <TickRow n={40} label="A repayment is due for this return period" />
+            <TickRow n={45} label="Claim or relief affecting an earlier period" />
+            <TickRow n={50} label="Making more than one return for this company now" />
+            <TickRow n={55} label="This return contains estimated figures" />
+            <TickRow n={60} label="Company part of a group that is not small" />
+            <TickRow n={65} label="Notice of disclosable avoidance schemes" />
+            <TickRow n={70} label="Compensating adjustment claimed" />
+            <TickRow n={75} label="Company qualifies for SME exemption" />
           </div>
         </Panel>
       </Page>
@@ -147,8 +155,10 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         <p className="mb-1 text-[12px] font-bold text-black">About this return — continued</p>
         <Teal>Accounts and computations</Teal>
         <Panel>
-          <div className="flex items-center gap-2 text-[10.5px] text-black"><BoxNum n={80} /> I attach accounts and computations for the period to which this return relates <Tick on /></div>
-          <div className="mt-1.5 flex items-center gap-2 text-[10.5px] text-black"><BoxNum n={85} /> I attach accounts and computations for a different period <Tick /></div>
+          <div className="space-y-1.5">
+            <TickRow n={80} label="I attach accounts and computations for the period to which this return relates" on />
+            <TickRow n={85} label="I attach accounts and computations for a different period" />
+          </div>
           <Label n={90}>If you’re not attaching the accounts and computations, explain why</Label>
           <Line lines={2} />
         </Panel>
@@ -171,7 +181,7 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
               [143, 'Freeports and Investment Zones — CT600M'],
               [96, 'Creative industries — CT600P'],
             ].map(([b, txt]) => (
-              <div key={b} className="flex items-center gap-2"><BoxNum n={b} /> <span className="flex-1">{txt}</span> <Tick /></div>
+              <TickRow key={b} n={b} label={txt as string} />
             ))}
           </div>
         </Panel>
@@ -180,7 +190,7 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         <SubHead>Turnover</SubHead>
         <Panel>
           <Money n={145} label="Total turnover from trade" value={n(t.turnover)} />
-          <div className="flex items-start gap-2 text-[10px] text-black"><BoxNum n={150} /> <span className="flex-1">Banks, building societies, insurance companies and other financial concerns — put an ‘X’ in this box if you do not have a recognised turnover and have not made an entry in box 145</span> <Tick /></div>
+          <TickRow n={150} label="Banks, building societies, insurance companies and other financial concerns — put an ‘X’ in this box if you do not have a recognised turnover and have not made an entry in box 145" />
         </Panel>
       </Page>
 
@@ -240,7 +250,7 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         <Panel>
           <div className="grid grid-cols-2 gap-x-8">
             <Cells n={326} label="Number of associated companies in this period" groups={[4]} value={''} />
-            <div className="flex items-start gap-2 text-[10px] text-black"><BoxNum n={329} /> <span className="flex-1">Put an ‘X’ if the company is chargeable at the small profit rate or is entitled to marginal relief</span> <Tick on={c.marginalRelief > 0 || c.ctRatePct < 25} /></div>
+            <TickRow n={329} label="Put an ‘X’ if the company is chargeable at the small profit rate or is entitled to marginal relief" on={c.marginalRelief > 0 || c.ctRatePct < 25} />
           </div>
         </Panel>
         <p className="mb-1 text-[10.5px] font-bold text-black">Enter how much profit has to be charged and at what rate</p>
@@ -319,11 +329,11 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
           <Money n={620} label="Franked investment income / Exempt ABGH distributions" value={0} />
           <Cells n={625} label="Number of 51% group companies" groups={[4]} value={''} />
           <div className="mt-1 space-y-1 text-[9.5px] text-black">
-            <div className="flex items-center gap-2"><BoxNum n={630} /> <span className="flex-1">Should have made instalment payments as a large company</span> <Tick /></div>
-            <div className="flex items-center gap-2"><BoxNum n={631} /> <span className="flex-1">Should have made instalment payments as a very large company</span> <Tick /></div>
-            <div className="flex items-center gap-2"><BoxNum n={635} /> <span className="flex-1">Is within a group payments arrangement for the period</span> <Tick /></div>
-            <div className="flex items-center gap-2"><BoxNum n={640} /> <span className="flex-1">Has written down or sold intangible assets</span> <Tick /></div>
-            <div className="flex items-center gap-2"><BoxNum n={645} /> <span className="flex-1">Has made cross-border royalty payments</span> <Tick /></div>
+            <TickRow n={630} label="Should have made instalment payments as a large company" />
+            <TickRow n={631} label="Should have made instalment payments as a very large company" />
+            <TickRow n={635} label="Is within a group payments arrangement for the period" />
+            <TickRow n={640} label="Has written down or sold intangible assets" />
+            <TickRow n={645} label="Has made cross-border royalty payments" />
           </div>
         </Panel>
       </Page>
@@ -334,10 +344,10 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         <SubHead>Research and Development (R&D) or creatives enhanced expenditure and tax reliefs</SubHead>
         <Panel>
           <div className="space-y-1 text-[9.5px] text-black">
-            <div className="flex items-center gap-2"><BoxNum n={650} /> <span className="flex-1">R&D claim made by a small or medium-sized enterprise (SME)</span> <Tick on={rd?.scheme === 'sme'} /></div>
-            <div className="flex items-center gap-2"><BoxNum n={653} /> <span className="flex-1">Claim made by an R&D intensive SME</span> <Tick /></div>
-            <div className="flex items-center gap-2"><BoxNum n={655} /> <span className="flex-1">Claim made by a large company (RDEC)</span> <Tick on={rd?.scheme === 'rdec'} /></div>
-            <div className="flex items-center gap-2"><BoxNum n={657} /> <span className="flex-1">R&D additional information form has been submitted</span> <Tick /></div>
+            <TickRow n={650} label="R&D claim made by a small or medium-sized enterprise (SME)" on={rd?.scheme === 'sme'} />
+            <TickRow n={653} label="Claim made by an R&D intensive SME" />
+            <TickRow n={655} label="Claim made by a large company (RDEC)" on={rd?.scheme === 'rdec'} />
+            <TickRow n={657} label="R&D additional information form has been submitted" />
           </div>
           <div className="mt-2">
             <Money n={659} label="R&D expenditure qualifying for SME / R&D intensive SME relief" value={rd?.scheme === 'sme' ? n(rd?.qualifyingExpenditure) : 0} />
