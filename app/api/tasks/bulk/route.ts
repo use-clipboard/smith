@@ -231,6 +231,9 @@ export async function POST(req: NextRequest) {
           taskId: task.id,
           taskTitle: template.name,
           assignments: assignmentList,
+          // Template-derived (template_id always set) → recurring/template kind,
+          // so 'oneoff'/'none' assignees are filtered out.
+          task: { recurrence_type: isChLinkedTemplate ? null : (template.recurrence_type ?? null), template_id: template.id },
         }).catch(err => console.error('Bulk task assignment notification error', err));
 
         // Client portal tokens for client steps

@@ -360,6 +360,7 @@ export async function POST(req: NextRequest) {
       taskId: task.id,
       taskTitle: task.title,
       assignments: steps.map(s => ({ assigneeId: s.assignee_id ?? null, stepTitle: s.title })),
+      task: { recurrence_type: taskData.recurrence_type ?? null, template_id: taskData.template_id ?? null },
     }).catch(err => console.error('Task assignment notification error', err));
 
     // Generate client portal tokens for every client step

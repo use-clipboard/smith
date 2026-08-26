@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-import { notifyTaskStepAssignments, createNotification, deleteTaskNotifications } from '@/lib/notifications';
+import { notifyTaskStepAssignments, createNotification, deleteTaskNotifications, filterTaskChangeRecipients, type TaskKind } from '@/lib/notifications';
 import { spawnNextRecurrence } from '@/lib/tasks/recurrence';
 import { syncStepReminders } from '@/lib/tasks/reminderProducer';
 
@@ -42,7 +42,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string; 
   // Fetch current step state so we can detect assignee/status changes and get the task title
   const { data: existingStep } = await supabase
     .from('task_steps')
-    .select('assignee_id, title, status, task:tasks(id, title)')
+    .select('assignee_id, title, status, task:tasks(id, title, recurrence_type, template_id, parent_task_id)')
     .eq('id', params.stepId)
     .eq('task_id', params.id)
     .single();
@@ -71,7 +71,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string; 
     newAssigneeId !== oldAssigneeId &&
     existingStep
   ) {
-    const taskData = existingStep.task as unknown as { id: string; title: string } | null;
+    const taskData = existingStep.task as unknown as (TaskKind & { id: string; title: string }) | null;
     if (taskData) {
       notifyTaskStepAssignments({
         actorUserId: ctx.userId,
@@ -82,6 +82,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string; 
           assigneeId: newAssigneeId,
           stepTitle: (existingStep.title as string) ?? parsed.data.title ?? '',
         }],
+        task: { recurrence_type: taskData.recurrence_type, template_id: taskData.template_id, parent_task_id: taskData.parent_task_id },
       }).catch(err => console.error('Step reassignment notification error', err));
     }
   }
@@ -95,15 +96,18 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string; 
         : ((existingStep.assignee_id as string | null) ?? null);
 
     if (effectiveAssigneeId && effectiveAssigneeId !== ctx.userId) {
-      const taskData = existingStep.task as unknown as { id: string; title: string } | null;
-      createNotification({
-        userId: effectiveAssigneeId,
-        firmId: ctx.firmId,
-        type: 'task_status_changed',
-        title: `Step updated: ${(existingStep.title as string) ?? ''}`,
-        body: `Status changed to ${formatStatusLabel(parsed.data.status)}`,
-        data: { task_id: taskData?.id ?? params.id, task_link: '/tasks' },
-      }).catch(err => console.error('Step status notification error', err));
+      const taskData = existingStep.task as unknown as (TaskKind & { id: string; title: string }) | null;
+      const allowed = await filterTaskChangeRecipients([effectiveAssigneeId], taskData);
+      if (allowed.has(effectiveAssigneeId)) {
+        createNotification({
+          userId: effectiveAssigneeId,
+          firmId: ctx.firmId,
+          type: 'task_status_changed',
+          title: `Step updated: ${(existingStep.title as string) ?? ''}`,
+          body: `Status changed to ${formatStatusLabel(parsed.data.status)}`,
+          data: { task_id: taskData?.id ?? params.id, task_link: '/tasks' },
+        }).catch(err => console.error('Step status notification error', err));
+      }
     }
   }
 
@@ -147,10 +151,13 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 async function notifyTaskCreatorStatus(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
-  opts: { taskId: string; firmId: string; actorUserId: string | null; creatorId: string | null; title: string; status: string },
+  opts: { taskId: string; firmId: string; actorUserId: string | null; creatorId: string | null; title: string; status: string; task: TaskKind },
 ) {
-  const { taskId, firmId, actorUserId, creatorId, title, status } = opts;
+  const { taskId, firmId, actorUserId, creatorId, title, status, task } = opts;
   if (!creatorId || creatorId === actorUserId) return;
+  // Respect the creator's task-change notification preference.
+  const allowed = await filterTaskChangeRecipients([creatorId], task);
+  if (!allowed.has(creatorId)) return;
   const isDone = status === 'complete';
   let actorName = 'A team member';
   if (actorUserId) {
@@ -198,7 +205,7 @@ async function syncTaskStatus(
     // Read the current row first so we only notify the creator on a REAL status
     // change (syncTaskStatus re-runs on every step tick).
     const { data: cur } = await supabase
-      .from('tasks').select('status, created_by, title').eq('id', taskId).eq('firm_id', firmId).maybeSingle();
+      .from('tasks').select('status, created_by, title, recurrence_type, template_id, parent_task_id').eq('id', taskId).eq('firm_id', firmId).maybeSingle();
 
     let taskStatus: string;
     if (ruleTarget) {
@@ -220,6 +227,7 @@ async function syncTaskStatus(
     if (cur && cur.status !== taskStatus) {
       await notifyTaskCreatorStatus(supabase, {
         taskId, firmId, actorUserId, creatorId: cur.created_by ?? null, title: cur.title ?? 'Task', status: taskStatus,
+        task: { recurrence_type: cur.recurrence_type ?? null, template_id: cur.template_id ?? null, parent_task_id: cur.parent_task_id ?? null },
       });
     }
     return;
@@ -236,7 +244,7 @@ async function syncTaskStatus(
     .eq('id', taskId)
     .eq('firm_id', firmId)
     .neq('status', 'complete')
-    .select('id, recurrence_type, created_by, title')
+    .select('id, recurrence_type, template_id, parent_task_id, created_by, title')
     .maybeSingle();
 
   // No row back → the task was already complete (a concurrent tick won the
@@ -251,6 +259,7 @@ async function syncTaskStatus(
   // transition, so it fires exactly once.)
   await notifyTaskCreatorStatus(supabase, {
     taskId, firmId, actorUserId, creatorId: (flipped.created_by as string | null) ?? null, title: (flipped.title as string) ?? 'Task', status: 'complete',
+    task: { recurrence_type: (flipped.recurrence_type as string | null) ?? null, template_id: (flipped.template_id as string | null) ?? null, parent_task_id: (flipped.parent_task_id as string | null) ?? null },
   });
 
   // Recurring task just completed via the step path → roll forward. Previously

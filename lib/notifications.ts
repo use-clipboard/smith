@@ -1,8 +1,48 @@
 import { createServiceClient } from '@/lib/supabase-server';
 
+// ── Per-user task-change notification preference ─────────────────────────────
+// users.notify_task_changes: 'all' | 'oneoff' | 'none' (missing → 'all').
+
+/** Minimal task shape needed to classify a task as recurring/template/spawned. */
+export type TaskKind = { recurrence_type?: string | null; template_id?: string | null; parent_task_id?: string | null };
+
+/** A task is "recurring/template" if it recurs, came from a template, or is a spawned occurrence. */
+export function isRecurringOrTemplateTask(t: TaskKind | null | undefined): boolean {
+  if (!t) return false;
+  return (!!t.recurrence_type && t.recurrence_type !== 'once') || !!t.template_id || !!t.parent_task_id;
+}
+
+/**
+ * Filter candidate recipients of a task-CHANGE notification by their own
+ * preference (users.notify_task_changes). 'none' → never; 'oneoff' → dropped
+ * when the task is recurring/template/spawned; 'all'/missing → always.
+ */
+export async function filterTaskChangeRecipients(
+  userIds: Array<string | null | undefined>,
+  task: TaskKind | null | undefined,
+): Promise<Set<string>> {
+  const ids = [...new Set(userIds.filter((v): v is string => !!v))];
+  if (ids.length === 0) return new Set();
+  const service = createServiceClient();
+  const { data } = await service.from('users').select('id, notify_task_changes').in('id', ids);
+  const recurring = isRecurringOrTemplateTask(task);
+  const prefById = new Map<string, string>(
+    (data ?? []).map((u: { id: string; notify_task_changes: string | null }) => [u.id, u.notify_task_changes ?? 'all']),
+  );
+  const allowed = new Set<string>();
+  for (const id of ids) {
+    const pref = prefById.get(id) ?? 'all'; // unknown row → default to notifying
+    if (pref === 'none') continue;
+    if (pref === 'oneoff' && recurring) continue;
+    allowed.add(id);
+  }
+  return allowed;
+}
+
 /**
  * Notify assignees when task steps are assigned to them.
  * Groups by assignee (one notification per person per task), skips self-assignments.
+ * Respects each assignee's notify_task_changes preference when `task` is given.
  */
 export async function notifyTaskStepAssignments({
   actorUserId,
@@ -10,6 +50,7 @@ export async function notifyTaskStepAssignments({
   taskId,
   taskTitle,
   assignments,
+  task,
 }: {
   actorUserId: string;
   firmId: string;
@@ -17,6 +58,8 @@ export async function notifyTaskStepAssignments({
   taskTitle: string;
   /** Each step that has an assignee. Null/undefined assigneeId entries are ignored. */
   assignments: Array<{ assigneeId: string | null | undefined; stepTitle: string }>;
+  /** The task's recurrence/template info, so 'oneoff'/'none' assignees can be filtered. */
+  task?: TaskKind;
 }): Promise<void> {
   // Filter out unassigned steps and self-assignments
   const valid = assignments.filter(
@@ -41,7 +84,10 @@ export async function notifyTaskStepAssignments({
     byAssignee.get(a.assigneeId)!.push(a.stepTitle);
   }
 
-  const rows = Array.from(byAssignee.entries()).map(([userId, stepTitles]) => ({
+  // Drop assignees who don't want this kind of task-change notification.
+  const allowed = await filterTaskChangeRecipients([...byAssignee.keys()], task);
+
+  const rows = Array.from(byAssignee.entries()).filter(([userId]) => allowed.has(userId)).map(([userId, stepTitles]) => ({
     user_id: userId,
     firm_id: firmId,
     type: 'task_assigned',
@@ -53,6 +99,7 @@ export async function notifyTaskStepAssignments({
     data: { task_id: taskId, task_link: '/tasks' },
   }));
 
+  if (rows.length === 0) return; // every assignee opted out for this task kind
   const { error } = await service.from('notifications').insert(rows);
   if (error) console.error('Failed to create task assignment notifications:', error);
 }

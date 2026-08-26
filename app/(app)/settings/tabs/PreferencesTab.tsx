@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { GripVertical, Star, Plus, X, Mic, Video, AlertCircle, CheckCircle2, Lock } from 'lucide-react';
+import { GripVertical, Star, Plus, X, Mic, Video, AlertCircle, CheckCircle2, Lock, Bell } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { useFavourites } from '@/components/ui/FavouritesProvider';
 import { useModules } from '@/components/ui/ModulesProvider';
@@ -25,6 +25,31 @@ export default function PreferencesTab() {
   const [cameraPermission, setCameraPermission] = useState<PermState>('unknown');
   // Which permission is showing its revoke instructions panel (null = none)
   const [revokingPermission, setRevokingPermission] = useState<'microphone' | 'camera' | null>(null);
+
+  // ── Task-change notification preference (per-user) ────────────────────
+  const hasTasks = isModuleActive('tasks');
+  type TaskNotify = 'all' | 'oneoff' | 'none';
+  const [taskNotify, setTaskNotify] = useState<TaskNotify>('all');
+  const [taskNotifyLoaded, setTaskNotifyLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!hasTasks) return;
+    let cancelled = false;
+    fetch('/api/users/notification-prefs')
+      .then(r => r.ok ? r.json() : { notify_task_changes: 'all' })
+      .then(d => { if (!cancelled) { setTaskNotify((d.notify_task_changes as TaskNotify) ?? 'all'); setTaskNotifyLoaded(true); } })
+      .catch(() => { if (!cancelled) setTaskNotifyLoaded(true); });
+    return () => { cancelled = true; };
+  }, [hasTasks]);
+
+  function updateTaskNotify(value: TaskNotify) {
+    const prev = taskNotify;
+    setTaskNotify(value); // optimistic
+    fetch('/api/users/notification-prefs', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notify_task_changes: value }),
+    }).then(r => { if (!r.ok) setTaskNotify(prev); }).catch(() => setTaskNotify(prev));
+  }
 
   // Query current permission states on mount
   useEffect(() => {
@@ -150,8 +175,50 @@ export default function PreferencesTab() {
     setDragOverId(null);
   }
 
+  const TASK_NOTIFY_OPTIONS: { value: TaskNotify; label: string; sub: string }[] = [
+    { value: 'all',    label: 'All tasks',        sub: 'Notify me about any task assigned, updated or completed.' },
+    { value: 'oneoff', label: 'One-off tasks only', sub: 'Skip recurring and template-generated tasks — only notify me about ad-hoc ones.' },
+    { value: 'none',   label: 'None',             sub: 'Don’t send me any task-change notifications.' },
+  ];
+
   return (
     <div className="space-y-6 max-w-2xl">
+
+      {/* ── Notifications (only if the Tasks tool is active) ────────────── */}
+      {hasTasks && (
+        <div className="glass-solid rounded-xl p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <Bell size={15} className="text-[var(--accent)]" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Task notifications</h3>
+          </div>
+          <p className="text-xs text-[var(--text-muted)] mb-5">
+            Choose which task changes reach your notification bell. This affects only you — if you set up a lot of recurring or template tasks, switch to “one-off only” to cut the noise.
+          </p>
+          <div className="space-y-2.5">
+            {TASK_NOTIFY_OPTIONS.map(opt => {
+              const active = taskNotify === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  onClick={() => updateTaskNotify(opt.value)}
+                  disabled={!taskNotifyLoaded}
+                  className={`w-full flex items-start gap-3 rounded-lg border p-3 text-left transition-colors disabled:opacity-60 ${
+                    active ? 'border-[var(--accent)] bg-[var(--accent-light)]' : 'border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--accent)]/50'
+                  }`}
+                >
+                  <span className={`mt-0.5 grid place-items-center h-4 w-4 rounded-full border shrink-0 ${active ? 'border-[var(--accent)]' : 'border-slate-300'}`}>
+                    {active && <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-[var(--text-primary)]">{opt.label}</span>
+                    <span className="block text-xs text-[var(--text-muted)] mt-0.5">{opt.sub}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Device Permissions ─────────────────────────────────────────── */}
       <div className="glass-solid rounded-xl p-6">

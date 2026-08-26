@@ -48,8 +48,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const supabase = createClient();
 
-  // Verify task belongs to firm (also fetch title for notifications)
-  const { data: task } = await supabase.from('tasks').select('id, title').eq('id', params.id).eq('firm_id', ctx.firmId).single();
+  // Verify task belongs to firm (also fetch title + recurrence for notifications)
+  const { data: task } = await supabase.from('tasks').select('id, title, recurrence_type, template_id, parent_task_id').eq('id', params.id).eq('firm_id', ctx.firmId).single();
   if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 });
 
   const { data: step, error } = await supabase
@@ -85,6 +85,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       taskId: params.id,
       taskTitle: (task as { id: string; title: string }).title,
       assignments: [{ assigneeId: parsed.data.assignee_id, stepTitle: parsed.data.title }],
+      task: { recurrence_type: task.recurrence_type, template_id: task.template_id, parent_task_id: task.parent_task_id },
     }).catch(err => console.error('Step assignment notification error', err));
   }
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-import { createNotification, deleteTaskNotifications } from '@/lib/notifications';
+import { createNotification, deleteTaskNotifications, filterTaskChangeRecipients } from '@/lib/notifications';
 import { logTaskUpdate, logTaskDeleted } from '@/lib/taskAudit';
 import { loadTaskTimeEntriesByTask } from '@/lib/tasks/taskTime';
 import { spawnNextRecurrence } from '@/lib/tasks/recurrence';
@@ -66,7 +66,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   // Verify ownership and snapshot the fields we audit
   const { data: existing } = await supabase
     .from('tasks')
-    .select('id, status, recurrence_type, recurrence_interval_days, template_id, client_id, title, description, due_date, is_internal, created_by')
+    .select('id, status, recurrence_type, recurrence_interval_days, template_id, parent_task_id, client_id, title, description, due_date, is_internal, created_by')
     .eq('id', params.id)
     .eq('firm_id', ctx.firmId)
     .single();
@@ -124,9 +124,18 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       ),
     ] as string[];
 
-    if (uniqueAssignees.length > 0) {
+    // Respect each recipient's task-change notification preference.
+    const taskKind = {
+      recurrence_type: existing.recurrence_type as string | null,
+      template_id: existing.template_id as string | null,
+      parent_task_id: (existing as { parent_task_id?: string | null }).parent_task_id ?? null,
+    };
+    const allowedAssignees = await filterTaskChangeRecipients(uniqueAssignees, taskKind);
+    const notifyAssignees = uniqueAssignees.filter(id => allowedAssignees.has(id));
+
+    if (notifyAssignees.length > 0) {
       await Promise.allSettled(
-        uniqueAssignees.map(userId =>
+        notifyAssignees.map(userId =>
           createNotification({
             userId,
             firmId: ctx.firmId,
@@ -142,7 +151,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     // The creator/assigner — unless they made the change themselves or already
     // got a step-assignee ping (dedupe). Clicks through to the task.
     const creatorId = (existing.created_by as string | null) ?? null;
-    if (creatorId && creatorId !== ctx.userId && !uniqueAssignees.includes(creatorId)) {
+    const creatorAllowed = creatorId ? (await filterTaskChangeRecipients([creatorId], taskKind)).has(creatorId) : false;
+    if (creatorId && creatorAllowed && creatorId !== ctx.userId && !uniqueAssignees.includes(creatorId)) {
       const { data: actor } = await supabase.from('users').select('full_name, email').eq('id', ctx.userId).single();
       const actorName = actor?.full_name || actor?.email || 'A team member';
       await createNotification({
