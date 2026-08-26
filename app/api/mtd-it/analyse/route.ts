@@ -88,7 +88,7 @@ async function callAnthropic(opts: {
   const anthropic = await getAnthropicForFirm(opts.firmId);
 
   const fileBlock = opts.file.text != null
-    ? { type: 'text' as const, text: `Spreadsheet / CSV file "${opts.file.name}":\n\n${opts.file.text}` }
+    ? { type: 'text' as const, text: `Document "${opts.file.name}" (converted to text — Word/spreadsheet/CSV):\n\n${opts.file.text}` }
     : opts.file.mimeType === 'application/pdf'
       ? { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: opts.file.base64 ?? '' } }
       : { type: 'image'    as const, source: { type: 'base64' as const, media_type: opts.file.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data: opts.file.base64 ?? '' } };

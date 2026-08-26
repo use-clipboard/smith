@@ -13,6 +13,7 @@ import Tooltip from '@/components/ui/Tooltip';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { fileToBase64, compressImage } from '@/utils/fileUtils';
 import { spreadsheetToText, isSpreadsheetFile } from '@/utils/spreadsheetText';
+import { wordToText, isWordFile } from '@/utils/wordText';
 import { useTabActivitySync } from '@/components/ui/TabActivityContext';
 import EditMtdClientModal from './EditMtdClientModal';
 import MtdItPropertiesEditor from './MtdItPropertiesEditor';
@@ -402,10 +403,13 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
     try {
       const isImage = pf.file.type.startsWith('image/');
       const file = isImage ? await compressImage(pf.file) : pf.file;
-      // Spreadsheets/CSV: send the original base64 (preserves the source doc for
-      // the viewer) plus the converted text (what Claude actually reads).
+      // Spreadsheets/CSV and Word: send the original base64 (preserves the source
+      // doc for the viewer) plus the converted text (what Claude actually reads —
+      // the API can't take a .xlsx/.docx binary). PDFs/images go as-is.
       const filePayload = isSpreadsheetFile(pf.file)
         ? { name: pf.file.name, mimeType: pf.file.type || 'text/csv', base64: await fileToBase64(file), text: await spreadsheetToText(pf.file) }
+        : isWordFile(pf.file)
+        ? { name: pf.file.name, mimeType: pf.file.type || 'text/plain', base64: await fileToBase64(file), text: await wordToText(pf.file) }
         : { name: pf.file.name, mimeType: pf.file.type || 'application/octet-stream', base64: await fileToBase64(file) };
       const res = await fetch('/api/mtd-it/analyse', {
         method: 'POST',
@@ -1216,9 +1220,9 @@ function StreamPanel(props: {
         )}
 
         {/* Documents */}
-        <SubSection title="Documents" hint="PDFs, images, spreadsheets, or WhatsApp exports. Each file is scanned on its own.">
+        <SubSection title="Documents" hint="PDFs, images, Word documents, spreadsheets, or WhatsApp exports. Each file is scanned on its own.">
           <UploadZone
-            accept=".pdf,image/*,.csv,.xls,.xlsx,.txt"
+            accept=".pdf,image/*,.csv,.xls,.xlsx,.txt,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             onFiles={fl => onAddFiles(stream, fl)}
           />
           {files.length > 0 && (
@@ -1271,7 +1275,7 @@ function UploadZone({ accept, onFiles }: { accept: string; onFiles: (files: File
       <span className="font-medium">
         {hover ? 'Drop to add' : 'Click or drag files here'}
       </span>
-      <span className="text-[11px] text-gray-500">PDF · images · CSV / Excel · WhatsApp text</span>
+      <span className="text-[11px] text-gray-500">PDF · images · Word · CSV / Excel · WhatsApp text</span>
     </label>
   );
 }
