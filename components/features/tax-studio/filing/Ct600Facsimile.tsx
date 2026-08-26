@@ -10,7 +10,7 @@
 
 import type React from 'react';
 import type { TaxReturn } from '../types';
-import { computeCt600, ct600PaymentDue, ct600FilingDue, computeCapitalAllowances } from '../calc';
+import { computeCt600, ct600FilingDue, computeCapitalAllowances } from '../calc';
 import {
   FormThemeContext, CT600_THEME, TEAL,
   Page, Panel, Teal, SubHead, Note, Label, BoxNum, Money, Tick, Line, Cells, HmrcLogo, toDDMMYYYY,
@@ -75,7 +75,6 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
 
   const periodFrom = toDDMMYYYY(ret.periodStart);
   const periodTo = toDDMMYYYY(ret.periodEnd);
-  const paymentDue = ct600PaymentDue(ret.periodEnd);
   const filingDue = ct600FilingDue(ret.periodEnd);
 
   // Box 235 — profits before other deductions and reliefs (total profits here).
@@ -159,7 +158,7 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         </Panel>
       </Page>
 
-      {/* ── Page 2 — Accounts & computations / supplementary pages / turnover ── */}
+      {/* ── Page 2 — Accounts & computations / supplementary pages / turnover / income ── */}
       <Page {...foot('2')} tag="2">
         <p className="mb-1 text-[12px] font-bold text-black">About this return — continued</p>
         <Teal>Accounts and computations</Teal>
@@ -201,15 +200,18 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
           <Money n={145} label="Total turnover from trade" value={n(t.turnover)} />
           <TickRow n={150} label="Banks, building societies, insurance companies and other financial concerns — put an ‘X’ in this box if you do not have a recognised turnover and have not made an entry in box 145" />
         </Panel>
-      </Page>
-
-      {/* ── Page 3 — Income / chargeable gains / profits before deductions ── */}
-      <Page {...foot('3')} tag="3">
-        <Teal>Income</Teal>
+        <SubHead>Income</SubHead>
         <Panel>
           <Money n={155} label="Trading profits" value={Math.max(0, c.taxableTradingProfit)} />
           <Money n={160} label="Trading losses brought forward set against trading profits" value={n(L?.trading.bfSetTradingProfits)} />
           <Money n={170} label="Loan relationships and derivative contracts (financial instruments)" value={n(L?.ntlr.incomeLoanRelationships)} />
+        </Panel>
+      </Page>
+
+      {/* ── Page 3 — Income continued / gains / profits before deductions / deductions ── */}
+      <Page {...foot('3')} tag="3">
+        <SubHead>Income — continued</SubHead>
+        <Panel>
           <Money n={175} label="Annual payments not otherwise charged to Corporation Tax and from which Income Tax has not been deducted" value={n(L?.ntlr.incomeNonLoanDerivatives)} />
           <Money n={180} label="Non-exempt dividends or distributions from non-UK resident companies" value={0} />
           <Money n={185} label="Income from which Income Tax has been deducted" value={0} />
@@ -230,10 +232,6 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
           <Money n={230} label="Non-trade deficits on loan relationships and derivative contracts brought forward set against non-trading profits" value={n(L?.ntlr.bfSetNonTradeProfits)} />
           <Money n={235} label="Profits before other deductions and reliefs — net sum of boxes 165 to 205 and 220 minus sum of boxes 225 and 230" value={box235} />
         </Panel>
-      </Page>
-
-      {/* ── Page 4 — Deductions & reliefs / PCTCT / FY tax grid ── */}
-      <Page {...foot('4')} tag="4">
         <Teal>Deductions and reliefs</Teal>
         <Panel>
           <Money n={240} label="Losses on unquoted shares" value={0} />
@@ -241,8 +239,17 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
           <Money n={250} label="UK property business losses for this or previous accounting period" value={n(L?.property.lossesCurrentPeriod) + n(L?.property.lossesBroughtForwardUtil)} />
           <Money n={255} label="Capital allowances for the purposes of management of the business" value={0} />
           <Money n={260} label="Non-trade deficits for this accounting period from loan relationships and derivative contracts" value={0} />
+        </Panel>
+      </Page>
+
+      {/* ── Page 4 — Deductions continued / PCTCT / FY tax grid ── */}
+      <Page {...foot('4')} tag="4">
+        <p className="mb-1 text-[12px] font-bold text-black">Deductions and Reliefs — continued</p>
+        <Panel>
           <Money n={263} label="Carried forward non-trade deficits from loan relationships and derivative contracts" value={n(L?.ntlr.bfSetTotalProfits)} />
           <Money n={265} label="Non-trading losses on intangible fixed assets" value={0} />
+          <Money n={275} label="Total trading losses of this or a later accounting period" value={0} />
+          <TickRow n={280} label="Put an ‘X’ in box 280 if amounts carried back from later accounting periods are included in box 275" />
           <Money n={285} label="Trading losses carried forward and claimed against total profits" value={n(L?.trading.cfClaimedTotalProfits)} />
           <Money n={290} label="Non-trade capital allowances" value={0} />
           <Money n={295} label="Total of deductions and reliefs — total of boxes 240 to 275, 285 and 290" value={box295} />
@@ -253,6 +260,8 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
           <Money n={310} label="Group relief" value={0} />
           <Money n={312} label="Group relief for carried forward losses" value={0} />
           <Money n={315} label="Profits chargeable to Corporation Tax — box 300 minus boxes 305, 310 and 312" value={c.pctct} />
+          <Money n={320} label="Ring fence profits included" value={0} />
+          <Money n={325} label="Northern Ireland profits included" value={0} />
         </Panel>
 
         <Teal>Tax calculation</Teal>
@@ -379,20 +388,39 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         </Panel>
       </Page>
 
-      {/* ── Page 9 — qualifying expenditure (light) ── */}
+      {/* ── Page 9 — Allowances and charges (continued / not in trading profits) ── */}
       <Page {...foot('9')} tag="9">
+        <p className="mb-1 text-[12px] font-bold text-black">Information about capital allowances and balancing charges — continued</p>
+        <SubHead>Allowances and charges in the calculation of trading profits and losses — continued</SubHead>
+        <Panel>
+          <Money n={713} label="Electric vehicle charge-points — capital allowances" value={0} />
+          <Money n={721} label="Enterprise zones — capital allowances" value={0} />
+          <Money n={723} label="Zero-emission goods vehicles — capital allowances" value={0} />
+          <Money n={726} label="Zero-emission cars — capital allowances" value={0} />
+        </Panel>
+        <SubHead>Allowances and charges not included in the calculation of trading profits and losses</SubHead>
+        <Panel>
+          <Money n={735} label="Annual investment allowance" value={0} />
+          <Money n={736} label="Structures and buildings" value={0} />
+          <Money n={733} label="Full expensing" value={0} />
+          <Money n={741} label="Machinery and plant — super-deduction" value={0} />
+          <Money n={743} label="Machinery and plant — special rate allowance" value={0} />
+          <Money n={750} label="Other allowances and charges" value={0} />
+        </Panel>
+      </Page>
+
+      {/* ── Page 10 — Qualifying expenditure / Losses, deficits and excess amounts ── */}
+      <Page {...foot('10')} tag="10">
         <Teal>Qualifying expenditure</Teal>
         <Panel>
           <Money n={760} label="Machinery and plant on which first year allowance is claimed" value={0} />
           <Money n={765} label="Designated environmentally friendly machinery and plant" value={0} />
           <Money n={770} label="Machinery and plant on long-life assets and integral features" value={0} />
           <Money n={771} label="Structures and buildings" value={0} />
+          <Money n={772} label="Machinery and plant — super-deduction" value={0} />
+          <Money n={773} label="Machinery and plant — special rate allowance" value={0} />
           <Money n={775} label="Other machinery and plant" value={caAdditions} />
         </Panel>
-      </Page>
-
-      {/* ── Page 10 — Losses, deficits and excess amounts ── */}
-      <Page {...foot('10')} tag="10">
         <Teal>Losses, deficits and excess amounts</Teal>
         <SubHead>Amount arising</SubHead>
         <Panel>
@@ -406,15 +434,27 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         </Panel>
       </Page>
 
-      {/* ── Page 11 — Overpayments and repayments / bank details ── */}
+      {/* ── Page 11 — Northern Ireland information / Overpayments and repayments ── */}
       <Page {...foot('11')} tag="11">
+        <Teal>Northern Ireland information</Teal>
+        <Panel>
+          <Money n={856} label="Amount of group relief claimed which relates to NI trading losses used against rest of UK/mainstream profits" value={0} />
+          <Money n={857} label="Amount of group relief claimed which relates to NI trading losses used against NI trading profits" value={0} />
+          <Money n={858} label="Amount of group relief claimed which relates to rest of UK/mainstream losses used against NI trading profits" value={0} />
+        </Panel>
         <Teal>Overpayments and repayments</Teal>
         <SubHead>Repayments for the period covered by this return</SubHead>
         <Panel>
           <Money n={865} label="Repayment of Corporation Tax" value={0} />
           <Money n={870} label="Repayment of Income Tax" value={0} />
           <Money n={875} label="Payable Research and Development tax credit" value={0} />
+          <Money n={880} label="Payable Research and Development expenditure credit" value={0} />
+          <Money n={885} label="Payable creatives tax credit" value={0} />
         </Panel>
+      </Page>
+
+      {/* ── Page 12 — Bank details / Payments to a person other than the company / Declaration ── */}
+      <Page {...foot('12')} tag="12">
         <Teal>Bank details (for a person to whom a repayment is to be made)</Teal>
         <Panel>
           <Line n={920} label="Name of bank or building society" />
@@ -423,11 +463,15 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
             <Cells n={930} label="Account number" groups={[8]} value={''} />
           </div>
           <Line n={935} label="Name of account" />
+          <Cells n={940} label="Building society reference" groups={[10]} value={''} />
         </Panel>
-      </Page>
+        <Teal>Payments to a person other than the company</Teal>
+        <Panel>
+          <TickRow n={943} label="Put an ‘X’ in box 943 if there is a R&D payable credit and one of the conditions listed in the CT600 Guide is applicable" />
+          <Line n={955} label="Authorise (enter name)" />
+          <Line n={970} label="Name" />
+        </Panel>
 
-      {/* ── Page 12 — Declaration ── */}
-      <Page {...foot('12')} tag="12">
         <Teal>Declaration</Teal>
         <Note>I declare that the information I have given on this Company Tax Return and any supplementary pages is correct and complete to the best of my knowledge and belief. I understand that giving false information in the return, or concealing any part of the company’s profits or tax payable, can lead to both the company and me being prosecuted.</Note>
         <Panel>
@@ -437,11 +481,6 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
             <Line n={985} label="Status" value="Director" />
           </div>
         </Panel>
-        <div className="mt-4 text-[10px] text-black">
-          <p><span className="font-bold">Accounting period:</span> {periodFrom ? `${ret.periodStart} to ${ret.periodEnd}` : '—'}</p>
-          <p className="mt-1"><span className="font-bold">Corporation Tax payable:</span> £{c.corporationTax.toLocaleString()}</p>
-          <p className="mt-1"><span className="font-bold">Payment due:</span> {paymentDue || '—'} &nbsp;·&nbsp; <span className="font-bold">Filing due:</span> {filingDue || '—'}</p>
-        </div>
       </Page>
     </FormThemeContext.Provider>
   );
