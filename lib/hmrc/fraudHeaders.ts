@@ -92,7 +92,10 @@ export function buildFraudHeaders(req: NextRequest, fd: ClientFraudData, opts: F
     'Gov-Client-Screens': `width=${fd.screenWidth}&height=${fd.screenHeight}&scaling-factor=${fd.scalingFactor}&colour-depth=${fd.colourDepth}`,
     'Gov-Client-Window-Size': `width=${fd.windowWidth}&height=${fd.windowHeight}`,
     'Gov-Client-Browser-JS-User-Agent': fd.userAgent,
-    'Gov-Client-Browser-Do-Not-Track': fd.doNotTrack ? 'true' : 'false',
+    // NB: Gov-Client-Browser-Do-Not-Track is intentionally NOT sent — HMRC's
+    // current spec dropped it (DNT is deprecated in browsers), and sending it
+    // now returns UNEXPECTED_HEADER in the Test FPH validation-feedback. Verified
+    // against HMRC's validation-feedback endpoint 2026-08-25 (business-details-mtd).
     'Gov-Vendor-Product-Name': enc(productName),
     'Gov-Vendor-Version': `${productName}=${enc(version)}`,
     'Gov-Vendor-License-IDs': licenseHeader(),
