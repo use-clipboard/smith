@@ -53,6 +53,10 @@ export default function ClientServicesPanel({ clientId, isAdmin }: { clientId: s
   const [editTarget, setEditTarget] = useState<{ mode: 'add' | 'edit'; service?: ClientService } | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [taskPopover, setTaskPopover] = useState<string | null>(null);
+  // Row popups are portaled to <body> so the table's overflow containers can't
+  // clip them; we anchor each to its trigger button's on-screen position.
+  const [menuAnchor, setMenuAnchor] = useState<{ top: number; right: number } | null>(null);
+  const [taskAnchor, setTaskAnchor] = useState<{ top: number; right: number } | null>(null);
   const [endTarget, setEndTarget] = useState<ClientService | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ClientService | null>(null);
   const [noteDraft, setNoteDraft] = useState('');
@@ -282,7 +286,12 @@ export default function ClientServicesPanel({ clientId, isAdmin }: { clientId: s
                           {svc.tasks.length === 0
                             ? <span className="text-[var(--text-muted)]">—</span>
                             : (
-                              <button onClick={() => setTaskPopover(p => p === svc.id ? null : svc.id)} className="inline-flex items-center gap-1 text-xs text-[var(--accent)] hover:underline">
+                              <button onClick={e => {
+                                const open = taskPopover === svc.id;
+                                setMenuFor(null);
+                                setTaskPopover(open ? null : svc.id);
+                                if (!open) { const r = e.currentTarget.getBoundingClientRect(); setTaskAnchor({ top: r.bottom + 4, right: window.innerWidth - r.right }); }
+                              }} className="inline-flex items-center gap-1 text-xs text-[var(--accent)] hover:underline">
                                 <ListChecks size={13} /> {svc.tasks.length} task{svc.tasks.length === 1 ? '' : 's'}
                               </button>
                             )}
@@ -295,16 +304,21 @@ export default function ClientServicesPanel({ clientId, isAdmin }: { clientId: s
                         <td className="px-3 py-3">
                           <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${STATUS_PILL[svc.status]}`}>{svc.status === 'active' ? 'Active' : svc.status === 'paused' ? 'Paused' : 'Ended'}</span>
                         </td>
-                        <td className="px-2 py-3 relative">
+                        <td className="px-2 py-3">
                           {isAdmin && (
-                            <button onClick={() => setMenuFor(m => m === svc.id ? null : svc.id)} aria-label="Service actions" className="p-1 rounded text-[var(--text-muted)] hover:bg-slate-100">
+                            <button onClick={e => {
+                              const open = menuFor === svc.id;
+                              setTaskPopover(null);
+                              setMenuFor(open ? null : svc.id);
+                              if (!open) { const r = e.currentTarget.getBoundingClientRect(); setMenuAnchor({ top: r.bottom + 4, right: window.innerWidth - r.right }); }
+                            }} aria-label="Service actions" className="p-1 rounded text-[var(--text-muted)] hover:bg-slate-100">
                               <MoreHorizontal size={16} />
                             </button>
                           )}
-                          {menuFor === svc.id && (
+                          {menuFor === svc.id && menuAnchor && createPortal(
                             <>
-                              <div className="fixed inset-0 z-20" onClick={() => setMenuFor(null)} />
-                              <div className="absolute right-2 top-9 z-30 w-44 bg-white rounded-lg shadow-xl border border-[var(--border)] py-1 text-sm">
+                              <div className="fixed inset-0 z-[80]" onClick={() => setMenuFor(null)} />
+                              <div className="fixed z-[81] w-44 bg-white rounded-lg shadow-xl border border-[var(--border)] py-1 text-sm" style={{ top: menuAnchor.top, right: menuAnchor.right }}>
                                 <MenuItem icon={Pencil} label="Edit" onClick={() => { setMenuFor(null); setEditTarget({ mode: 'edit', service: svc }); }} />
                                 {svc.status === 'active' && <MenuItem icon={Pause} label="Pause" onClick={() => { setMenuFor(null); void setStatus(svc, 'paused'); }} />}
                                 {svc.status === 'paused' && <MenuItem icon={Play} label="Resume" onClick={() => { setMenuFor(null); void setStatus(svc, 'active'); }} />}
@@ -312,12 +326,11 @@ export default function ClientServicesPanel({ clientId, isAdmin }: { clientId: s
                                 {svc.status === 'ended' && <MenuItem icon={Play} label="Reactivate" onClick={() => { setMenuFor(null); void setStatus(svc, 'active'); }} />}
                                 <MenuItem icon={Trash2} label="Delete" danger onClick={() => { setMenuFor(null); setDeleteTarget(svc); }} />
                               </div>
-                            </>
-                          )}
-                          {taskPopover === svc.id && svc.tasks.length > 0 && (
+                            </>, document.body)}
+                          {taskPopover === svc.id && taskAnchor && svc.tasks.length > 0 && createPortal(
                             <>
-                              <div className="fixed inset-0 z-20" onClick={() => setTaskPopover(null)} />
-                              <div className="absolute right-2 top-9 z-30 w-64 bg-white rounded-lg shadow-xl border border-[var(--border)] py-1 text-sm">
+                              <div className="fixed inset-0 z-[80]" onClick={() => setTaskPopover(null)} />
+                              <div className="fixed z-[81] w-64 bg-white rounded-lg shadow-xl border border-[var(--border)] py-1 text-sm" style={{ top: taskAnchor.top, right: taskAnchor.right }}>
                                 <p className="px-3 py-1.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)] font-semibold">Linked tasks</p>
                                 {svc.tasks.map(t => (
                                   <button key={t.id} onClick={() => { setTaskPopover(null); openTaskInTool(t.id); }} className="w-full text-left px-3 py-1.5 hover:bg-[var(--accent-light)] flex items-center gap-2">
@@ -326,8 +339,7 @@ export default function ClientServicesPanel({ clientId, isAdmin }: { clientId: s
                                   </button>
                                 ))}
                               </div>
-                            </>
-                          )}
+                            </>, document.body)}
                         </td>
                       </tr>
                     );
