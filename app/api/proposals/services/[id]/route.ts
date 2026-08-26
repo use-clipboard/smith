@@ -15,6 +15,7 @@ const Patch = z.object({
   name: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
   category: z.string().nullable().optional(),
+  icon: z.string().max(60).nullable().optional(),
   fee_type: z.enum(['fixed','tiered']).optional(),
   base_price: z.number().optional(),
   frequency: Frequency.optional(),

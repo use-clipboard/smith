@@ -7,6 +7,7 @@ import {
   Mail,
 } from 'lucide-react';
 import { useModules } from '@/components/ui/ModulesProvider';
+import { serviceIcon, SERVICE_ICON_KEYS } from '@/components/features/clients/services/serviceIcons';
 
 interface Props {
   isAdmin: boolean;
@@ -21,6 +22,7 @@ interface Service {
   name: string;
   description: string | null;
   category: string | null;
+  icon: string | null;
   fee_type: 'fixed' | 'tiered';
   base_price: number;
   frequency: 'one_off' | 'monthly' | 'quarterly' | 'annual';
@@ -957,6 +959,9 @@ export function ServicesSection({ isAdmin }: { isAdmin: boolean }) {
               />
             ) : (
               <div key={svc.id} className="px-4 py-3 flex items-start gap-3">
+                <span className="grid place-items-center h-8 w-8 rounded-lg bg-[var(--accent-light)] text-[var(--accent)] shrink-0 mt-0.5">
+                  {(() => { const Icon = serviceIcon(svc.icon); return <Icon size={15} />; })()}
+                </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">{svc.name} {!svc.active && <span className="text-[10px] uppercase ml-1 text-[var(--text-muted)]">inactive</span>}</p>
                   {svc.description && <p className="text-xs text-[var(--text-muted)] mt-0.5">{svc.description}</p>}
@@ -1006,7 +1011,7 @@ function ServiceForm({ initial, isAdmin, onCancel, onSaved }: {
   onSaved: () => void;
 }) {
   const [form, setForm] = useState<Service>(() => initial ?? {
-    id: '', name: '', description: null, category: null,
+    id: '', name: '', description: null, category: null, icon: 'briefcase',
     fee_type: 'fixed', base_price: 0, frequency: 'monthly',
     vat_treatment: 'firm_default', display_order: 0, active: true, tiers: [],
   });
@@ -1034,6 +1039,7 @@ function ServiceForm({ initial, isAdmin, onCancel, onSaved }: {
         name: form.name,
         description: form.description,
         category: form.category,
+        icon: form.icon,
         fee_type: form.fee_type,
         base_price: Number(form.base_price ?? 0),
         frequency: form.frequency,
@@ -1068,6 +1074,21 @@ function ServiceForm({ initial, isAdmin, onCancel, onSaved }: {
         <Field label="Category"><input value={form.category ?? ''} onChange={e => update('category', e.target.value || null)} className="input-base text-sm w-full" placeholder="Compliance / Bookkeeping / Advisory" /></Field>
       </div>
       <Field label="Description"><textarea value={form.description ?? ''} onChange={e => update('description', e.target.value || null)} rows={2} className="input-base text-sm w-full" /></Field>
+      <div>
+        <p className="text-[11px] font-medium text-[var(--text-secondary)] mb-1.5">Icon</p>
+        <div className="flex flex-wrap gap-1.5">
+          {SERVICE_ICON_KEYS.map(key => {
+            const Icon = serviceIcon(key);
+            const active = (form.icon ?? 'briefcase') === key;
+            return (
+              <button key={key} type="button" onClick={() => update('icon', key)} aria-label={key}
+                className={`grid place-items-center h-8 w-8 rounded-lg border transition-colors ${active ? 'bg-[var(--accent)] text-white border-[var(--accent)]' : 'bg-white text-[var(--text-muted)] border-[var(--border-card)] hover:border-[var(--accent)]'}`}>
+                <Icon size={15} />
+              </button>
+            );
+          })}
+        </div>
+      </div>
       <div className="grid grid-cols-3 gap-2">
         <Field label="Fee type">
           <select value={form.fee_type} onChange={e => update('fee_type', e.target.value as Service['fee_type'])} className="input-base text-sm w-full">

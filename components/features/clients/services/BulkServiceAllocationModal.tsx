@@ -13,12 +13,13 @@ interface CatalogueSvc {
   name: string;
   description: string | null;
   category: string | null;
+  icon: string | null;
   base_price: number;
   fee_type: 'fixed' | 'tiered';
   frequency: string;
   vat_treatment: string | null;
   active: boolean;
-  tiers?: Array<{ label: string; price: number }>;
+  tiers?: Array<{ label: string; price: number; frequency?: string; display_order?: number }>;
 }
 interface Pkg { id: string; name: string; serviceIds: string[]; }
 interface Client {
@@ -49,9 +50,14 @@ const STEP_ORDER: Step[] = ['services', 'clients', 'review', 'results'];
 interface Props { onClose: () => void; onComplete?: () => void; }
 
 function freqLabel(f: string) { return FREQUENCY_LABEL[f as ServiceFrequency] ?? f; }
-function priceLabel(svc: CatalogueSvc): string {
-  if (svc.fee_type === 'tiered') return `Tiered (${(svc.tiers ?? []).length} tier${(svc.tiers ?? []).length === 1 ? '' : 's'})`;
+function priceLabel(svc: CatalogueSvc, tierLabel?: string): string {
   const suffix = vatSuffix(svc.vat_treatment);
+  if (svc.fee_type === 'tiered') {
+    const tiers = svc.tiers ?? [];
+    const tier = tiers.find(t => t.label === tierLabel) ?? tiers[0];
+    if (!tier) return 'Tiered';
+    return `${tier.label} · £${Number(tier.price).toFixed(2)} / ${freqLabel(tier.frequency ?? svc.frequency)}${suffix ? ` · ${suffix}` : ''}`;
+  }
   return `£${Number(svc.base_price).toFixed(2)} / ${freqLabel(svc.frequency)}${suffix ? ` · ${suffix}` : ''}`;
 }
 
@@ -65,6 +71,12 @@ export default function BulkServiceAllocationModal({ onClose, onComplete }: Prop
   const [catLoading, setCatLoading] = useState(true);
   const [svcSearch, setSvcSearch] = useState('');
   const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(new Set());
+  // For tiered services: service id → chosen tier label.
+  const [tierByService, setTierByService] = useState<Record<string, string>>({});
+
+  function sortedTiers(svc: CatalogueSvc) {
+    return [...(svc.tiers ?? [])].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+  }
 
   useEffect(() => {
     (async () => {
@@ -92,19 +104,26 @@ export default function BulkServiceAllocationModal({ onClose, onComplete }: Prop
       s.name.toLowerCase().includes(q) || (s.category ?? '').toLowerCase().includes(q));
   }, [catalogue, svcSearch]);
 
+  // Ensure a tiered service has a default tier (its first) selected.
+  function ensureTierDefault(id: string) {
+    const svc = catalogue.find(c => c.id === id);
+    if (!svc || svc.fee_type !== 'tiered') return;
+    const tiers = sortedTiers(svc);
+    if (tiers.length === 0) return;
+    setTierByService(prev => (prev[id] ? prev : { ...prev, [id]: tiers[0].label }));
+  }
   function toggleService(id: string) {
     setSelectedServiceIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id); else { next.add(id); ensureTierDefault(id); }
       return next;
     });
   }
   function applyPackage(pkg: Pkg) {
+    const valid = new Set(catalogue.map(c => c.id));
     setSelectedServiceIds(prev => {
       const next = new Set(prev);
-      // Only add services that still exist in the (active) catalogue.
-      const valid = new Set(catalogue.map(c => c.id));
-      pkg.serviceIds.forEach(id => { if (valid.has(id)) next.add(id); });
+      pkg.serviceIds.forEach(id => { if (valid.has(id)) { next.add(id); ensureTierDefault(id); } });
       return next;
     });
   }
@@ -173,6 +192,7 @@ export default function BulkServiceAllocationModal({ onClose, onComplete }: Prop
         body: JSON.stringify({
           catalogue_ids: [...selectedServiceIds],
           client_ids: [...selectedClients.keys()],
+          tier_selections: tierByService,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -279,17 +299,35 @@ export default function BulkServiceAllocationModal({ onClose, onComplete }: Prop
                 </div>
               ) : filteredCatalogue.map(svc => {
                 const checked = selectedServiceIds.has(svc.id);
+                const isTiered = svc.fee_type === 'tiered' && (svc.tiers ?? []).length > 0;
+                const chosenTier = tierByService[svc.id];
                 return (
-                  <button key={svc.id} onClick={() => toggleService(svc.id)}
-                    className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-colors ${checked ? 'bg-indigo-50/60' : 'hover:bg-gray-50'}`}>
-                    {checked ? <CheckSquare className="h-4 w-4 text-indigo-600 flex-shrink-0 mt-0.5" /> : <Square className="h-4 w-4 text-gray-300 flex-shrink-0 mt-0.5" />}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800">{svc.name}</p>
-                      <p className="text-[11px] text-gray-500 mt-0.5">
-                        {priceLabel(svc)}{svc.category ? ` · ${svc.category}` : ''}
-                      </p>
-                    </div>
-                  </button>
+                  <div key={svc.id} className={checked ? 'bg-indigo-50/60' : ''}>
+                    <button onClick={() => toggleService(svc.id)}
+                      className="w-full text-left px-4 py-3 flex items-start gap-3 transition-colors hover:bg-black/[0.02]">
+                      {checked ? <CheckSquare className="h-4 w-4 text-indigo-600 flex-shrink-0 mt-0.5" /> : <Square className="h-4 w-4 text-gray-300 flex-shrink-0 mt-0.5" />}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800">{svc.name}{isTiered && <span className="ml-1.5 text-[10px] text-indigo-600 bg-indigo-100 rounded px-1.5 py-0.5 align-middle">Tiered</span>}</p>
+                        <p className="text-[11px] text-gray-500 mt-0.5">
+                          {priceLabel(svc, chosenTier)}{svc.category ? ` · ${svc.category}` : ''}
+                        </p>
+                      </div>
+                    </button>
+                    {checked && isTiered && (
+                      <div className="px-4 pb-3 pl-11 flex items-center gap-2">
+                        <span className="text-[11px] text-gray-500">Tier:</span>
+                        <select
+                          value={chosenTier ?? ''}
+                          onChange={e => setTierByService(prev => ({ ...prev, [svc.id]: e.target.value }))}
+                          className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        >
+                          {sortedTiers(svc).map(t => (
+                            <option key={t.label} value={t.label}>{t.label} — £{Number(t.price).toFixed(2)}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -399,7 +437,7 @@ export default function BulkServiceAllocationModal({ onClose, onComplete }: Prop
                   {selectedServices.map(s => (
                     <div key={s.id} className="px-3 py-2">
                       <p className="text-sm font-medium text-gray-800">{s.name}</p>
-                      <p className="text-[11px] text-gray-400">{priceLabel(s)}</p>
+                      <p className="text-[11px] text-gray-400">{priceLabel(s, tierByService[s.id])}</p>
                     </div>
                   ))}
                 </div>

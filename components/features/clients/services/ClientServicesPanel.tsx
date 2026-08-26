@@ -252,7 +252,10 @@ export default function ClientServicesPanel({ clientId, isAdmin }: { clientId: s
                           <div className="flex items-center gap-2.5">
                             <span className="grid place-items-center h-8 w-8 rounded-lg bg-[var(--accent-light)] text-[var(--accent)] shrink-0"><Icon size={15} /></span>
                             <div className="min-w-0">
-                              <p className="font-medium text-[var(--text-primary)] truncate">{svc.name}</p>
+                              <p className="font-medium text-[var(--text-primary)] truncate">
+                                {svc.name}
+                                {svc.tierLabel && <span className="ml-1.5 align-middle text-[10px] font-medium px-1.5 py-0.5 rounded bg-[var(--accent-light)] text-[var(--accent)]">{svc.tierLabel}</span>}
+                              </p>
                               {svc.description && <p className="text-xs text-[var(--text-muted)] truncate max-w-[260px]">{svc.description}</p>}
                             </div>
                           </div>

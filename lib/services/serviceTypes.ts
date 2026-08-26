@@ -115,6 +115,8 @@ export interface ClientService {
   frequency: ServiceFrequency | null;
   pricePence: number | null;
   vatTreatment: string | null;
+  /** For a tiered catalogue service: the chosen tier's label (else null). */
+  tierLabel: string | null;
   status: ServiceStatus;
   /** Manually-set due date; only used when there are no open linked tasks. */
   manualNextDue: string | null;

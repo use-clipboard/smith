@@ -10,8 +10,13 @@ import {
 } from '@/lib/services/serviceTypes';
 
 interface ClientTask { id: string; title: string; status: string; service_id: string | null; }
+interface CatalogueTier { label: string; price: number; frequency: string; }
 // The shared catalogue = the Proposals module's proposal_services.
-interface CatalogueSvc { id: string; name: string; description: string | null; base_price: number; frequency: string; vat_treatment: string; active: boolean; }
+interface CatalogueSvc {
+  id: string; name: string; description: string | null; icon: string | null;
+  base_price: number; frequency: string; vat_treatment: string; active: boolean;
+  fee_type: 'fixed' | 'tiered'; tiers?: CatalogueTier[];
+}
 
 export default function ServiceEditModal({
   clientId, mode, service, onClose, onSaved,
@@ -32,6 +37,7 @@ export default function ServiceEditModal({
   const [frequency, setFrequency] = useState<ServiceFrequency | ''>((service?.frequency as ServiceFrequency) ?? 'monthly');
   const [priceText, setPriceText] = useState(service?.pricePence != null ? (service.pricePence / 100).toFixed(2) : '');
   const [vatTreatment, setVatTreatment] = useState<ServiceVatTreatment>((service?.vatTreatment as ServiceVatTreatment) ?? 'exclusive');
+  const [tierLabel, setTierLabel] = useState<string | null>(service?.tierLabel ?? null);
   const [status, setStatus] = useState<ServiceStatus>(service?.status ?? 'active');
   const [nextDue, setNextDue] = useState(service?.manualNextDue ?? '');
   const [notes, setNotes] = useState(service?.notes ?? '');
@@ -54,15 +60,38 @@ export default function ServiceEditModal({
     [tasks, service?.id, linkedTaskIds],
   );
 
+  // The catalogue service backing the current selection (for the tier picker).
+  const selectedCatalogueItem = useMemo(
+    () => catalogue.find(c => c.id === catalogueId) ?? null,
+    [catalogue, catalogueId],
+  );
+  const catalogueTiers = selectedCatalogueItem?.fee_type === 'tiered' ? (selectedCatalogueItem.tiers ?? []) : [];
+
   function applyCatalogue(id: string) {
     setCatalogueId(id || null);
     const item = catalogue.find(c => c.id === id);
-    if (!item) return;
+    if (!item) { setTierLabel(null); return; }
     setName(item.name);
     setDescription(item.description ?? '');
-    if (item.frequency) setFrequency(item.frequency as ServiceFrequency);
-    if (item.base_price != null) setPriceText(Number(item.base_price).toFixed(2));
+    if (item.icon) setIcon(item.icon);
     if (item.vat_treatment) setVatTreatment(item.vat_treatment as ServiceVatTreatment);
+    if (item.fee_type === 'tiered' && (item.tiers ?? []).length > 0) {
+      // Default to the first tier and pull its price/frequency across.
+      pickTier(item, item.tiers![0].label);
+    } else {
+      setTierLabel(null);
+      if (item.frequency) setFrequency(item.frequency as ServiceFrequency);
+      if (item.base_price != null) setPriceText(Number(item.base_price).toFixed(2));
+    }
+  }
+
+  // Choose a tier of a tiered catalogue service → pull its cost + frequency over.
+  function pickTier(item: CatalogueSvc, label: string) {
+    const tier = (item.tiers ?? []).find(t => t.label === label);
+    setTierLabel(label);
+    if (!tier) return;
+    if (tier.price != null) setPriceText(Number(tier.price).toFixed(2));
+    if (tier.frequency) setFrequency(tier.frequency as ServiceFrequency);
   }
 
   async function save() {
@@ -77,6 +106,7 @@ export default function ServiceEditModal({
       frequency: frequency || null,
       price_pence: Number.isFinite(pricePence as number) ? pricePence : null,
       vat_treatment: vatTreatment,
+      tier_label: tierLabel,
       status,
       next_due: nextDue || null,
       notes: notes.trim() || null,
@@ -106,8 +136,24 @@ export default function ServiceEditModal({
               <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Start from catalogue</label>
               <select value={catalogueId ?? ''} onChange={e => applyCatalogue(e.target.value)} className="input-base w-full text-sm">
                 <option value="">Custom service…</option>
-                {catalogue.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {catalogue.map(c => <option key={c.id} value={c.id}>{c.name}{c.fee_type === 'tiered' ? ' (tiered)' : ''}</option>)}
               </select>
+            </div>
+          )}
+
+          {catalogueTiers.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Tier</label>
+              <select
+                value={tierLabel ?? ''}
+                onChange={e => selectedCatalogueItem && pickTier(selectedCatalogueItem, e.target.value)}
+                className="input-base w-full text-sm"
+              >
+                {catalogueTiers.map(t => (
+                  <option key={t.label} value={t.label}>{t.label} — £{Number(t.price).toFixed(2)}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-[var(--text-muted)] mt-1">The chosen tier&rsquo;s price is pulled into the fee below.</p>
             </div>
           )}
 

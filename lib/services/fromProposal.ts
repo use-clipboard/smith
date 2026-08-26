@@ -16,11 +16,16 @@ export async function createServicesFromProposal(
   try {
     const { data: lines, error } = await service
       .from('proposal_line_items')
-      .select('service_id, service_name, description, frequency, unit_price, quantity, vat_treatment')
+      .select('service_id, service_name, description, tier_label, frequency, unit_price, quantity, vat_treatment')
       .eq('proposal_id', opts.proposalId)
       .not('service_id', 'is', null);
     if (error) return { created: 0, error: error.message };
     if (!lines || lines.length === 0) return { created: 0 };
+
+    // Icons for the referenced catalogue services (copied onto the client rows).
+    const svcIds = [...new Set((lines as Array<{ service_id: string }>).map(l => l.service_id))];
+    const { data: cat } = await service.from('proposal_services').select('id, icon').in('id', svcIds);
+    const iconById = new Map<string, string | null>((cat ?? []).map((c: { id: string; icon: string | null }) => [c.id, c.icon ?? null]));
 
     // Skip catalogue services the client already has.
     const { data: have } = await service.from('client_services').select('catalogue_id').eq('client_id', opts.clientId);
@@ -33,7 +38,7 @@ export async function createServicesFromProposal(
     // Collapse duplicate service_ids within the proposal (keep the first).
     const seen = new Set<string>();
     const rows: Record<string, unknown>[] = [];
-    for (const l of lines as Array<{ service_id: string; service_name: string; description: string | null; frequency: string; unit_price: number; quantity: number; vat_treatment: string | null }>) {
+    for (const l of lines as Array<{ service_id: string; service_name: string; description: string | null; tier_label: string | null; frequency: string; unit_price: number; quantity: number; vat_treatment: string | null }>) {
       if (seen.has(l.service_id) || haveSet.has(l.service_id)) continue;
       seen.add(l.service_id);
       const qty = Number(l.quantity) || 1;
@@ -44,9 +49,11 @@ export async function createServicesFromProposal(
         catalogue_id: l.service_id,
         name: l.service_name,
         description: l.description ?? null,
+        icon: iconById.get(l.service_id) ?? null,
         frequency: l.frequency ?? null,
         price_pence: pricePence,
         vat_treatment: l.vat_treatment ?? null,
+        tier_label: l.tier_label ?? null,
         status: 'active',
         created_by: opts.createdBy,
         sort_order: ++sort,

@@ -6,6 +6,9 @@ import { createServiceClient } from '@/lib/supabase-server';
 const Schema = z.object({
   catalogue_ids: z.array(z.string().uuid()).min(1),
   client_ids: z.array(z.string().uuid()).min(1),
+  // For tiered services: catalogue service id → chosen tier label. Optional;
+  // a tiered service with no selection falls back to its first tier.
+  tier_selections: z.record(z.string().uuid(), z.string()).optional(),
 });
 
 interface AllocationResult {
@@ -39,10 +42,33 @@ export async function POST(req: NextRequest) {
     .in('id', parsed.data.client_ids).eq('firm_id', ctx.firmId);
   if (!clients || clients.length === 0) return NextResponse.json({ error: 'No matching clients.' }, { status: 404 });
 
-  const { data: items } = await service
-    .from('proposal_services').select('id, name, description, base_price, frequency, vat_treatment')
+  const { data: rawItems } = await service
+    .from('proposal_services')
+    .select('id, name, description, icon, base_price, frequency, vat_treatment, fee_type, tiers:proposal_service_tiers(label, price, frequency, display_order)')
     .in('id', parsed.data.catalogue_ids).eq('firm_id', ctx.firmId).eq('active', true);
-  if (!items || items.length === 0) return NextResponse.json({ error: 'No matching catalogue services.' }, { status: 404 });
+  if (!rawItems || rawItems.length === 0) return NextResponse.json({ error: 'No matching catalogue services.' }, { status: 404 });
+
+  // Resolve each service to a concrete fee: fixed → base_price; tiered → the
+  // selected tier (by label) else the first tier.
+  const tierSel = parsed.data.tier_selections ?? {};
+  const items = rawItems.map(i => {
+    const tiers = [...((i.tiers as Array<{ label: string; price: number; frequency: string; display_order: number | null }>) ?? [])]
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+    let tier: { label: string; price: number; frequency: string } | null = null;
+    if (i.fee_type === 'tiered' && tiers.length > 0) {
+      tier = tiers.find(t => t.label === tierSel[i.id]) ?? tiers[0];
+    }
+    return {
+      id: i.id,
+      name: i.name,
+      description: i.description ?? null,
+      icon: i.icon ?? null,
+      frequency: (tier?.frequency ?? i.frequency) ?? null,
+      price: tier ? tier.price : i.base_price,
+      vat_treatment: i.vat_treatment ?? null,
+      tier_label: tier?.label ?? null,
+    };
+  });
 
   // Existing services + current max sort_order for every target client, in two
   // batched reads (not per-client round trips).
@@ -77,9 +103,11 @@ export async function POST(req: NextRequest) {
         catalogue_id: i.id,
         name: i.name,
         description: i.description ?? null,
+        icon: i.icon ?? null,
         frequency: i.frequency ?? null,
-        price_pence: i.base_price != null ? Math.round(Number(i.base_price) * 100) : null,
+        price_pence: i.price != null ? Math.round(Number(i.price) * 100) : null,
         vat_treatment: i.vat_treatment ?? null,
+        tier_label: i.tier_label ?? null,
         status: 'active',
         created_by: ctx.userId,
         sort_order: ++sort,

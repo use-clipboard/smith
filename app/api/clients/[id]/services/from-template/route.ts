@@ -22,9 +22,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { data: client } = await service.from('clients').select('id').eq('id', params.id).eq('firm_id', ctx.firmId).single();
   if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
 
-  // Load the chosen catalogue services (firm-scoped, active).
+  // Load the chosen catalogue services (firm-scoped, active), with tiers.
   const { data: items } = await service
-    .from('proposal_services').select('id, name, description, base_price, frequency, vat_treatment')
+    .from('proposal_services')
+    .select('id, name, description, icon, base_price, frequency, vat_treatment, fee_type, tiers:proposal_service_tiers(label, price, frequency, display_order)')
     .in('id', parsed.data.catalogue_ids).eq('firm_id', ctx.firmId).eq('active', true);
   if (!items || items.length === 0) return NextResponse.json({ created: 0 });
 
@@ -35,19 +36,29 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .from('client_services').select('sort_order').eq('client_id', params.id).order('sort_order', { ascending: false }).limit(1).maybeSingle();
   let sort = (last?.sort_order ?? -1);
 
-  const rows = items.filter(i => !haveSet.has(i.id)).map(i => ({
-    firm_id: ctx.firmId,
-    client_id: params.id,
-    catalogue_id: i.id,
-    name: i.name,
-    description: i.description ?? null,
-    frequency: i.frequency ?? null,
-    price_pence: i.base_price != null ? Math.round(Number(i.base_price) * 100) : null,
-    vat_treatment: i.vat_treatment ?? null,
-    status: 'active',
-    created_by: ctx.userId,
-    sort_order: ++sort,
-  }));
+  const rows = items.filter(i => !haveSet.has(i.id)).map(i => {
+    // Tiered services have no base price — fall back to the first (lowest-order)
+    // tier so a package containing a tiered service allocates a real fee.
+    const tiers = [...((i.tiers as Array<{ label: string; price: number; frequency: string; display_order: number | null }>) ?? [])]
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+    const tier = i.fee_type === 'tiered' && tiers.length > 0 ? tiers[0] : null;
+    const priceSource = tier ? tier.price : i.base_price;
+    return {
+      firm_id: ctx.firmId,
+      client_id: params.id,
+      catalogue_id: i.id,
+      name: i.name,
+      description: i.description ?? null,
+      icon: i.icon ?? null,
+      frequency: (tier?.frequency ?? i.frequency) ?? null,
+      price_pence: priceSource != null ? Math.round(Number(priceSource) * 100) : null,
+      vat_treatment: i.vat_treatment ?? null,
+      tier_label: tier?.label ?? null,
+      status: 'active',
+      created_by: ctx.userId,
+      sort_order: ++sort,
+    };
+  });
   if (rows.length === 0) return NextResponse.json({ created: 0 });
 
   const { error } = await service.from('client_services').insert(rows);
