@@ -83,7 +83,12 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
   // Box 295 total deductions & reliefs; box 300 profits before donations/group relief.
   const box295 = c.lossesReliefs;
   const box300 = Math.max(0, box235 - box295);
-  const fyRows = ct600FyRows(ret.periodStart, ret.periodEnd, c.pctct, c.ctRatePct, c.taxBeforeMarginalRelief);
+  // The FY grid shows the statutory rate (25% main / 19% small profits) with the
+  // gross tax; any marginal relief is shown separately in box 435 on page 5. So
+  // derive the statutory rate from the pre-marginal-relief tax, not the blended
+  // effective rate.
+  const statutoryRatePct = c.pctct > 0 ? (c.taxBeforeMarginalRelief / c.pctct) * 100 : c.ctRatePct;
+  const fyRows = ct600FyRows(ret.periodStart, ret.periodEnd, c.pctct, statutoryRatePct, c.taxBeforeMarginalRelief);
 
   const rd = t.rdFilmsCalc;
   // Capital-allowances breakdown for boxes 690–775. Prefer the calculator's
@@ -120,6 +125,10 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
           <Cells n={2} label="Company registration number" groups={[8]} value={''} />
           <Cells n={3} label="Tax reference" groups={[10]} value={ret.utr || ''} />
           <Cells n={4} label="Type of company" groups={[2]} value={''} />
+        </Panel>
+
+        <Teal>Northern Ireland (NI)</Teal>
+        <Panel>
           <SubHead>Put an ‘X’ in the appropriate boxes below</SubHead>
           <div className="grid grid-cols-2 gap-x-8 gap-y-1.5">
             <TickRow n={5} label="NI trading activity" />
@@ -359,20 +368,14 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         </Panel>
         <Teal>Capital allowances and balancing charges</Teal>
         <SubHead>Allowances and charges in the calculation of trading profits and losses</SubHead>
-        <Panel divided>
-          <div className="grid grid-cols-2 gap-x-8">
-            <div>
-              <p className="mb-1 text-[9.5px] font-bold text-black">Capital allowances</p>
-              <Money n={690} label="Annual investment allowance" value={ca ? ca.aia : 0} />
-              <Money n={705} label="Machinery and plant — main pool" value={ca ? ca.wdaMain + ca.fya + ca.balancingAllowance : caTotal} />
-              <Money n={695} label="Machinery and plant — special rate pool" value={ca ? ca.wdaSpecial : 0} />
-              <Money n={711} label="Structures and buildings" value={0} />
-            </div>
-            <div>
-              <p className="mb-1 text-[9.5px] font-bold text-black">Balancing charges</p>
-              <Money n={692} label="Machinery and plant" value={caBalCharge} />
-            </div>
-          </div>
+        <Panel>
+          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-black/70">Capital allowances</p>
+          <Money n={690} label="Annual investment allowance" value={ca ? ca.aia : 0} />
+          <Money n={705} label="Machinery and plant — main pool" value={ca ? ca.wdaMain + ca.fya + ca.balancingAllowance : caTotal} />
+          <Money n={695} label="Machinery and plant — special rate pool" value={ca ? ca.wdaSpecial : 0} />
+          <Money n={711} label="Structures and buildings" value={0} />
+          <p className="mb-1.5 mt-3 text-[10px] font-bold uppercase tracking-wide text-black/70">Balancing charges</p>
+          <Money n={692} label="Machinery and plant" value={caBalCharge} />
         </Panel>
       </Page>
 
@@ -392,22 +395,14 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
       <Page {...foot('10')} tag="10">
         <Teal>Losses, deficits and excess amounts</Teal>
         <SubHead>Amount arising</SubHead>
-        <Panel divided>
-          <div className="grid grid-cols-2 gap-x-8">
-            <div>
-              <p className="mb-1 text-[9.5px] font-bold text-black">Amount</p>
-              <Money n={780} label="Losses of trades carried on wholly or partly in the UK" value={n(L?.trading.carriedForward)} />
-              <Money n={790} label="Losses of trades carried on wholly outside the UK" value={n(L?.overseasTrading.carriedForward)} />
-              <Money n={795} label="Non-trade deficits on loan relationships and derivative contracts" value={n(L?.ntlr.carriedForward)} />
-              <Money n={805} label="UK property business losses" value={n(L?.property.carriedForward)} />
-              <Money n={830} label="Non-trading losses on intangible fixed assets" value={n(L?.intangibles.carriedForward)} />
-              <Money n={850} label="Management expenses" value={n(L?.managementExpenses.carriedForward)} />
-            </div>
-            <div>
-              <p className="mb-1 text-[9.5px] font-bold text-black">Maximum available for surrender as group relief</p>
-              <Money n={785} label="" value={n(L?.trading.groupRelief)} />
-            </div>
-          </div>
+        <Panel>
+          <Money n={780} label="Losses of trades carried on wholly or partly in the UK" value={n(L?.trading.carriedForward)} />
+          <Money n={785} label="Losses of trades carried on wholly or partly in the UK — maximum available for surrender as group relief" value={n(L?.trading.groupRelief)} />
+          <Money n={790} label="Losses of trades carried on wholly outside the UK" value={n(L?.overseasTrading.carriedForward)} />
+          <Money n={795} label="Non-trade deficits on loan relationships and derivative contracts" value={n(L?.ntlr.carriedForward)} />
+          <Money n={805} label="UK property business losses" value={n(L?.property.carriedForward)} />
+          <Money n={830} label="Non-trading losses on intangible fixed assets" value={n(L?.intangibles.carriedForward)} />
+          <Money n={850} label="Management expenses" value={n(L?.managementExpenses.carriedForward)} />
         </Panel>
       </Page>
 
