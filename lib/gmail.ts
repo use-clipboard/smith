@@ -484,6 +484,83 @@ function encodeAddressLine(addr: string): string {
 }
 
 /** Build a raw RFC 2822 email message as base64url, with optional MIME attachments */
+/**
+ * When a received email is forwarded, its inline images sit in the body as our
+ * own /api/email/attachment proxy URLs (rewritten from cid: on receive). The
+ * recipient can't reach that authed route, so fetch the bytes via the Gmail
+ * client and inline them as data: URIs — buildRawMessage then re-emits them as
+ * multipart/related cid parts. Failures leave the original URL untouched.
+ */
+export async function resolveProxyImagesToDataUris(
+  html: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  gmail: any,
+): Promise<string> {
+  const RE = /(<img\b[^>]*?\bsrc\s*=\s*)(["'])(\/api\/email\/attachment\?[^"']+)\2/gi;
+  const urls = new Set<string>();
+  for (const m of html.matchAll(RE)) urls.add(m[3]);
+  if (urls.size === 0) return html;
+
+  const resolved = new Map<string, string>(); // original src → data: URI
+  await Promise.all([...urls].map(async src => {
+    try {
+      const qs = new URLSearchParams(src.split('?')[1]?.replace(/&amp;/g, '&') ?? '');
+      const messageId = qs.get('messageId');
+      const attachmentId = qs.get('attachmentId');
+      const mimeType = qs.get('mimeType') || 'image/png';
+      if (!messageId || !attachmentId) return;
+      const att = await gmail.users.messages.attachments.get({ userId: 'me', messageId, id: attachmentId });
+      const data = att.data?.data;
+      if (!data) return;
+      resolved.set(src, `data:${mimeType};base64,${Buffer.from(data, 'base64url').toString('base64')}`);
+    } catch (e) {
+      console.error('[gmail] inline forward image resolve failed', e);
+    }
+  }));
+  if (resolved.size === 0) return html;
+
+  return html.replace(RE, (whole, pre, quote, src) => {
+    const dataUri = resolved.get(src);
+    return dataUri ? `${pre}${quote}${dataUri}${quote}` : whole;
+  });
+}
+
+// Pull inline <img src="data:image/…;base64,…"> images out of an outbound HTML
+// body and replace each with a cid: reference, returning the rewritten HTML plus
+// the extracted parts. Emitting these as multipart/related + Content-ID (rather
+// than leaving giant data: URIs in the HTML) makes inline images display in
+// clients that strip data: URIs (Outlook desktop, Gmail on large payloads).
+type OutboundInline = { cid: string; mimeType: string; data: Buffer; filename: string };
+
+function extForImage(subtype: string): string {
+  const s = subtype.toLowerCase();
+  if (s === 'jpeg' || s === 'jpg') return 'jpg';
+  if (s === 'svg+xml') return 'svg';
+  return s.replace(/[^a-z0-9]/g, '') || 'img';
+}
+
+function extractInlineImages(html: string): { html: string; inlines: OutboundInline[] } {
+  const inlines: OutboundInline[] = [];
+  const byData = new Map<string, string>(); // dedupe identical images → same cid
+  let idx = 0;
+  const stamp = Date.now().toString(36);
+  const DATA_IMG_RE = /(<img\b[^>]*?\bsrc\s*=\s*)(["'])(data:image\/([a-z0-9.+-]+);base64,([^"']+))\2/gi;
+  const out = html.replace(DATA_IMG_RE, (whole, pre, quote, _full, subtype, b64) => {
+    let buf: Buffer;
+    try { buf = Buffer.from(String(b64).replace(/\s+/g, ''), 'base64'); } catch { return whole; }
+    if (buf.length === 0) return whole;
+    let cid = byData.get(b64);
+    if (!cid) {
+      idx += 1;
+      cid = `inline${idx}.${stamp}@smith`;
+      byData.set(b64, cid);
+      inlines.push({ cid, mimeType: `image/${String(subtype).toLowerCase()}`, data: buf, filename: `image${idx}.${extForImage(subtype)}` });
+    }
+    return `${pre}${quote}cid:${cid}${quote}`;
+  });
+  return { html: out, inlines };
+}
+
 export function buildRawMessage(opts: {
   from: string;
   to: string[];
@@ -520,34 +597,72 @@ export function buildRawMessage(opts: {
     return b64.match(/.{1,76}/g)?.join('\r\n') ?? b64;
   }
 
-  if (!opts.attachments?.length) {
-    const raw =
-      `From: ${fromLine}\r\n` +
-      toLine +
-      ccLine +
-      bccLine +
-      replyToLine +
-      `Subject: ${subjectEncoded}\r\n` +
-      refLine +
-      priorityLines +
-      `MIME-Version: 1.0\r\n` +
-      `Content-Type: text/html; charset=UTF-8\r\n` +
-      `\r\n` +
-      opts.htmlBody;
+  const headerBlock =
+    `From: ${fromLine}\r\n` +
+    toLine +
+    ccLine +
+    bccLine +
+    replyToLine +
+    `Subject: ${subjectEncoded}\r\n` +
+    refLine +
+    priorityLines +
+    `MIME-Version: 1.0\r\n`;
+
+  // Extract inline data: images → cid parts (multipart/related). Keeps big
+  // base64 out of the HTML so clients that strip data: URIs still show them.
+  const { html: bodyHtml, inlines } = extractInlineImages(opts.htmlBody);
+  const hasInlines = inlines.length > 0;
+  const hasAttachments = !!opts.attachments?.length;
+  const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+  // Simplest case — a single text/html part (unchanged behaviour).
+  if (!hasInlines && !hasAttachments) {
+    const raw = headerBlock + `Content-Type: text/html; charset=UTF-8\r\n\r\n` + opts.htmlBody;
     return Buffer.from(raw).toString('base64url');
   }
 
-  // Multipart/mixed for attachments
-  const boundary = `----=_Part_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-
-  let parts =
-    `--${boundary}\r\n` +
+  const htmlSection =
     `Content-Type: text/html; charset=UTF-8\r\n` +
     `Content-Transfer-Encoding: base64\r\n\r\n` +
-    fold76(Buffer.from(opts.htmlBody).toString('base64')) +
-    `\r\n\r\n`;
+    fold76(Buffer.from(bodyHtml).toString('base64')) + `\r\n`;
 
-  for (const att of opts.attachments) {
+  // Build a multipart/related block: the HTML followed by its inline images.
+  function buildRelated(): { contentType: string; body: string } {
+    const b = `----=_Rel_${uid()}`;
+    let body = `--${b}\r\n` + htmlSection + `\r\n`;
+    for (const im of inlines) {
+      const safe = im.filename.replace(/"/g, '\\"');
+      body +=
+        `--${b}\r\n` +
+        `Content-Type: ${im.mimeType}; name="${safe}"\r\n` +
+        `Content-Transfer-Encoding: base64\r\n` +
+        `Content-ID: <${im.cid}>\r\n` +
+        `Content-Disposition: inline; filename="${safe}"\r\n\r\n` +
+        fold76(im.data.toString('base64')) + `\r\n\r\n`;
+    }
+    body += `--${b}--`;
+    return { contentType: `multipart/related; boundary="${b}"`, body };
+  }
+
+  // Inline images but no file attachments → a top-level multipart/related.
+  if (hasInlines && !hasAttachments) {
+    const rel = buildRelated();
+    const raw = headerBlock + `Content-Type: ${rel.contentType}\r\n\r\n` + rel.body;
+    return Buffer.from(raw).toString('base64url');
+  }
+
+  // Attachments present → multipart/mixed. The body slot is either the related
+  // block (when there are inline images) or a plain text/html part.
+  const boundary = `----=_Part_${uid()}`;
+  let parts: string;
+  if (hasInlines) {
+    const rel = buildRelated();
+    parts = `--${boundary}\r\n` + `Content-Type: ${rel.contentType}\r\n\r\n` + rel.body + `\r\n\r\n`;
+  } else {
+    parts = `--${boundary}\r\n` + htmlSection + `\r\n`;
+  }
+
+  for (const att of opts.attachments!) {
     const safe = att.filename.replace(/"/g, '\\"');
     parts +=
       `--${boundary}\r\n` +
@@ -557,21 +672,8 @@ export function buildRawMessage(opts: {
       fold76(att.data.toString('base64')) +
       `\r\n\r\n`;
   }
-
   parts += `--${boundary}--`;
 
-  const raw =
-    `From: ${fromLine}\r\n` +
-    toLine +
-    ccLine +
-    bccLine +
-    replyToLine +
-    `Subject: ${subjectEncoded}\r\n` +
-    refLine +
-    priorityLines +
-    `MIME-Version: 1.0\r\n` +
-    `Content-Type: multipart/mixed; boundary="${boundary}"\r\n\r\n` +
-    parts;
-
+  const raw = headerBlock + `Content-Type: multipart/mixed; boundary="${boundary}"\r\n\r\n` + parts;
   return Buffer.from(raw).toString('base64url');
 }

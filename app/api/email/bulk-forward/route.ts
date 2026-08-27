@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-import { getRefreshedGmailClient, buildRawMessage, parseGmailMessage } from '@/lib/gmail';
+import { getRefreshedGmailClient, buildRawMessage, parseGmailMessage, resolveProxyImagesToDataUris } from '@/lib/gmail';
 
 // POST /api/email/bulk-forward
 //
@@ -109,7 +109,10 @@ export async function POST(req: NextRequest) {
       const noteBlock = note.trim()
         ? `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #1f2937; margin-bottom: 16px; white-space: pre-wrap;">${escapeHtml(note.trim())}</div><hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;" />`
         : '';
-      const htmlBody = `${noteBlock}${fwdHeader}<div>${original.body || ''}</div>`;
+      // Inline images in the forwarded body are our proxy URLs — pull the bytes
+      // back so the recipient sees them (buildRawMessage re-attaches as cid).
+      const forwardedBody = await resolveProxyImagesToDataUris(original.body || '', gmail);
+      const htmlBody = `${noteBlock}${fwdHeader}<div>${forwardedBody}</div>`;
 
       const subject = original.subject.toLowerCase().startsWith('fwd:')
         ? original.subject

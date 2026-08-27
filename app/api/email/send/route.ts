@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-import { getRefreshedGmailClient, buildRawMessage, firstInvalidRecipient } from '@/lib/gmail';
+import { getRefreshedGmailClient, buildRawMessage, firstInvalidRecipient, resolveProxyImagesToDataUris } from '@/lib/gmail';
 import { wrapBodyFont, isEmailFontId } from '@/lib/emailFonts';
 import { getFirmEmailFont } from '@/lib/emailFirmSettings';
 
@@ -20,6 +20,7 @@ function parseRecipientString(s: string): { name: string; email: string } {
   if (m) return { name: m[1].replace(/^"|"$/g, '').trim(), email: m[2].trim() };
   return { name: '', email: s.trim() };
 }
+
 
 export async function POST(req: NextRequest) {
   const ctx = await getUserContext();
@@ -135,6 +136,11 @@ export async function POST(req: NextRequest) {
   try {
     const { gmail, accessToken } = await getRefreshedGmailClient(connection.refresh_token);
 
+    // Forwarded inline images come through as our proxy URLs — pull their bytes
+    // back in so the recipient sees them (buildRawMessage turns them into cid
+    // parts). No-op when the body has none.
+    const bodyWithImages = await resolveProxyImagesToDataUris(htmlBody, gmail);
+
     const raw = buildRawMessage({
       from: connection.google_email,
       to, cc, bcc,
@@ -142,7 +148,7 @@ export async function POST(req: NextRequest) {
       // The editor emits unstyled HTML and the message is sent raw, so the font
       // has to be inlined here or the recipient sees their client's default.
       // wrapBodyFont replaces any wrapper already present rather than nesting.
-      htmlBody: wrapBodyFont(htmlBody, resolvedFont),
+      htmlBody: wrapBodyFont(bodyWithImages, resolvedFont),
       replyToMessageId,
       importance,
       attachments: attachments.length > 0 ? attachments : undefined,
