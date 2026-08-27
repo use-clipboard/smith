@@ -279,6 +279,81 @@ type GmailMessagePayload = {
   filename?: string | null;
 };
 
+// ── Inline (cid:) image resolution ───────────────────────────────────────────
+// Inline images in email HTML are referenced as <img src="cid:SOMEID"> where
+// SOMEID matches a MIME part's Content-ID header. Browsers can't resolve cid:
+// URLs, so we build a map of Content-ID → attachment and rewrite those src
+// values to our same-origin attachment route (which serves image bytes inline).
+
+type CidEntry = { attachmentId: string; mimeType: string; data: string | null };
+
+function partHeader(headers: { name: string; value: string }[] | undefined, name: string): string {
+  return headers?.find(h => h.name?.toLowerCase() === name.toLowerCase())?.value ?? '';
+}
+
+function buildInlineCidMap(payload: GmailMessagePayload): Map<string, CidEntry> {
+  const map = new Map<string, CidEntry>();
+  function walk(p: GmailMessagePayload) {
+    const cidRaw = partHeader(p.headers, 'content-id');
+    if (cidRaw) {
+      const cid = cidRaw.trim().replace(/^<|>$/g, '');
+      if (cid && !map.has(cid)) {
+        map.set(cid, {
+          attachmentId: p.body?.attachmentId ?? '',
+          mimeType: p.mimeType ?? 'application/octet-stream',
+          data: p.body?.data ?? null,
+        });
+      }
+    }
+    if (p.parts) p.parts.forEach(walk);
+  }
+  walk(payload);
+  return map;
+}
+
+/**
+ * Rewrite <img src="cid:…"> (and url(cid:…)) references in an email's HTML into
+ * resolvable URLs: the same-origin attachment proxy when the part is a fetchable
+ * attachment, or an inline data: URI when the bytes are already in the payload.
+ * Unknown cids are left untouched.
+ */
+function rewriteCidImages(html: string, cidMap: Map<string, CidEntry>, gmailMessageId: string): string {
+  if (!html || cidMap.size === 0) return html;
+  const resolve = (rawId: string): string | null => {
+    let id = rawId.trim();
+    try { id = decodeURIComponent(id); } catch { /* leave as-is */ }
+    id = id.replace(/^<|>$/g, '');
+    const entry = cidMap.get(id);
+    if (!entry) return null;
+    if (entry.attachmentId) {
+      const params = new URLSearchParams({
+        messageId: gmailMessageId,
+        attachmentId: entry.attachmentId,
+        mimeType: entry.mimeType,
+        filename: 'inline',
+      });
+      return `/api/email/attachment?${params.toString()}`;
+    }
+    if (entry.data) {
+      // Gmail returns base64url; data: URIs take standard base64.
+      const b64 = entry.data.replace(/-/g, '+').replace(/_/g, '/');
+      return `data:${entry.mimeType};base64,${b64}`;
+    }
+    return null;
+  };
+  // src="cid:…" / src='cid:…'
+  let out = html.replace(/(\bsrc\s*=\s*)(["'])cid:([^"']+)\2/gi, (whole, pre, quote, rawId) => {
+    const url = resolve(rawId);
+    return url ? `${pre}${quote}${url}${quote}` : whole;
+  });
+  // url(cid:…) in inline styles (optionally quoted)
+  out = out.replace(/url\(\s*(["']?)cid:([^"')]+)\1\s*\)/gi, (whole, quote, rawId) => {
+    const url = resolve(rawId);
+    return url ? `url(${quote}${url}${quote})` : whole;
+  });
+  return out;
+}
+
 function extractAttachments(
   payload: GmailMessagePayload,
   messageId: string
@@ -325,7 +400,12 @@ export function parseGmailMessage(
     : { content: '', isHtml: false };
   // HTML bodies are rendered as-is; plain-text bodies are escaped and have
   // their newlines turned into <br> so they don't render as one run-on block.
-  const body = decoded.isHtml ? decoded.content : plainTextToHtml(decoded.content);
+  let body = decoded.isHtml ? decoded.content : plainTextToHtml(decoded.content);
+  // Resolve inline (cid:) images so <img src="cid:…"> actually shows — clients
+  // often paste document photos inline. Rewrites to the attachment proxy route.
+  if (decoded.isHtml && msg.payload && msg.id) {
+    body = rewriteCidImages(body, buildInlineCidMap(msg.payload), msg.id);
+  }
   const attachments = msg.payload ? extractAttachments(msg.payload, msg.id ?? '') : [];
   const labelIds = msg.labelIds ?? [];
   // multipart/mixed reliably indicates attachments; used as fallback when parts aren't loaded (metadata format)
