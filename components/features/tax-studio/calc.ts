@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner, Ct600Data, Ct600LossStream } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, CapexAddition, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner, Ct600Data, Ct600LossStream } from './types';
 
 /** The taxpayer's ownership share (0–1) of a jointly-owned item. No owners ⇒ 1.
  *  Shared by CGT disposals and joint interest. */
@@ -487,46 +487,87 @@ const WDA_SPECIAL = 0.06;      // special-rate pool writing-down allowance
 const SMALL_POOLS = 1000;      // small-pools write-off threshold
 
 export interface CapitalAllowancesResult {
-  aia: number;                 // box 49 — Annual Investment Allowance
-  wdaMain: number;             // box 50 — 18% main pool WDA
-  wdaSpecial: number;          // box 51 — 6% special-rate WDA
-  fya: number;                 // box 55 — 100% first-year / enhanced allowances
-  balancingAllowance: number;  // box 56 — allowances on sale / cessation
-  balancingCharge: number;     // box 59 — balancing charge on disposals
-  total: number;               // box 57 — total capital allowances
+  aia: number;                 // 100% Annual Investment Allowance
+  fya: number;                 // 100% first-year (e.g. zero-emission)
+  fullExpensing: number;       // 100% full expensing (companies — new main-pool P&M)
+  sr50: number;                // 50% special-rate first-year allowance (companies)
+  wdaMain: number;             // 18% main pool WDA
+  wdaSpecial: number;          // 6% special-rate pool WDA
+  sba: number;                 // structures & buildings allowance (3% straight-line)
+  singleAsset: number;         // single-asset pool WDAs (business-use restricted)
+  balancingAllowance: number;  // balancing allowances (disposal / cessation)
+  balancingCharge: number;     // balancing charges on disposals
+  total: number;               // total capital allowances (reduces trading profit)
   mainPoolCfwd: number;        // TWDV carried forward — main pool
   specialPoolCfwd: number;     // TWDV carried forward — special-rate pool
+  singlePoolsCfwd: { id: string; twdvCfwd: number }[]; // per single-asset pool
   // Workings (for the calculator display)
   mainPoolBeforeWda: number;
   specialPoolBeforeWda: number;
   aiaCapped: boolean;
+  aiaLimit: number;            // AIA cap actually applied (prorated)
   mainSmallPool: boolean;
   specialSmallPool: boolean;
+  periodDays: number;
+  prorated: boolean;           // true when the period ≠ 365 days
 }
 
-/** Run the capital-allowances computation for one trade's pool state. Pooled
- *  additions/disposals feed the 18%/6% pools; AIA and FYA additions are 100%.
- *  Business-use % restricts AIA/FYA claims (sole traders). Small pools (≤£1,000)
- *  are written off; a pool driven negative by disposals is a balancing charge. */
-export function computeCapitalAllowances(state: CapitalAllowancesState | undefined): CapitalAllowancesResult {
+const DAY_MS = 86_400_000;
+// Inclusive day count between two ISO dates (both ends counted), else null.
+function inclusiveDays(startIso?: string, endIso?: string): number | null {
+  if (!startIso || !endIso) return null;
+  const a = new Date(startIso), b = new Date(endIso);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime()) || b < a) return null;
+  return Math.round((b.getTime() - a.getTime()) / DAY_MS) + 1;
+}
+
+/** Run the capital-allowances computation for one pool state.
+ *  - AIA (100%, capped, prorated), FYA (100%) and full expensing (100%,
+ *    companies) are first-year allowances; 50% special-rate FYA gives half now
+ *    and adds the rest to the special pool.
+ *  - Pooled additions/disposals feed the 18%/6% pools; WDAs and the small-pools
+ *    threshold prorate for periods ≠ 12 months; a pool driven negative is a
+ *    balancing charge.
+ *  - Single-asset pools (sole-trader private use) run WDA at the pool rate with
+ *    the allowance restricted by business-use %.
+ *  - SBA is 3% straight-line on qualifying cost, prorated for the period.
+ *  - On cessation no WDA is given; the remaining pools become balancing figures.
+ *  `opts.periodStart/End` drive the proration (default: a 12-month period). */
+export function computeCapitalAllowances(
+  state: CapitalAllowancesState | undefined,
+  opts?: { mode?: 'company' | 'trader'; periodStart?: string; periodEnd?: string },
+): CapitalAllowancesResult {
   const s = state ?? {};
   const adds = s.additions ?? [];
   const disp = s.disposals ?? [];
+  const singles = s.singleAssetPools ?? [];
+  const sbaAssets = s.sbaAssets ?? [];
+  const cessation = !!s.cessation;
   const bus = (pct?: number) => Math.max(0, Math.min(100, pct ?? 100)) / 100;
 
-  // AIA — 100% up to £1m of qualifying spend; business-use restricts the claim.
-  const aiaGross = adds.filter(a => a.treatment === 'aia').reduce((t, a) => t + Math.max(0, a.cost || 0), 0);
-  const aiaCapped = aiaGross > AIA_LIMIT;
-  const aiaScale = aiaCapped && aiaGross > 0 ? AIA_LIMIT / aiaGross : 1;
+  // Period proration — WDAs and the AIA / small-pools thresholds scale by days.
+  const periodDays = inclusiveDays(opts?.periodStart, opts?.periodEnd) ?? 365;
+  const pf = Math.max(0, periodDays) / 365;
+  const prorated = periodDays !== 365;
+
+  // AIA — 100% up to the (prorated) £1m cap; business-use restricts the claim.
+  const aiaLimit = Math.round(AIA_LIMIT * pf);
+  const sumBy = (pred: (a: CapexAddition) => boolean) => adds.filter(pred).reduce((t, a) => t + Math.max(0, a.cost || 0), 0);
+  const aiaGross = sumBy(a => a.treatment === 'aia');
+  const aiaCapped = aiaGross > aiaLimit;
+  const aiaScale = aiaCapped && aiaGross > 0 ? aiaLimit / aiaGross : 1;
   const aia = r0(adds.filter(a => a.treatment === 'aia').reduce((t, a) => t + Math.max(0, a.cost || 0) * bus(a.businessUsePct) * aiaScale, 0));
 
-  // FYA — 100% first-year (e.g. zero-emission), business-use restricted.
+  // First-year allowances (not prorated).
   const fya = r0(adds.filter(a => a.treatment === 'fya').reduce((t, a) => t + Math.max(0, a.cost || 0) * bus(a.businessUsePct), 0));
+  const fullExpensing = r0(sumBy(a => a.treatment === 'full'));
+  const sr50Gross = sumBy(a => a.treatment === 'sr-fya');
+  const sr50 = r0(sr50Gross * 0.5);         // half claimed now
+  const sr50ToPool = sr50Gross * 0.5;       // half into the special pool
 
-  // Pool movements. (Private use on pooled additions is not separately pooled
-  // here — use AIA/FYA for private-use assets; noted in the UI.)
-  const mainAdds = adds.filter(a => a.treatment === 'main').reduce((t, a) => t + Math.max(0, a.cost || 0), 0);
-  const specialAdds = adds.filter(a => a.treatment === 'special').reduce((t, a) => t + Math.max(0, a.cost || 0), 0);
+  // Pool movements.
+  const mainAdds = sumBy(a => a.treatment === 'main');
+  const specialAdds = sumBy(a => a.treatment === 'special') + sr50ToPool;
   const mainDisp = disp.filter(d => d.pool === 'main').reduce((t, d) => t + Math.max(0, d.proceeds || 0), 0);
   const specialDisp = disp.filter(d => d.pool === 'special').reduce((t, d) => t + Math.max(0, d.proceeds || 0), 0);
 
@@ -534,23 +575,71 @@ export function computeCapitalAllowances(state: CapitalAllowancesState | undefin
   let specialPool = (s.specialPoolBfwd || 0) + specialAdds - specialDisp;
 
   let balancingCharge = 0;
+  let balancingAllowance = 0;
   if (mainPool < 0) { balancingCharge += -mainPool; mainPool = 0; }
   if (specialPool < 0) { balancingCharge += -specialPool; specialPool = 0; }
 
-  const mainSmallPool = mainPool > 0 && mainPool <= SMALL_POOLS;
-  const specialSmallPool = specialPool > 0 && specialPool <= SMALL_POOLS;
-  const wdaMain = r0(mainSmallPool ? mainPool : mainPool * WDA_MAIN);
-  const wdaSpecial = r0(specialSmallPool ? specialPool : specialPool * WDA_SPECIAL);
+  let wdaMain = 0, wdaSpecial = 0, mainSmallPool = false, specialSmallPool = false;
+  let mainPoolCfwd: number, specialPoolCfwd: number;
+  if (cessation) {
+    // Final period: no WDA — the remaining pools are balancing allowances.
+    balancingAllowance += mainPool + specialPool;
+    mainPoolCfwd = 0; specialPoolCfwd = 0;
+  } else {
+    const smallThreshold = SMALL_POOLS * pf;
+    mainSmallPool = mainPool > 0 && mainPool <= smallThreshold;
+    specialSmallPool = specialPool > 0 && specialPool <= smallThreshold;
+    wdaMain = r0(mainSmallPool ? mainPool : mainPool * WDA_MAIN * pf);
+    wdaSpecial = r0(specialSmallPool ? specialPool : specialPool * WDA_SPECIAL * pf);
+    mainPoolCfwd = r0(mainPool - wdaMain);
+    specialPoolCfwd = r0(specialPool - wdaSpecial);
+  }
 
-  const mainPoolCfwd = r0(mainPool - wdaMain);
-  const specialPoolCfwd = r0(specialPool - wdaSpecial);
-  const balancingAllowance = 0; // cessation balancing allowances not modelled here
+  // Single-asset pools (sole-trader private use). The full WDA reduces the pool;
+  // only the business-use portion is claimed.
+  let singleAsset = 0;
+  const singlePoolsCfwd: { id: string; twdvCfwd: number }[] = [];
+  for (const p of singles) {
+    const rate = p.rate === 'special' ? WDA_SPECIAL : WDA_MAIN;
+    const b = bus(p.businessUsePct);
+    const twdv = (p.twdvBfwd || 0) + (p.additionCost || 0);
+    if (p.disposed) {
+      const bal = twdv - (p.proceeds || 0);
+      if (bal >= 0) balancingAllowance += r0(bal * b); else balancingCharge += r0(-bal * b);
+      singlePoolsCfwd.push({ id: p.id, twdvCfwd: 0 });
+    } else if (cessation) {
+      balancingAllowance += r0(twdv * b);
+      singlePoolsCfwd.push({ id: p.id, twdvCfwd: 0 });
+    } else {
+      const wda = twdv * rate * pf;
+      singleAsset += r0(wda * b);
+      singlePoolsCfwd.push({ id: p.id, twdvCfwd: r0(twdv - wda) });
+    }
+  }
 
-  const total = aia + fya + wdaMain + wdaSpecial + balancingAllowance;
+  // SBA — 3% straight-line, prorated by days in qualifying use during the period.
+  let sba = 0;
+  for (const a of sbaAssets) {
+    const rate = (a.rate ?? 3) / 100;
+    let daysInUse = periodDays;
+    if (a.firstUseDate && opts?.periodEnd) {
+      const end = new Date(opts.periodEnd);
+      const first = new Date(a.firstUseDate);
+      const pStart = opts.periodStart ? new Date(opts.periodStart) : null;
+      const effStart = pStart && first < pStart ? pStart : first;
+      daysInUse = effStart > end ? 0 : Math.min(periodDays, Math.round((end.getTime() - effStart.getTime()) / DAY_MS) + 1);
+    }
+    sba += r0(Math.max(0, a.cost || 0) * rate * (daysInUse / 365));
+  }
+
+  balancingAllowance = r0(balancingAllowance);
+  const total = aia + fya + fullExpensing + sr50 + wdaMain + wdaSpecial + sba + singleAsset + balancingAllowance;
   return {
-    aia, wdaMain, wdaSpecial, fya, balancingAllowance, balancingCharge: r0(balancingCharge), total,
-    mainPoolCfwd, specialPoolCfwd, mainPoolBeforeWda: r0(mainPool), specialPoolBeforeWda: r0(specialPool),
-    aiaCapped, mainSmallPool, specialSmallPool,
+    aia, fya, fullExpensing, sr50, wdaMain, wdaSpecial, sba, singleAsset,
+    balancingAllowance, balancingCharge: r0(balancingCharge), total,
+    mainPoolCfwd, specialPoolCfwd, singlePoolsCfwd,
+    mainPoolBeforeWda: r0(mainPool), specialPoolBeforeWda: r0(specialPool),
+    aiaCapped, aiaLimit, mainSmallPool, specialSmallPool, periodDays, prorated,
   };
 }
 // Legacy aliases kept for callers that used the pre-itemised names.

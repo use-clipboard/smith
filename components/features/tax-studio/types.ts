@@ -351,8 +351,10 @@ export interface CapexAddition {
   description?: string;
   cost: number;
   /** aia = 100% Annual Investment Allowance; fya = 100% first-year (e.g.
-   *  zero-emission); main = 18% main pool; special = 6% special-rate pool. */
-  treatment: 'aia' | 'fya' | 'main' | 'special';
+   *  zero-emission); full = 100% full expensing (companies, new main-pool P&M,
+   *  uncapped); sr-fya = 50% special-rate first-year (companies), remaining 50%
+   *  into the special pool; main = 18% main pool; special = 6% special-rate pool. */
+  treatment: 'aia' | 'fya' | 'full' | 'sr-fya' | 'main' | 'special';
   /** Business-use % (sole traders) — restricts this asset's allowance. Default 100. */
   businessUsePct?: number;
 }
@@ -363,6 +365,29 @@ export interface CapexDisposal {
   pool: 'main' | 'special';
   proceeds: number;
 }
+/** Structures & Buildings Allowance — 3% straight-line on qualifying
+ *  construction cost, claimed each period from first qualifying use. */
+export interface SbaAsset {
+  id: string;
+  description?: string;
+  cost: number;
+  rate?: number;          // % per year, default 3
+  firstUseDate?: string;  // YYYY-MM-DD — brought into qualifying use
+}
+/** A single-asset pool — a sole-trader asset with private use (e.g. a car). WDA
+ *  runs at the main or special rate on its own TWDV but the *allowance* is
+ *  restricted by business-use %; disposal gives a (restricted) balancing figure. */
+export interface SingleAssetPool {
+  id: string;
+  description?: string;
+  twdvBfwd?: number;           // TWDV brought forward
+  additionCost?: number;       // cost if acquired this year
+  rate: 'main' | 'special';    // 18% or 6%
+  businessUsePct?: number;     // restricts the allowance (default 100)
+  disposed?: boolean;
+  proceeds?: number;           // disposal proceeds if disposed
+  twdvCfwd?: number;           // computed on apply
+}
 /** Working state for the Capital Allowances Calculator. Closing pool balances
  *  (`*Cfwd`) are stored so next year's return rolls them in as `*Bfwd`. */
 export interface CapitalAllowancesState {
@@ -370,6 +395,9 @@ export interface CapitalAllowancesState {
   specialPoolBfwd?: number;   // TWDV brought forward — special-rate pool
   additions?: CapexAddition[];
   disposals?: CapexDisposal[];
+  sbaAssets?: SbaAsset[];             // structures & buildings (companies + traders)
+  singleAssetPools?: SingleAssetPool[]; // sole-trader private-use assets
+  cessation?: boolean;        // final period — remaining pools become balancing allowances
   mainPoolCfwd?: number;      // TWDV carried forward — main pool (computed on apply)
   specialPoolCfwd?: number;   // TWDV carried forward — special-rate pool (computed on apply)
 }

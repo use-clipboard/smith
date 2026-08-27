@@ -5,32 +5,49 @@ import { createPortal } from 'react-dom';
 import { X, Check, Plus, Trash2, Calculator } from 'lucide-react';
 import { fmtMoney } from './data';
 import { computeCapitalAllowances, type CapitalAllowancesResult } from './calc';
-import type { CapitalAllowancesState, CapexAddition, CapexDisposal } from './types';
+import type { CapitalAllowancesState, CapexAddition, CapexDisposal, SbaAsset, SingleAssetPool } from './types';
 
 const rid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
 
-const TREATMENTS: { value: CapexAddition['treatment']; label: string }[] = [
+const TREATMENTS_TRADER: { value: CapexAddition['treatment']; label: string }[] = [
   { value: 'aia', label: 'AIA — 100%' },
   { value: 'fya', label: 'First-year — 100%' },
   { value: 'main', label: 'Main pool — 18%' },
   { value: 'special', label: 'Special rate — 6%' },
 ];
+const TREATMENTS_COMPANY: { value: CapexAddition['treatment']; label: string }[] = [
+  { value: 'aia', label: 'AIA — 100%' },
+  { value: 'full', label: 'Full expensing — 100%' },
+  { value: 'fya', label: 'First-year — 100% (zero-emission)' },
+  { value: 'sr-fya', label: 'Special-rate FYA — 50%' },
+  { value: 'main', label: 'Main pool — 18%' },
+  { value: 'special', label: 'Special rate — 6%' },
+];
 
-// Capital Allowances Calculator — pools (18%/6%) + AIA + FYA, small-pools
-// write-off and balancing charges. Brought-forward TWDV rolls in from last year;
-// closing TWDV is stored for next year. Applying writes the SA103F boxes.
-export default function CapitalAllowancesCalculator({ state, onApply, onClose }: {
+// Capital Allowances Calculator — pools (18%/6%), AIA, first-year allowances
+// (incl. full expensing + 50% special-rate FYA for companies), Structures &
+// Buildings Allowance, single-asset pools (sole-trader private use), small-pools
+// write-off, balancing charges/allowances, cessation and period proration.
+// Brought-forward TWDVs roll in from last year; closing TWDVs are stored for next.
+export default function CapitalAllowancesCalculator({ state, onApply, onClose, mode = 'trader', period }: {
   state: CapitalAllowancesState | undefined;
   onApply: (state: CapitalAllowancesState, result: CapitalAllowancesResult) => void;
   onClose: () => void;
+  mode?: 'company' | 'trader';
+  period?: { start?: string; end?: string };
 }) {
+  const company = mode === 'company';
   const [st, setSt] = useState<CapitalAllowancesState>(() => ({
     mainPoolBfwd: state?.mainPoolBfwd ?? 0,
     specialPoolBfwd: state?.specialPoolBfwd ?? 0,
     additions: (state?.additions ?? []).map(a => ({ ...a })),
     disposals: (state?.disposals ?? []).map(d => ({ ...d })),
+    sbaAssets: (state?.sbaAssets ?? []).map(a => ({ ...a })),
+    singleAssetPools: (state?.singleAssetPools ?? []).map(p => ({ ...p })),
+    cessation: state?.cessation ?? false,
   }));
-  const r = computeCapitalAllowances(st);
+  const r = computeCapitalAllowances(st, { mode, periodStart: period?.start, periodEnd: period?.end });
+  const treatments = company ? TREATMENTS_COMPANY : TREATMENTS_TRADER;
 
   const setBfwd = (k: 'mainPoolBfwd' | 'specialPoolBfwd', v: number) => setSt(s => ({ ...s, [k]: v }));
   const addAddition = () => setSt(s => ({ ...s, additions: [...(s.additions ?? []), { id: rid('ca'), cost: 0, treatment: 'aia' }] }));
@@ -39,11 +56,19 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose }:
   const addDisposal = () => setSt(s => ({ ...s, disposals: [...(s.disposals ?? []), { id: rid('cd'), pool: 'main', proceeds: 0 }] }));
   const updDisposal = (id: string, u: Partial<CapexDisposal>) => setSt(s => ({ ...s, disposals: (s.disposals ?? []).map(d => d.id === id ? { ...d, ...u } : d) }));
   const delDisposal = (id: string) => setSt(s => ({ ...s, disposals: (s.disposals ?? []).filter(d => d.id !== id) }));
+  const addSba = () => setSt(s => ({ ...s, sbaAssets: [...(s.sbaAssets ?? []), { id: rid('sba'), cost: 0, rate: 3 }] }));
+  const updSba = (id: string, u: Partial<SbaAsset>) => setSt(s => ({ ...s, sbaAssets: (s.sbaAssets ?? []).map(a => a.id === id ? { ...a, ...u } : a) }));
+  const delSba = (id: string) => setSt(s => ({ ...s, sbaAssets: (s.sbaAssets ?? []).filter(a => a.id !== id) }));
+  const addSingle = () => setSt(s => ({ ...s, singleAssetPools: [...(s.singleAssetPools ?? []), { id: rid('sap'), rate: 'main', businessUsePct: 100 }] }));
+  const updSingle = (id: string, u: Partial<SingleAssetPool>) => setSt(s => ({ ...s, singleAssetPools: (s.singleAssetPools ?? []).map(p => p.id === id ? { ...p, ...u } : p) }));
+  const delSingle = (id: string) => setSt(s => ({ ...s, singleAssetPools: (s.singleAssetPools ?? []).filter(p => p.id !== id) }));
 
   function apply() {
-    onApply({ ...st, mainPoolCfwd: r.mainPoolCfwd, specialPoolCfwd: r.specialPoolCfwd }, r);
+    const singleAssetPools = (st.singleAssetPools ?? []).map(p => ({ ...p, twdvCfwd: r.singlePoolsCfwd.find(x => x.id === p.id)?.twdvCfwd ?? 0 }));
+    onApply({ ...st, mainPoolCfwd: r.mainPoolCfwd, specialPoolCfwd: r.specialPoolCfwd, singleAssetPools }, r);
   }
 
+  const addCols = company ? 'grid-cols-[1fr_100px_160px_28px]' : 'grid-cols-[1fr_90px_140px_70px_28px]';
   if (typeof document === 'undefined') return null;
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -51,7 +76,7 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose }:
         <div className="flex items-center justify-between border-b border-black/5 px-5 py-3">
           <div>
             <p className="flex items-center gap-1.5 text-[15px] font-bold text-[var(--text-primary)]"><Calculator size={15} className="text-[var(--accent)]" /> Capital Allowances Calculator</p>
-            <p className="text-[11.5px] text-[var(--text-muted)]">Pools, AIA and first-year allowances — closing balances carry forward to next year.</p>
+            <p className="text-[11.5px] text-[var(--text-muted)]">{company ? 'Pools, AIA, full expensing, SBA — closing balances carry forward.' : 'Pools, AIA and first-year allowances — closing balances carry forward.'}</p>
           </div>
           <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={18} /></button>
         </div>
@@ -64,7 +89,7 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose }:
               <Field label="Main pool b/fwd (18%)" value={st.mainPoolBfwd ?? 0} onChange={v => setBfwd('mainPoolBfwd', v)} />
               <Field label="Special-rate pool b/fwd (6%)" value={st.specialPoolBfwd ?? 0} onChange={v => setBfwd('specialPoolBfwd', v)} />
             </div>
-            <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Rolled in automatically from last year's closing balances when the trade is carried forward.</p>
+            <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Rolled in automatically from last year&apos;s closing balances when the {company ? 'return' : 'trade'} is carried forward.{r.prorated && ` Period is ${r.periodDays} days — writing-down allowances and the AIA cap are prorated.`}</p>
           </div>
 
           {/* Additions */}
@@ -77,23 +102,25 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose }:
               <p className="rounded-lg border border-dashed border-[var(--border)] px-3 py-3 text-center text-[11.5px] text-[var(--text-muted)]">No additions — add assets bought this year.</p>
             ) : (
               <div className="space-y-1.5">
-                <div className="grid grid-cols-[1fr_90px_140px_70px_28px] gap-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  <span>Description</span><span className="text-right">Cost</span><span>Treatment</span><span className="text-right">Bus %</span><span></span>
+                <div className={`grid ${addCols} gap-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]`}>
+                  <span>Description</span><span className="text-right">Cost</span><span>Treatment</span>{!company && <span className="text-right">Bus %</span>}<span></span>
                 </div>
                 {(st.additions ?? []).map(a => (
-                  <div key={a.id} className="grid grid-cols-[1fr_90px_140px_70px_28px] items-center gap-2">
-                    <input value={a.description ?? ''} placeholder="e.g. Van" onChange={e => updAddition(a.id, { description: e.target.value })} className="input-base py-1 text-[12px]" />
+                  <div key={a.id} className={`grid ${addCols} items-center gap-2`}>
+                    <input value={a.description ?? ''} placeholder={company ? 'e.g. Plant & machinery' : 'e.g. Van'} onChange={e => updAddition(a.id, { description: e.target.value })} className="input-base py-1 text-[12px]" />
                     <input type="number" value={a.cost || ''} placeholder="0" onChange={e => updAddition(a.id, { cost: Number(e.target.value) || 0 })} className="input-base py-1 text-right text-[12px]" />
                     <select value={a.treatment} onChange={e => updAddition(a.id, { treatment: e.target.value as CapexAddition['treatment'] })} className="input-base py-1 text-[12px]">
-                      {TREATMENTS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      {treatments.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
-                    <input type="number" value={a.businessUsePct ?? ''} placeholder="100" onChange={e => updAddition(a.id, { businessUsePct: e.target.value === '' ? undefined : Number(e.target.value) })} className="input-base py-1 text-right text-[12px]" />
+                    {!company && <input type="number" value={a.businessUsePct ?? ''} placeholder="100" onChange={e => updAddition(a.id, { businessUsePct: e.target.value === '' ? undefined : Number(e.target.value) })} className="input-base py-1 text-right text-[12px]" />}
                     <button onClick={() => delAddition(a.id)} className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-rose-50 hover:text-rose-500"><Trash2 size={13} /></button>
                   </div>
                 ))}
               </div>
             )}
-            <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Business-use % applies to AIA / first-year assets (sole-trader private use). Put private-use pooled assets on AIA/first-year to restrict correctly.</p>
+            <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">{company
+              ? 'Full expensing = 100% on new main-pool plant & machinery (uncapped). 50% special-rate FYA gives half now, half into the special pool.'
+              : 'Business-use % applies to AIA / first-year assets (private use). For a car with private use, use a single-asset pool below.'}</p>
           </div>
 
           {/* Disposals */}
@@ -123,21 +150,92 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose }:
               </div>
             )}
           </div>
+
+          {/* Structures & Buildings Allowance */}
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Structures &amp; Buildings Allowance (3%)</p>
+              <button onClick={addSba} className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-[var(--accent)] hover:underline"><Plus size={12} /> Add building</button>
+            </div>
+            {(st.sbaAssets ?? []).length === 0 ? (
+              <p className="rounded-lg border border-dashed border-[var(--border)] px-3 py-3 text-center text-[11.5px] text-[var(--text-muted)]">No SBA — add qualifying construction/renovation cost.</p>
+            ) : (
+              <div className="space-y-1.5">
+                <div className="grid grid-cols-[1fr_100px_70px_130px_28px] gap-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                  <span>Description</span><span className="text-right">Qual. cost</span><span className="text-right">Rate %</span><span>In use from</span><span></span>
+                </div>
+                {(st.sbaAssets ?? []).map(a => (
+                  <div key={a.id} className="grid grid-cols-[1fr_100px_70px_130px_28px] items-center gap-2">
+                    <input value={a.description ?? ''} placeholder="e.g. Office fit-out" onChange={e => updSba(a.id, { description: e.target.value })} className="input-base py-1 text-[12px]" />
+                    <input type="number" value={a.cost || ''} placeholder="0" onChange={e => updSba(a.id, { cost: Number(e.target.value) || 0 })} className="input-base py-1 text-right text-[12px]" />
+                    <input type="number" value={a.rate ?? 3} onChange={e => updSba(a.id, { rate: Number(e.target.value) || 0 })} className="input-base py-1 text-right text-[12px]" />
+                    <input type="date" value={a.firstUseDate ?? ''} onChange={e => updSba(a.id, { firstUseDate: e.target.value || undefined })} className="input-base py-1 text-[12px]" />
+                    <button onClick={() => delSba(a.id)} className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-rose-50 hover:text-rose-500"><Trash2 size={13} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">3% straight-line on qualifying construction cost, from first qualifying use — prorated by days in the period.</p>
+          </div>
+
+          {/* Single-asset pools (sole-trader private use) */}
+          {!company && (
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Single-asset pools (private use)</p>
+                <button onClick={addSingle} className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-[var(--accent)] hover:underline"><Plus size={12} /> Add asset</button>
+              </div>
+              {(st.singleAssetPools ?? []).length === 0 ? (
+                <p className="rounded-lg border border-dashed border-[var(--border)] px-3 py-3 text-center text-[11.5px] text-[var(--text-muted)]">For assets with private use (e.g. a car) — WDA restricted by business-use %.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="grid grid-cols-[1fr_90px_90px_110px_60px_90px_28px] gap-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                    <span>Description</span><span className="text-right">TWDV b/f</span><span className="text-right">Add cost</span><span>Rate</span><span className="text-right">Bus %</span><span className="text-right">Disposal</span><span></span>
+                  </div>
+                  {(st.singleAssetPools ?? []).map(p => (
+                    <div key={p.id} className="grid grid-cols-[1fr_90px_90px_110px_60px_90px_28px] items-center gap-2">
+                      <input value={p.description ?? ''} placeholder="e.g. Car (private use)" onChange={e => updSingle(p.id, { description: e.target.value })} className="input-base py-1 text-[12px]" />
+                      <input type="number" value={p.twdvBfwd || ''} placeholder="0" onChange={e => updSingle(p.id, { twdvBfwd: Number(e.target.value) || 0 })} className="input-base py-1 text-right text-[12px]" />
+                      <input type="number" value={p.additionCost || ''} placeholder="0" onChange={e => updSingle(p.id, { additionCost: Number(e.target.value) || 0 })} className="input-base py-1 text-right text-[12px]" />
+                      <select value={p.rate} onChange={e => updSingle(p.id, { rate: e.target.value as SingleAssetPool['rate'] })} className="input-base py-1 text-[12px]">
+                        <option value="main">18%</option>
+                        <option value="special">6%</option>
+                      </select>
+                      <input type="number" value={p.businessUsePct ?? ''} placeholder="100" onChange={e => updSingle(p.id, { businessUsePct: e.target.value === '' ? undefined : Number(e.target.value) })} className="input-base py-1 text-right text-[12px]" />
+                      <input type="number" value={p.disposed ? (p.proceeds || '') : ''} placeholder="—" onChange={e => { const v = e.target.value; updSingle(p.id, v === '' ? { disposed: false, proceeds: 0 } : { disposed: true, proceeds: Number(v) || 0 }); }} className="input-base py-1 text-right text-[12px]" />
+                      <button onClick={() => delSingle(p.id)} className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-rose-50 hover:text-rose-500"><Trash2 size={13} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Cessation */}
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] bg-white/60 px-3 py-2 text-[11.5px] font-medium text-[var(--text-secondary)]">
+            <input type="checkbox" checked={!!st.cessation} onChange={e => setSt(s => ({ ...s, cessation: e.target.checked }))} className="h-3.5 w-3.5 accent-[var(--accent)]" />
+            Final period (cessation) — write off remaining pools as balancing allowances (no WDA)
+          </label>
         </div>
 
         {/* Result */}
         <div className="border-t border-black/5 bg-[var(--accent)]/[0.03] px-5 py-3">
           <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[12px] sm:grid-cols-4">
-            <Line label="AIA (box 49)" value={r.aia} />
-            <Line label="First-year (box 55)" value={r.fya} />
-            <Line label="Main WDA 18% (box 50)" value={r.wdaMain} note={r.mainSmallPool ? 'small pool' : undefined} />
-            <Line label="Special WDA 6% (box 51)" value={r.wdaSpecial} note={r.specialSmallPool ? 'small pool' : undefined} />
-            <Line label="Total allowances (box 57)" value={r.total} bold />
-            <Line label="Balancing charge (box 59)" value={r.balancingCharge} tone={r.balancingCharge > 0 ? 'amber' : undefined} />
+            <Line label="AIA" value={r.aia} note={r.aiaCapped ? 'capped' : undefined} />
+            {company && r.fullExpensing > 0 && <Line label="Full expensing" value={r.fullExpensing} />}
+            {r.fya > 0 && <Line label="First-year (100%)" value={r.fya} />}
+            {company && r.sr50 > 0 && <Line label="Special-rate FYA (50%)" value={r.sr50} />}
+            <Line label="Main WDA 18%" value={r.wdaMain} note={r.mainSmallPool ? 'small pool' : undefined} />
+            <Line label="Special WDA 6%" value={r.wdaSpecial} note={r.specialSmallPool ? 'small pool' : undefined} />
+            {r.sba > 0 && <Line label="SBA 3%" value={r.sba} />}
+            {!company && r.singleAsset > 0 && <Line label="Single-asset pools" value={r.singleAsset} />}
+            {r.balancingAllowance > 0 && <Line label="Balancing allowance" value={r.balancingAllowance} />}
+            <Line label="Total allowances" value={r.total} bold />
+            <Line label="Balancing charge" value={r.balancingCharge} tone={r.balancingCharge > 0 ? 'amber' : undefined} />
             <Line label="Main pool c/fwd" value={r.mainPoolCfwd} />
             <Line label="Special pool c/fwd" value={r.specialPoolCfwd} />
           </div>
-          {r.aiaCapped && <p className="mt-1.5 text-[10.5px] font-semibold text-amber-700">AIA spend exceeds the £1,000,000 limit — the claim has been capped.</p>}
+          {r.aiaCapped && <p className="mt-1.5 text-[10.5px] font-semibold text-amber-700">AIA spend exceeds the {fmtMoney(r.aiaLimit)} limit{r.prorated ? ' (prorated for the period)' : ''} — the claim has been capped.</p>}
           <div className="mt-3 flex items-center justify-end gap-2">
             <button onClick={onClose} className="btn-secondary">Cancel</button>
             <button onClick={apply} className="btn-primary"><Check size={14} /> Apply to return</button>

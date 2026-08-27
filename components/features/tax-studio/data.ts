@@ -183,8 +183,23 @@ export function emptyCt600(): Ct600Data {
 export function rollForwardCt600(prior: Ct600Data): Ct600Data {
   const bf = (s?: Ct600LossStream): Ct600LossStream => ({ broughtForward: (s?.carriedForward ?? 0) || undefined });
   const L = prior.losses;
+  // Carry the capital-allowances pools / SBA / single-asset TWDVs into the new
+  // period's opening balances (a fresh year — no additions/disposals/cessation).
+  const pca = prior.trading.capitalAllowancesCalc;
+  const rolledSingles = (pca?.singleAssetPools ?? [])
+    .filter(p => !p.disposed && (p.twdvCfwd ?? 0) > 0)
+    .map(p => ({ id: p.id, description: p.description, rate: p.rate, businessUsePct: p.businessUsePct, twdvBfwd: p.twdvCfwd }));
+  const hasCa = pca && ((pca.mainPoolCfwd ?? 0) > 0 || (pca.specialPoolCfwd ?? 0) > 0 || (pca.sbaAssets ?? []).length > 0 || rolledSingles.length > 0);
+  const trading: Ct600Data['trading'] = hasCa ? {
+    capitalAllowancesCalc: {
+      mainPoolBfwd: (pca!.mainPoolCfwd ?? 0) || undefined,
+      specialPoolBfwd: (pca!.specialPoolCfwd ?? 0) || undefined,
+      sbaAssets: (pca!.sbaAssets ?? []).map(a => ({ ...a })),
+      singleAssetPools: rolledSingles,
+    },
+  } : {};
   return {
-    trading: {},
+    trading,
     losses: {
       trading: { broughtForward: (L.trading.carriedForward ?? 0) || undefined },
       ntlr: bf(L.ntlr),

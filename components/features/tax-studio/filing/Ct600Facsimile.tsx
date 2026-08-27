@@ -94,7 +94,7 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
   // working state (gives the AIA / main-pool / special-rate split); otherwise
   // fall back to the single applied total in box 705.
   const caState = t.capitalAllowancesCalc;
-  const ca = caState ? computeCapitalAllowances(caState) : null;
+  const ca = caState ? computeCapitalAllowances(caState, { mode: 'company', periodStart: ret.periodStart, periodEnd: ret.periodEnd }) : null;
   const caTotal = ca ? ca.total : n(t.capitalAllowances);
   const caBalCharge = ca ? ca.balancingCharge : n(t.balancingCharges);
   const caAdditions = (caState?.additions ?? []).reduce((a, x) => a + (x.cost || 0), 0);
@@ -380,9 +380,10 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         <Panel>
           <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-black/70">Capital allowances</p>
           <Money n={690} label="Annual investment allowance" value={ca ? ca.aia : 0} />
+          <Money n={688} label="Full expensing" value={ca ? ca.fullExpensing : 0} />
           <Money n={705} label="Machinery and plant — main pool" value={ca ? ca.wdaMain + ca.fya + ca.balancingAllowance : caTotal} />
-          <Money n={695} label="Machinery and plant — special rate pool" value={ca ? ca.wdaSpecial : 0} />
-          <Money n={711} label="Structures and buildings" value={0} />
+          <Money n={695} label="Machinery and plant — special rate pool" value={ca ? ca.wdaSpecial + ca.sr50 : 0} />
+          <Money n={711} label="Structures and buildings" value={ca ? ca.sba : 0} />
           <p className="mb-1.5 mt-3 text-[10px] font-bold uppercase tracking-wide text-black/70">Balancing charges</p>
           <Money n={692} label="Machinery and plant" value={caBalCharge} />
         </Panel>
