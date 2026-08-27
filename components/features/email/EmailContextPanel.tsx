@@ -100,6 +100,10 @@ export default function EmailContextPanel({
 }: Props) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  // Which allocation is currently shown in the Client panel. null = the real
+  // primary (first allocation). Clicking an "Also allocated" client focuses it
+  // here; the original then drops into the list as a green "primary" chip.
+  const [focusedClientId, setFocusedClientId] = useState<string | null>(null);
   // "View client" must go through the tab system: a plain <Link> changes the
   // URL but the tab reconciler only MATCHES existing tabs mid-session — it
   // never creates one. So ensure the Clients workspace tab exists first, then
@@ -138,8 +142,19 @@ export default function EmailContextPanel({
     seen.add(a.client_id);
     return true;
   });
-  const primary = uniqueAllocations[0]?.clients ?? null;
-  const extras = uniqueAllocations.slice(1);
+  // The real (original) primary is always the first allocation; `focusedClientId`
+  // can temporarily promote another allocation into the panel for viewing.
+  const realPrimaryId = uniqueAllocations[0]?.client_id ?? null;
+  const focusedAlloc =
+    (focusedClientId && uniqueAllocations.find(a => a.client_id === focusedClientId)) ||
+    uniqueAllocations[0] || null;
+  const primary = focusedAlloc?.clients ?? null;
+  // Everything except the one currently in the panel, original first.
+  const extras = uniqueAllocations.filter(a => a.client_id !== focusedAlloc?.client_id);
+
+  // Reset the focus when the email/allocation set changes so we don't carry a
+  // stale focus onto a different thread.
+  useEffect(() => { setFocusedClientId(null); }, [realPrimaryId, uniqueAllocations.length]);
 
   useEffect(() => {
     if (!primary) { setSnap(null); return; }
@@ -314,8 +329,25 @@ export default function EmailContextPanel({
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-1.5">Also allocated</p>
                 <div className="flex flex-wrap gap-1.5">
                   {extras.map(a => a.clients && (
-                    <span key={a.client_id} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      {a.clients.name}
+                    // Original allocation shows green (so you can spot it after
+                    // swapping); others are neutral. Click the name to view that
+                    // client in the panel above; the X still removes it.
+                    <span
+                      key={a.client_id}
+                      className={`inline-flex items-center gap-1 text-[11px] font-medium pl-2 pr-1.5 py-0.5 rounded-md border ${
+                        a.client_id === realPrimaryId
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-[var(--accent-light)] text-[var(--accent)] border-transparent'
+                      }`}
+                    >
+                      <button
+                        onClick={() => setFocusedClientId(a.client_id)}
+                        aria-label={`View ${a.clients.name}`}
+                        className="hover:underline"
+                      >
+                        {a.clients.name}
+                        {a.clients.client_ref && <span className="opacity-70 font-mono"> · {a.clients.client_ref}</span>}
+                      </button>
                       <button onClick={() => onRemoveAllocation(a.client_id)} aria-label={`Remove ${a.clients.name}`} className="hover:text-red-500"><X size={10} /></button>
                     </span>
                   ))}
