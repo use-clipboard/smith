@@ -318,6 +318,7 @@ export function Ct600ReturnEditor({ ret, patch }: {
         <CapitalAllowancesCalculator
           mode="company"
           period={{ start: ret.periodStart, end: ret.periodEnd }}
+          clientId={ret.clientId}
           state={ct.trading.capitalAllowancesCalc}
           onApply={(state, result) => {
             setTrading({ capitalAllowancesCalc: state, capitalAllowances: result.total, balancingCharges: result.balancingCharge });

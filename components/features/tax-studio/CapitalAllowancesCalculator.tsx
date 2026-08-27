@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { X, Check, Plus, Trash2, Calculator, Coins, HelpCircle } from 'lucide-react';
 import { fmtMoney } from './data';
 import { computeCapitalAllowances, capitalAllowancesWarnings, carClassify, type CapitalAllowancesResult } from './calc';
+import BookkeepingAssetPull from './BookkeepingAssetPull';
 import type { CapitalAllowancesState, CapexAddition, CapexDisposal, SbaAsset, SingleAssetPool } from './types';
 
 const rid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
@@ -44,12 +45,13 @@ const CAR_DERIVED: Record<'fya100' | 'main' | 'special', string> = {
 // Buildings Allowance, single-asset pools (sole-trader private use), small-pools
 // write-off, balancing charges/allowances, cessation and period proration.
 // Brought-forward TWDVs roll in from last year; closing TWDVs are stored for next.
-export default function CapitalAllowancesCalculator({ state, onApply, onClose, mode = 'trader', period }: {
+export default function CapitalAllowancesCalculator({ state, onApply, onClose, mode = 'trader', period, clientId }: {
   state: CapitalAllowancesState | undefined;
   onApply: (state: CapitalAllowancesState, result: CapitalAllowancesResult) => void;
   onClose: () => void;
   mode?: 'company' | 'trader';
   period?: { start?: string; end?: string };
+  clientId?: string | null;
 }) {
   const company = mode === 'company';
   const [st, setSt] = useState<CapitalAllowancesState>(() => ({
@@ -116,7 +118,10 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
           <div>
             <div className="mb-1.5 flex items-center justify-between">
               <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Additions in the year</p>
-              <button onClick={addAddition} className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-[var(--accent)] hover:underline"><Plus size={12} /> Add asset</button>
+              <div className="flex items-center gap-3">
+                {clientId && <BookkeepingAssetPull clientId={clientId} onImport={imported => setSt(s => ({ ...s, additions: [...(s.additions ?? []), ...imported] }))} />}
+                <button onClick={addAddition} className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-[var(--accent)] hover:underline"><Plus size={12} /> Add asset</button>
+              </div>
             </div>
             {(st.additions ?? []).length === 0 ? (
               <p className="rounded-lg border border-dashed border-[var(--border)] px-3 py-3 text-center text-[11.5px] text-[var(--text-muted)]">No additions — add assets bought this year.</p>
