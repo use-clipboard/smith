@@ -329,16 +329,11 @@ export default function EmailContextPanel({
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-1.5">Also allocated</p>
                 <div className="flex flex-wrap gap-1.5">
                   {extras.map(a => a.clients && (
-                    // Original allocation shows green (so you can spot it after
-                    // swapping); others are neutral. Click the name to view that
-                    // client in the panel above; the X still removes it.
+                    // Click the name to view that client in the panel above; the
+                    // X still removes it. All chips share one neutral style.
                     <span
                       key={a.client_id}
-                      className={`inline-flex items-center gap-1 text-[11px] font-medium pl-2 pr-1.5 py-0.5 rounded-md border ${
-                        a.client_id === realPrimaryId
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : 'bg-[var(--accent-light)] text-[var(--accent)] border-transparent'
-                      }`}
+                      className="inline-flex items-center gap-1 text-[11px] font-medium pl-2 pr-1.5 py-0.5 rounded-md border border-transparent bg-[var(--accent-light)] text-[var(--accent)]"
                     >
                       <button
                         onClick={() => setFocusedClientId(a.client_id)}
