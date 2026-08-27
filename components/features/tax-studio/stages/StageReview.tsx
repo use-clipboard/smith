@@ -510,7 +510,7 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
 
       {page === 'core' && <CorePage ret={ret} income={income} setIncome={setIncome} reveal={reveal} />}
       {page === 'employment' && <EmploymentPage income={income} setIncome={setIncome} />}
-      {page === 'selfemp' && <SelfEmploymentPage income={income} setIncome={setIncome} />}
+      {page === 'selfemp' && <SelfEmploymentPage income={income} setIncome={setIncome} clientId={ret.clientId} />}
       {page === 'partnership' && <PartnershipPage income={income} setIncome={setIncome} />}
       {page === 'property' && <PropertyPage ret={ret} income={income} setIncome={setIncome} />}
       {page === 'foreign' && <ForeignPage income={income} setIncome={setIncome} />}
@@ -540,7 +540,7 @@ export function ReturnSectionEditor({ page, ret, setIncome }: { page: PageId; re
   switch (page) {
     case 'core': return <CorePage ret={ret} income={income} setIncome={setIncome} reveal={null} />;
     case 'employment': return <EmploymentPage income={income} setIncome={setIncome} />;
-    case 'selfemp': return <SelfEmploymentPage income={income} setIncome={setIncome} />;
+    case 'selfemp': return <SelfEmploymentPage income={income} setIncome={setIncome} clientId={ret.clientId} />;
     case 'partnership': return <PartnershipPage income={income} setIncome={setIncome} />;
     case 'property': return <PropertyPage ret={ret} income={income} setIncome={setIncome} />;
     case 'foreign': return <ForeignPage income={income} setIncome={setIncome} />;
@@ -1322,7 +1322,7 @@ function BoxCalc({ box, label, value, help, shareValue }: { box?: number | strin
   );
 }
 
-function SelfEmploymentPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+function SelfEmploymentPage({ income, setIncome, clientId }: { income: Sa100Income; setIncome: SetIncome; clientId?: string | null }) {
   const add = () => setIncome(i => ({ ...i, selfEmployment: [...i.selfEmployment, { id: `s-${i.selfEmployment.length}-${Date.now()}`, name: '', profit: 0, form: 'short' }] }));
   return (
     <div className="space-y-3">
@@ -1330,7 +1330,7 @@ function SelfEmploymentPage({ income, setIncome }: { income: Sa100Income; setInc
         <p className="rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">No trades yet — add one to enter the SA103 figures.</p>
       )}
       {income.selfEmployment.map((s, idx) => (
-        <TradeCard key={s.id} t={s} idx={idx}
+        <TradeCard key={s.id} t={s} idx={idx} clientId={clientId}
           onChange={p => setIncome(i => ({ ...i, selfEmployment: i.selfEmployment.map((x, j) => j === idx ? { ...x, ...p } : x) }))}
           onRemove={() => setIncome(i => ({ ...i, selfEmployment: i.selfEmployment.filter((_, j) => j !== idx) }))} />
       ))}
@@ -1369,8 +1369,8 @@ function tradeSectionCount(t: TradeSource, tab: string): number {
   return 0;
 }
 
-function TradeCard({ t, idx, onChange, onRemove }: {
-  t: TradeSource; idx: number; onChange: (p: Partial<TradeSource>) => void; onRemove: () => void;
+function TradeCard({ t, idx, onChange, onRemove, clientId }: {
+  t: TradeSource; idx: number; onChange: (p: Partial<TradeSource>) => void; onRemove: () => void; clientId?: string | null;
 }) {
   const [open, setOpen] = useState(true);
   const [tab, setTab] = useState<string>('Business details');
@@ -1637,6 +1637,7 @@ function TradeCard({ t, idx, onChange, onRemove }: {
         <CapitalAllowancesCalculator
           mode="trader"
           period={{ start: t.periodStart, end: t.periodEnd }}
+          clientId={clientId}
           state={t.capitalAllowancesCalc}
           onClose={() => setCaOpen(false)}
           onApply={(caState, res) => {
