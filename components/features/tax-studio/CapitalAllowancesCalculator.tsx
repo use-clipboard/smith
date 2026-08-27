@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Check, Plus, Trash2, Calculator, Coins, HelpCircle } from 'lucide-react';
+import { X, Check, Plus, Trash2, Calculator, Coins, HelpCircle, SlidersHorizontal } from 'lucide-react';
 import { fmtMoney } from './data';
 import { computeCapitalAllowances, capitalAllowancesWarnings, carClassify, type CapitalAllowancesResult } from './calc';
 import BookkeepingAssetPull from './BookkeepingAssetPull';
@@ -64,10 +64,13 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
     cessation: state?.cessation ?? false,
     mainWdaClaimPct: state?.mainWdaClaimPct,
     specialWdaClaimPct: state?.specialWdaClaimPct,
+    aiaUsedElsewhere: state?.aiaUsedElsewhere,
+    cashBasis: state?.cashBasis,
   }));
   const r = computeCapitalAllowances(st, { mode, periodStart: period?.start, periodEnd: period?.end });
   const warnings = capitalAllowancesWarnings(st, { mode, periodStart: period?.start, periodEnd: period?.end }, r);
   const treatments = company ? TREATMENTS_COMPANY : TREATMENTS_TRADER;
+  const [optRows, setOptRows] = useState<Record<string, boolean>>({});
 
   const setBfwd = (k: 'mainPoolBfwd' | 'specialPoolBfwd', v: number) => setSt(s => ({ ...s, [k]: v }));
   const addAddition = () => setSt(s => ({ ...s, additions: [...(s.additions ?? []), { id: rid('ca'), cost: 0, treatment: 'aia' }] }));
@@ -85,12 +88,14 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
 
   function apply() {
     const singleAssetPools = (st.singleAssetPools ?? []).map(p => ({ ...p, twdvCfwd: r.singlePoolsCfwd.find(x => x.id === p.id)?.twdvCfwd ?? 0 }));
-    onApply({ ...st, mainPoolCfwd: r.mainPoolCfwd, specialPoolCfwd: r.specialPoolCfwd, singleAssetPools }, r);
+    // Store each short-life asset's closing TWDV so next year's roll-forward opens it.
+    const additions = (st.additions ?? []).map(a => a.shortLife ? { ...a, twdvCfwd: r.slaCfwd.find(x => x.id === a.id)?.twdvCfwd ?? 0 } : a);
+    onApply({ ...st, additions, mainPoolCfwd: r.mainPoolCfwd, specialPoolCfwd: r.specialPoolCfwd, singleAssetPools }, r);
   }
 
   const addCols = company
-    ? 'grid-cols-[1fr_72px_92px_46px_144px_34px_48px]'
-    : 'grid-cols-[1fr_72px_88px_46px_130px_34px_48px_48px]';
+    ? 'grid-cols-[1fr_70px_88px_44px_138px_32px_68px]'
+    : 'grid-cols-[1fr_66px_84px_44px_120px_32px_44px_68px]';
   if (typeof document === 'undefined') return null;
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -110,8 +115,19 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <Field label="Main pool b/fwd (TWDV)" value={st.mainPoolBfwd ?? 0} onChange={v => setBfwd('mainPoolBfwd', v)} />
               <Field label="Special-rate pool b/fwd (6%)" value={st.specialPoolBfwd ?? 0} onChange={v => setBfwd('specialPoolBfwd', v)} />
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">AIA used elsewhere (group)</label>
+                <input type="number" value={st.aiaUsedElsewhere ?? ''} placeholder="0" onChange={e => setSt(s => ({ ...s, aiaUsedElsewhere: e.target.value === '' ? undefined : Number(e.target.value) }))} className="input-base py-1 text-right text-[12.5px]" />
+              </div>
             </div>
-            <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Rolled in automatically from last year&apos;s closing balances when the {company ? 'return' : 'trade'} is carried forward.{r.prorated && ` Period is ${r.periodDays} days — writing-down allowances and the AIA cap are prorated.`}</p>
+            <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[10.5px] text-[var(--text-muted)]">Rolled in automatically from last year&apos;s closing balances when the {company ? 'return' : 'trade'} is carried forward.{r.prorated && ` Period is ${r.periodDays} days — WDAs and the AIA cap are prorated.`}</p>
+              {!company && (
+                <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[11.5px] font-medium text-[var(--text-secondary)]">
+                  <input type="checkbox" checked={!!st.cashBasis} onChange={e => setSt(s => ({ ...s, cashBasis: e.target.checked }))} className="h-3.5 w-3.5 accent-[var(--accent)]" /> Cash basis
+                </label>
+              )}
+            </div>
           </div>
 
           {/* Additions */}
@@ -150,10 +166,18 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
                     <input type="checkbox" checked={a.newUnused !== false} onChange={e => updAddition(a.id, { newUnused: e.target.checked })} className="mx-auto h-3.5 w-3.5 accent-[var(--accent)]" title="New & unused (required for full expensing / FYA)" />
                     {!company && <input type="number" value={a.businessUsePct ?? ''} placeholder="100" onChange={e => updAddition(a.id, { businessUsePct: e.target.value === '' ? undefined : Number(e.target.value) })} className="input-base py-1 text-right text-[12px]" />}
                     <div className="flex items-center justify-end gap-0.5">
-                      <button onClick={() => updAddition(a.id, { disposed: !a.disposed })} title={a.disposed ? 'Undo disposal' : 'Mark as disposed'} className={`flex h-7 w-7 items-center justify-center rounded-lg ${a.disposed ? 'bg-amber-50 text-amber-600' : 'text-[var(--text-muted)] hover:bg-[var(--accent)]/5 hover:text-[var(--accent)]'}`}><Coins size={13} /></button>
-                      <button onClick={() => delAddition(a.id)} className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-rose-50 hover:text-rose-500"><Trash2 size={13} /></button>
+                      {!isCar && <button onClick={() => setOptRows(o => ({ ...o, [a.id]: !o[a.id] }))} title="Short-life / long-life / hire-purchase options" className={`flex h-7 w-6 items-center justify-center rounded-lg ${optRows[a.id] || a.shortLife || a.longLife || a.hirePurchase ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:bg-[var(--accent)]/5 hover:text-[var(--accent)]'}`}><SlidersHorizontal size={12} /></button>}
+                      <button onClick={() => updAddition(a.id, { disposed: !a.disposed })} title={a.disposed ? 'Undo disposal' : 'Mark as disposed'} className={`flex h-7 w-6 items-center justify-center rounded-lg ${a.disposed ? 'bg-amber-50 text-amber-600' : 'text-[var(--text-muted)] hover:bg-[var(--accent)]/5 hover:text-[var(--accent)]'}`}><Coins size={13} /></button>
+                      <button onClick={() => delAddition(a.id)} className="flex h-7 w-6 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-rose-50 hover:text-rose-500"><Trash2 size={13} /></button>
                     </div>
                   </div>
+                  {!isCar && (optRows[a.id] || a.shortLife || a.longLife || a.hirePurchase) && (
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-2 text-[11px] text-[var(--text-secondary)]">
+                      <label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={!!a.shortLife} onChange={e => updAddition(a.id, { shortLife: e.target.checked })} className="h-3.5 w-3.5 accent-[var(--accent)]" /> Short-life asset</label>
+                      <label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={!!a.longLife} onChange={e => updAddition(a.id, { longLife: e.target.checked })} className="h-3.5 w-3.5 accent-[var(--accent)]" /> Long-life (≥25yr)</label>
+                      <label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={!!a.hirePurchase} onChange={e => updAddition(a.id, { hirePurchase: e.target.checked })} className="h-3.5 w-3.5 accent-[var(--accent)]" /> Hire purchase</label>
+                    </div>
+                  )}
                   {a.disposed && (
                     <div className="flex flex-wrap items-center gap-2 pl-2 text-[11px]">
                       <span className="font-semibold text-amber-700">Disposed</span>

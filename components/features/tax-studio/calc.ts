@@ -497,6 +497,9 @@ export interface CapitalAllowancesResult {
   wdaSpecial: number;          // 6% special-rate pool WDA
   sba: number;                 // structures & buildings allowance (3% straight-line)
   singleAsset: number;         // single-asset pool WDAs (business-use restricted)
+  slaAllowance: number;        // short-life asset pool WDAs
+  slaCfwd: { id: string; twdvCfwd: number }[]; // per short-life asset TWDV c/fwd
+  llaOverThreshold: boolean;   // long-life spend exceeded the £100k de minimis
   balancingAllowance: number;  // balancing allowances (disposal / cessation)
   balancingCharge: number;     // balancing charges on disposals
   total: number;               // total capital allowances (reduces trading profit)
@@ -617,13 +620,21 @@ export function computeCapitalAllowances(
   // expensing / 40% or 50% FYA). Full expensing and 50% FYA are companies-only;
   // full expensing / 40% / 50% / 100% FYA all need a new & unused asset — a
   // second-hand asset marked otherwise drops to the ordinary pool.
-  type Bucket = 'aia' | 'fya100' | 'fullExp' | 'fya40' | 'sr50' | 'mainPool' | 'specialPool';
+  // Long-life assets (≥25yr life) are special-rate only if the total relevant
+  // long-life expenditure in the period exceeds the £100,000 (prorated) de minimis.
+  const LLA_THRESHOLD = 100_000 * pf;
+  const llaTotal = adds.filter(a => !a.disposed && !a.broughtForward && a.longLife && a.assetType !== 'car').reduce((t, a) => t + Math.max(0, a.cost || 0), 0);
+  const llaIsSpecial = llaTotal > LLA_THRESHOLD;
+
+  type Bucket = 'aia' | 'fya100' | 'fullExp' | 'fya40' | 'sr50' | 'mainPool' | 'specialPool' | 'sla';
   const classify = (a: CapexAddition): Bucket => {
     const isNew = a.newUnused !== false;
     if (a.assetType === 'car') {
       const c = carClassify(a.co2, a.newUnused, a.acquisitionDate || defaultDate);
       return c === 'fya100' ? 'fya100' : c === 'special' ? 'specialPool' : 'mainPool';
     }
+    if (a.shortLife) return 'sla';                          // own single-asset pool at main rate
+    if (a.longLife && llaIsSpecial) return 'specialPool';   // de minimis exceeded → special rate
     switch (a.treatment) {
       case 'aia': return 'aia';
       case 'fya': return isNew ? 'fya100' : 'mainPool';
@@ -644,7 +655,7 @@ export function computeCapitalAllowances(
   // value overrides for gifts / non-arm's-length). An immediately-relieved asset
   // (AIA / full expensing / FYA — nil TWDV) gives a balancing charge equal to the
   // disposal value; a pooled asset's proceeds come off its pool.
-  let regMainDisp = 0, regSpecialDisp = 0, regBalCharge = 0;
+  let regMainDisp = 0, regSpecialDisp = 0, regBalCharge = 0, regBalAllow = 0;
   const disposedTagged: { a: CapexAddition; b: Bucket; dv: number }[] = [];
   for (const a of adds.filter(x => x.disposed)) {
     const b = classify(a);
@@ -652,11 +663,17 @@ export function computeCapitalAllowances(
     disposedTagged.push({ a, b, dv });
     if (b === 'mainPool') regMainDisp += dv;
     else if (b === 'specialPool') regSpecialDisp += dv;
-    else regBalCharge += dv;
+    else if (b === 'sla') {
+      // Short-life asset — own pool, so a balancing allowance/charge on TWDV − proceeds.
+      const twdv = a.broughtForward ? (a.twdvBfwd || 0) : Math.max(0, a.cost || 0);
+      const bal = twdv - dv;
+      if (bal >= 0) regBalAllow += bal; else regBalCharge += -bal;
+    } else regBalCharge += dv; // immediately-relieved (AIA / FE / FYA)
   }
 
-  // AIA — 100% up to the (prorated) £1m cap; business-use restricts the claim.
-  const aiaLimit = Math.round(AIA_LIMIT * pf);
+  // AIA — 100% up to the (prorated) £1m cap, less any AIA used by group / related
+  // businesses that share the same £1m; business-use restricts the claim.
+  const aiaLimit = Math.max(0, Math.round(AIA_LIMIT * pf) - Math.max(0, s.aiaUsedElsewhere || 0));
   const aiaGross = sumB('aia');
   const aiaCapped = aiaGross > aiaLimit;
   const aiaScale = aiaCapped && aiaGross > 0 ? aiaLimit / aiaGross : 1;
@@ -683,7 +700,7 @@ export function computeCapitalAllowances(
   let specialPool = (s.specialPoolBfwd || 0) + specialAdds - specialDisp;
 
   let balancingCharge = regBalCharge;
-  let balancingAllowance = 0;
+  let balancingAllowance = regBalAllow;
   if (mainPool < 0) { balancingCharge += -mainPool; mainPool = 0; }
   if (specialPool < 0) { balancingCharge += -specialPool; specialPool = 0; }
 
@@ -733,6 +750,26 @@ export function computeCapitalAllowances(
     }
   }
 
+  // Short-life asset pools — each SLA asset is its own pool at the main rate (no
+  // business-use restriction; balancing on disposal is handled with the register).
+  const slaActive = adds.filter(a => !a.disposed && a.shortLife && a.assetType !== 'car');
+  let slaAllowance = 0;
+  const slaCfwd: { id: string; twdvCfwd: number }[] = [];
+  if (!cessation) {
+    for (const a of slaActive) {
+      const twdv = a.broughtForward ? (a.twdvBfwd || 0) : Math.max(0, a.cost || 0);
+      const wda = r0(twdv * mf.factor);
+      slaAllowance += wda;
+      slaCfwd.push({ id: a.id, twdvCfwd: r0(twdv - wda) });
+    }
+  } else {
+    for (const a of slaActive) {
+      const twdv = a.broughtForward ? (a.twdvBfwd || 0) : Math.max(0, a.cost || 0);
+      balancingAllowance += twdv; // cessation — write off the SLA pool
+      slaCfwd.push({ id: a.id, twdvCfwd: 0 });
+    }
+  }
+
   // SBA — 3% straight-line, prorated by days in qualifying use during the period.
   let sba = 0;
   for (const a of sbaAssets) {
@@ -749,7 +786,7 @@ export function computeCapitalAllowances(
   }
 
   balancingAllowance = r0(balancingAllowance);
-  const total = aia + fya + fullExpensing + fya40 + sr50 + wdaMain + wdaSpecial + sba + singleAsset + balancingAllowance;
+  const total = aia + fya + fullExpensing + fya40 + sr50 + wdaMain + wdaSpecial + sba + singleAsset + slaAllowance + balancingAllowance;
 
   // Transparent per-asset register — each active asset's classification, current-
   // year allowance and a plain-English "why". Illustrative WDA on a new pooled
@@ -757,7 +794,7 @@ export function computeCapitalAllowances(
   const mainPct = Math.round(mf.ratePct * 10) / 10;
   const isCar = (a: CapexAddition) => a.assetType === 'car';
   const carPool = (a: CapexAddition) => carClassify(a.co2, a.newUnused, a.acquisitionDate || defaultDate);
-  const perAsset: CaAssetLine[] = tagged.map(({ a, b }): CaAssetLine => {
+  const perAsset: CaAssetLine[] = tagged.filter(x => x.b !== 'sla').map(({ a, b }): CaAssetLine => {
     const cost = Math.max(0, a.cost || 0);
     const b2 = bus(a.businessUsePct);
     const line = (classification: string, allowanceType: string, currentYear: number, reason: string): CaAssetLine =>
@@ -767,16 +804,37 @@ export function computeCapitalAllowances(
         : `Car with CO₂ ${a.co2 ?? '—'}g/km (acquired ${(a.acquisitionDate || defaultDate) || 'in the period'}) — ${carPool(a)} rate. Cars can’t take AIA, full expensing or 40% FYA.`)
       : '';
     switch (b) {
-      case 'aia': return line('Main-rate plant', 'AIA (100%)', cost * b2 * aiaScale, 'Annual Investment Allowance — 100% of qualifying cost, within the £1m annual limit.');
+      case 'aia': return line('Main-rate plant', 'AIA (100%)', cost * b2 * aiaScale, 'Annual Investment Allowance — 100% of qualifying cost, within the £1m annual limit (shared across a group).');
       case 'fya100': return line(isCar(a) ? 'Car — zero-emission' : 'First-year asset', 'First-year allowance (100%)', cost * b2, carWhy || '100% first-year allowance (e.g. zero-emission / qualifying energy-saving).');
       case 'fullExp': return line('Main-rate plant', 'Full expensing (100%)', cost, 'Company full expensing — 100% on new & unused main-rate plant & machinery (uncapped).');
       case 'fya40': return line('Main-rate plant', '40% first-year allowance', cost * 0.40, '40% first-year allowance (new & unused, from 1 Jan 2026). The remaining 60% enters the main pool next period.');
       case 'sr50': return line('Special-rate plant', '50% special-rate FYA', cost * 0.50, 'Company 50% first-year allowance on new special-rate plant. The other 50% enters the special pool next period.');
-      case 'specialPool': return line(isCar(a) ? 'Car — special rate' : 'Special-rate plant', 'Special-rate pool WDA 6%', cost * specialFactor, carWhy || 'Special-rate expenditure (e.g. integral features / >50g car) — 6% writing-down allowance.');
+      case 'specialPool': return line(isCar(a) ? 'Car — special rate' : a.longLife ? 'Long-life asset' : 'Special-rate plant', 'Special-rate pool WDA 6%', cost * specialFactor, carWhy || (a.longLife ? 'Long-life asset (≥25yr life) — special-rate 6% (group long-life spend exceeds the £100,000 de minimis).' : 'Special-rate expenditure (e.g. integral features / >50g car) — 6% writing-down allowance.'));
       default: return line(isCar(a) ? 'Car — main rate' : 'Main-rate plant', `Main pool WDA ${mainPct}%`, cost * mf.factor, carWhy || `Main-rate plant — writing-down allowance at ${mainPct}%${mf.straddles ? ' (blended across the 2026 rate change)' : ''}.`);
     }
   });
+  for (const a of slaActive) {
+    const twdv = a.broughtForward ? (a.twdvBfwd || 0) : Math.max(0, a.cost || 0);
+    perAsset.push({
+      id: a.id, description: a.description || 'Asset', cost: Math.max(0, a.cost || 0),
+      classification: a.broughtForward ? 'Short-life asset (b/fwd)' : 'Short-life asset',
+      allowanceType: cessation ? 'Balancing allowance' : `Short-life pool WDA ${mainPct}%`,
+      currentYear: cessation ? r0(twdv) : r0(twdv * mf.factor),
+      reason: 'Short-life asset election — its own single-asset pool at the main rate; a disposal within ~8 years gives a balancing allowance/charge instead of leaving the residue in the main pool.',
+    });
+  }
   for (const { a, b, dv } of disposedTagged) {
+    if (b === 'sla') {
+      const twdv = a.broughtForward ? (a.twdvBfwd || 0) : Math.max(0, a.cost || 0);
+      const bal = twdv - dv;
+      perAsset.push({
+        id: a.id, description: a.description || 'Asset', cost: Math.max(0, a.cost || 0),
+        classification: 'Disposal (short-life)', allowanceType: bal >= 0 ? 'Balancing allowance' : 'Balancing charge',
+        currentYear: bal >= 0 ? r0(bal) : 0, disposed: true, balancing: bal < 0 ? r0(-bal) : 0,
+        reason: 'Short-life asset disposed — a balancing allowance (TWDV > proceeds) or charge (proceeds > TWDV) on its own pool.',
+      });
+      continue;
+    }
     const relieved = b !== 'mainPool' && b !== 'specialPool';
     perAsset.push({
       id: a.id, description: a.description || 'Asset', cost: Math.max(0, a.cost || 0),
@@ -790,6 +848,7 @@ export function computeCapitalAllowances(
 
   return {
     aia, fya, fullExpensing, fya40, sr50, wdaMain, wdaSpecial, sba, singleAsset,
+    slaAllowance, slaCfwd, llaOverThreshold: llaIsSpecial,
     balancingAllowance, balancingCharge: r0(balancingCharge), total,
     mainPoolCfwd, specialPoolCfwd, singlePoolsCfwd,
     mainPoolBeforeWda: r0(mainPool), specialPoolBeforeWda: r0(specialPool),
@@ -839,6 +898,25 @@ export function capitalAllowancesWarnings(
   const aiaOnMain = adds.some(a => !a.disposed && a.treatment === 'aia' && a.assetType !== 'car');
   const specialSpend = adds.some(a => !a.disposed && (a.treatment === 'special' || (a.assetType === 'car' && (a.co2 ?? 999) > 50)));
   if (aiaOnMain && specialSpend) out.push({ level: 'tip', text: 'Tax tip: AIA gives 100% relief now. Allocating it to special-rate expenditure (otherwise relieved at 6%/year) rather than main-rate (18%) usually accelerates relief.' });
+
+  // Cash basis — most equipment is expensed, not capitalised (only cars keep CA).
+  if (state?.cashBasis && adds.some(a => !a.disposed && a.assetType !== 'car')) out.push({ level: 'warn', text: 'Cash basis — most equipment is deducted as a business expense, not a capital allowance (only cars stay in CA). Remove non-car additions here to avoid double-counting.' });
+
+  // Hire purchase.
+  if (adds.some(a => a.hirePurchase)) out.push({ level: 'info', text: 'Hire purchase — claim allowances on the capital (cash) cost once the asset is in use; the interest / finance charge is a revenue expense, not capital.' });
+
+  // Long-life assets over the de minimis.
+  if (r.llaOverThreshold) out.push({ level: 'info', text: 'Long-life assets (≥25-year life) exceed the £100,000 de minimis — routed to the special-rate pool (6%).' });
+
+  // AIA shared with a group / related businesses.
+  if ((state?.aiaUsedElsewhere ?? 0) > 0) out.push({ level: 'info', text: `AIA shared with a group / related businesses — ${money(state!.aiaUsedElsewhere!)} used elsewhere; the remaining ${money(r.aiaLimit)} limit applies here.` });
+
+  // Short-life asset past the ~8-year transfer point.
+  const slaDue = adds.filter(a => a.shortLife && a.broughtForward && !a.disposed && a.acquisitionDate && opts?.periodEnd && new Date(a.acquisitionDate).getTime() + 8 * 365.25 * 86400000 <= new Date(opts.periodEnd).getTime());
+  if (slaDue.length) out.push({ level: 'warn', text: `${slaDue.length === 1 ? 'A short-life asset has' : `${slaDue.length} short-life assets have`} passed the ~8-year short-life period — transfer the residue into the main pool.` });
+
+  // VAT reminder.
+  if (adds.some(a => !a.disposed)) out.push({ level: 'info', text: 'Qualifying cost = net cost where VAT is recoverable; include irrecoverable VAT where it isn’t. Don’t use the gross cost for a VAT-registered business.' });
 
   // Cessation reminder.
   if (state?.cessation) out.push({ level: 'warn', text: 'Final period (cessation) — remaining pools are written off as balancing allowances; make sure every disposal value (incl. assets kept personally) is entered.' });

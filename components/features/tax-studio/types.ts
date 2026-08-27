@@ -374,6 +374,12 @@ export interface CapexAddition {
   disposalDate?: string;    // YYYY-MM-DD
   proceeds?: number;        // disposal proceeds
   marketValue?: number;     // used instead of proceeds for gifts / non-arm's-length
+  // Edge-case elections / flags.
+  shortLife?: boolean;      // short-life asset election — own single-asset pool at main rate
+  longLife?: boolean;       // long-life asset (≥25yr life) — special-rate if group spend > £100k
+  hirePurchase?: boolean;   // acquired on HP — capital cost qualifies; interest is revenue
+  twdvBfwd?: number;        // short-life asset TWDV brought forward (its own pool)
+  twdvCfwd?: number;        // short-life asset TWDV carried forward (computed on apply)
 }
 /** An asset sold/scrapped in the year — proceeds come off its pool. */
 export interface CapexDisposal {
@@ -419,6 +425,8 @@ export interface CapitalAllowancesState {
   // the maximum to preserve allowances / manage personal allowances (default 100%).
   mainWdaClaimPct?: number;   // % of the maximum main-pool WDA to claim (default 100)
   specialWdaClaimPct?: number; // % of the maximum special-rate WDA to claim (default 100)
+  aiaUsedElsewhere?: number;  // AIA already used by group / related businesses (shares the £1m)
+  cashBasis?: boolean;        // unincorporated business on the cash basis (CA only on cars)
   mainPoolCfwd?: number;      // TWDV carried forward — main pool (computed on apply)
   specialPoolCfwd?: number;   // TWDV carried forward — special-rate pool (computed on apply)
 }

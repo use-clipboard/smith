@@ -194,8 +194,13 @@ export function rollForwardCt600(prior: Ct600Data): Ct600Data {
   // creates the right balancing charge. Pooled plant lives in the pool aggregate.
   const RELIEVED = new Set(['aia', 'full', 'fya', 'fya40', 'sr-fya']);
   const rolledAssets = (pca?.additions ?? [])
-    .filter(a => !a.disposed && (RELIEVED.has(a.treatment) || a.assetType === 'car'))
-    .map(a => ({ ...a, broughtForward: true, disposed: false, proceeds: undefined, disposalDate: undefined }));
+    .filter(a => !a.disposed && (RELIEVED.has(a.treatment) || a.assetType === 'car' || a.shortLife))
+    .map(a => ({
+      ...a, broughtForward: true, disposed: false, proceeds: undefined, disposalDate: undefined,
+      // Short-life assets carry their own TWDV forward as next year's opening balance.
+      twdvBfwd: a.shortLife ? (a.twdvCfwd ?? a.twdvBfwd ?? 0) : a.twdvBfwd,
+      twdvCfwd: undefined,
+    }));
   const hasCa = pca && ((pca.mainPoolCfwd ?? 0) > 0 || (pca.specialPoolCfwd ?? 0) > 0 || (pca.sbaAssets ?? []).length > 0 || rolledSingles.length > 0 || rolledAssets.length > 0);
   const trading: Ct600Data['trading'] = hasCa ? {
     capitalAllowancesCalc: {
