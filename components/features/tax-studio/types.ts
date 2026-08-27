@@ -1598,11 +1598,20 @@ export interface Ct600Losses {
   interestDistributions: Ct600LossStream;
 }
 
-/** Working state for the R&D / Films Enhanced Expenditure calculator. */
+/** Working state for the R&D / Films Enhanced Expenditure calculator.
+ *  R&D: merged = RDEC-style 20% credit (APs from 1 Apr 2024); eris = R&D-intensive
+ *  SME (86% deduction + 14.5% payable); sme/rdec = legacy pre-Apr-2024 schemes.
+ *  Creative: avec (Audio-Visual) / vgec (Video Games) expenditure credits; creative
+ *  = theatre/orchestra/museums additional deduction. */
 export interface Ct600RdCalc {
-  scheme?: 'sme' | 'rdec' | 'creative'; // SME additional deduction / RDEC (merged) credit / creative-sector relief
+  scheme?: 'merged' | 'eris' | 'sme' | 'rdec' | 'avec' | 'vgec' | 'creative';
   qualifyingExpenditure?: number;       // qualifying R&D or creative expenditure
-  creativeRate?: number;                // additional-deduction % for the creative-sector scheme
+  avecType?: 'film-hetv' | 'animation-children'; // AVEC sub-rate (34% / 39%)
+  rate?: number;                        // rate % override (creative / manual)
+  lossMaking?: boolean;                 // surrenders a loss for a payable credit
+  surrenderableLoss?: number;           // loss available to surrender (payable-credit base)
+  payeNic?: number;                     // relevant PAYE/NIC for the cap
+  creativeRate?: number;                // legacy field — additional-deduction % for 'creative'
 }
 
 /** The full CT600 return data (limited companies). */

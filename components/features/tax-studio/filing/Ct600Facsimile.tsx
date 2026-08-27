@@ -325,10 +325,10 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         </Panel>
         <Teal>Tax reconciliation</Teal>
         <Panel>
-          <Money n={530} label="Research and Development credit" value={0} />
+          <Money n={530} label="Research and Development credit" value={n(t.rdec)} />
           <Money n={540} label="Creatives tax credit" value={0} />
-          <Money n={541} label="Audio-Visual expenditure credit (AVEC) and Video Games expenditure credit (VGEC)" value={0} />
-          <Money n={545} label="Total of R&D credit, creatives tax credit and AVEC/VGEC — total box 530 to 541" value={0} />
+          <Money n={541} label="Audio-Visual expenditure credit (AVEC) and Video Games expenditure credit (VGEC)" value={n(t.avec) + n(t.vgec)} />
+          <Money n={545} label="Total of R&D credit, creatives tax credit and AVEC/VGEC — total box 530 to 541" value={n(t.rdec) + n(t.avec) + n(t.vgec)} />
         </Panel>
       </Page>
 
@@ -362,17 +362,17 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         <SubHead>Research and Development (R&D) or creatives enhanced expenditure and tax reliefs</SubHead>
         <Panel>
           <div className="space-y-1 text-[9.5px] text-black">
-            <TickRow n={650} label="R&D claim made by a small or medium-sized enterprise (SME)" on={rd?.scheme === 'sme'} />
-            <TickRow n={653} label="Claim made by an R&D intensive SME" />
-            <TickRow n={655} label="Claim made by a large company (RDEC)" on={rd?.scheme === 'rdec'} />
+            <TickRow n={650} label="R&D claim made by a small or medium-sized enterprise (SME)" on={rd?.scheme === 'sme' || rd?.scheme === 'eris'} />
+            <TickRow n={653} label="Claim made by an R&D intensive SME" on={rd?.scheme === 'eris'} />
+            <TickRow n={655} label="Claim made by a large company (RDEC / merged scheme)" on={rd?.scheme === 'merged' || rd?.scheme === 'rdec'} />
             <TickRow n={657} label="R&D additional information form has been submitted" />
           </div>
           <div className="mt-2">
-            <Money n={659} label="R&D expenditure qualifying for SME / R&D intensive SME relief" value={rd?.scheme === 'sme' ? n(rd?.qualifyingExpenditure) : 0} />
-            <Money n={660} label="R&D enhanced expenditure" value={rd?.scheme === 'sme' ? n(t.rdOrFilmsRelief) : 0} />
+            <Money n={659} label="R&D expenditure qualifying for SME / R&D intensive SME relief" value={rd?.scheme === 'sme' || rd?.scheme === 'eris' ? n(rd?.qualifyingExpenditure) : 0} />
+            <Money n={660} label="R&D enhanced expenditure" value={rd?.scheme === 'sme' || rd?.scheme === 'eris' ? n(t.rdOrFilmsRelief) : 0} />
             <Money n={663} label="Creatives core expenditure" value={rd?.scheme === 'creative' ? n(rd?.qualifyingExpenditure) : 0} />
             <Money n={665} label="Creatives additional deduction" value={rd?.scheme === 'creative' ? n(t.rdOrFilmsRelief) : 0} />
-            <Money n={670} label="R&D enhanced expenditure and creatives additional deduction — total box 660 and box 665" value={n(t.rdOrFilmsRelief)} />
+            <Money n={670} label="R&D enhanced expenditure and creatives additional deduction — total box 660 and box 665" value={rd?.scheme === 'sme' || rd?.scheme === 'eris' || rd?.scheme === 'creative' ? n(t.rdOrFilmsRelief) : 0} />
           </div>
         </Panel>
         <Teal>Capital allowances and balancing charges</Teal>

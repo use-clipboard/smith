@@ -331,9 +331,16 @@ export function Ct600ReturnEditor({ ret, patch }: {
         <RdFilmsCalculator
           state={ct.trading.rdFilmsCalc}
           onApply={(state, result) => {
-            const patch: Partial<Ct600Trading> = { rdFilmsCalc: state, rdOrFilmsExpenditure: result.qualifying };
-            if (result.scheme === 'rdec') { patch.rdec = result.rdecCredit; patch.rdOrFilmsRelief = 0; }
-            else { patch.rdOrFilmsRelief = result.additionalDeduction; }
+            // The calculator owns these fields — clear them all, then set the one
+            // the chosen scheme feeds. Credits (RDEC/AVEC/VGEC) are taxable and
+            // added above the line; the SME/ERIS/creative additional deduction
+            // reduces trading profit. (The base qualifying spend is already an
+            // expense in the accounts, so it isn't deducted again here.)
+            const patch: Partial<Ct600Trading> = { rdFilmsCalc: state, rdec: 0, avec: 0, vgec: 0, rdOrFilmsRelief: 0 };
+            if (result.scheme === 'merged' || result.scheme === 'rdec') patch.rdec = result.rdecCredit;
+            else if (result.scheme === 'avec') patch.avec = result.avecCredit;
+            else if (result.scheme === 'vgec') patch.vgec = result.vgecCredit;
+            else patch.rdOrFilmsRelief = result.additionalDeduction; // sme / eris / creative
             setTrading(patch);
             setRdOpen(false);
           }}
