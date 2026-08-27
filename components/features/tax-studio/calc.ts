@@ -514,6 +514,20 @@ export interface CapitalAllowancesResult {
   prorated: boolean;           // true when the period ≠ 365 days
   mainRatePct: number;         // effective main WDA rate applied (for display)
   straddles2026: boolean;      // period straddles the 18%→14% change
+  perAsset: CaAssetLine[];     // transparent per-asset breakdown (register)
+}
+
+/** One line of the transparent per-asset register output. */
+export interface CaAssetLine {
+  id: string;
+  description: string;
+  cost: number;
+  classification: string;   // e.g. "Main-rate plant", "Car — special rate"
+  allowanceType: string;    // e.g. "AIA (100%)", "Full expensing", "Main pool WDA 18%"
+  currentYear: number;      // current-year allowance for this asset
+  reason: string;           // the "Why?" explanation
+  disposed?: boolean;
+  balancing?: number;       // balancing charge (+) or allowance (−) on disposal
 }
 
 const DAY_MS = 86_400_000;
@@ -618,9 +632,26 @@ export function computeCapitalAllowances(
       default: return 'mainPool';
     }
   };
-  const tagged = adds.map(a => ({ a, b: classify(a) }));
+  // Allowances only for assets acquired this period and not disposed. Assets
+  // brought forward (held from a prior year) or disposed get no fresh allowance.
+  const tagged = adds.filter(a => !a.disposed && !a.broughtForward).map(a => ({ a, b: classify(a) }));
   const sumB = (b: Bucket) => tagged.filter(x => x.b === b).reduce((t, x) => t + Math.max(0, x.a.cost || 0), 0);
   const sumBBus = (b: Bucket) => tagged.filter(x => x.b === b).reduce((t, x) => t + Math.max(0, x.a.cost || 0) * bus(x.a.businessUsePct), 0);
+
+  // Disposals of register assets. Proceeds are capped at original cost (market
+  // value overrides for gifts / non-arm's-length). An immediately-relieved asset
+  // (AIA / full expensing / FYA — nil TWDV) gives a balancing charge equal to the
+  // disposal value; a pooled asset's proceeds come off its pool.
+  let regMainDisp = 0, regSpecialDisp = 0, regBalCharge = 0;
+  const disposedTagged: { a: CapexAddition; b: Bucket; dv: number }[] = [];
+  for (const a of adds.filter(x => x.disposed)) {
+    const b = classify(a);
+    const dv = Math.min(Math.max(0, a.cost || 0), Math.max(0, a.marketValue ?? a.proceeds ?? 0));
+    disposedTagged.push({ a, b, dv });
+    if (b === 'mainPool') regMainDisp += dv;
+    else if (b === 'specialPool') regSpecialDisp += dv;
+    else regBalCharge += dv;
+  }
 
   // AIA — 100% up to the (prorated) £1m cap; business-use restricts the claim.
   const aiaLimit = Math.round(AIA_LIMIT * pf);
@@ -640,16 +671,16 @@ export function computeCapitalAllowances(
   const sr50 = r0(sr50Gross * 0.50);
   const sr50Residue = sr50Gross * 0.50;     // to the special pool next period
 
-  // Pool movements.
+  // Pool movements (register-asset disposals join the pool-level disposals).
   const mainAdds = sumB('mainPool');
   const specialAdds = sumB('specialPool');
-  const mainDisp = disp.filter(d => d.pool === 'main').reduce((t, d) => t + Math.max(0, d.proceeds || 0), 0);
-  const specialDisp = disp.filter(d => d.pool === 'special').reduce((t, d) => t + Math.max(0, d.proceeds || 0), 0);
+  const mainDisp = disp.filter(d => d.pool === 'main').reduce((t, d) => t + Math.max(0, d.proceeds || 0), 0) + regMainDisp;
+  const specialDisp = disp.filter(d => d.pool === 'special').reduce((t, d) => t + Math.max(0, d.proceeds || 0), 0) + regSpecialDisp;
 
   let mainPool = (s.mainPoolBfwd || 0) + mainAdds - mainDisp;
   let specialPool = (s.specialPoolBfwd || 0) + specialAdds - specialDisp;
 
-  let balancingCharge = 0;
+  let balancingCharge = regBalCharge;
   let balancingAllowance = 0;
   if (mainPool < 0) { balancingCharge += -mainPool; mainPool = 0; }
   if (specialPool < 0) { balancingCharge += -specialPool; specialPool = 0; }
@@ -711,13 +742,51 @@ export function computeCapitalAllowances(
 
   balancingAllowance = r0(balancingAllowance);
   const total = aia + fya + fullExpensing + fya40 + sr50 + wdaMain + wdaSpecial + sba + singleAsset + balancingAllowance;
+
+  // Transparent per-asset register — each active asset's classification, current-
+  // year allowance and a plain-English "why". Illustrative WDA on a new pooled
+  // asset is cost × rate (its first-year contribution to the pool).
+  const mainPct = Math.round(mf.ratePct * 10) / 10;
+  const isCar = (a: CapexAddition) => a.assetType === 'car';
+  const carPool = (a: CapexAddition) => carClassify(a.co2, a.newUnused, a.acquisitionDate || defaultDate);
+  const perAsset: CaAssetLine[] = tagged.map(({ a, b }): CaAssetLine => {
+    const cost = Math.max(0, a.cost || 0);
+    const b2 = bus(a.businessUsePct);
+    const line = (classification: string, allowanceType: string, currentYear: number, reason: string): CaAssetLine =>
+      ({ id: a.id, description: a.description || 'Asset', cost, classification, allowanceType, currentYear: r0(currentYear), reason });
+    const carWhy = isCar(a)
+      ? (carPool(a) === 'fya100' ? 'New zero-emission car — 100% first-year allowance. Cars can’t take AIA, full expensing or 40% FYA.'
+        : `Car with CO₂ ${a.co2 ?? '—'}g/km (acquired ${(a.acquisitionDate || defaultDate) || 'in the period'}) — ${carPool(a)} rate. Cars can’t take AIA, full expensing or 40% FYA.`)
+      : '';
+    switch (b) {
+      case 'aia': return line('Main-rate plant', 'AIA (100%)', cost * b2 * aiaScale, 'Annual Investment Allowance — 100% of qualifying cost, within the £1m annual limit.');
+      case 'fya100': return line(isCar(a) ? 'Car — zero-emission' : 'First-year asset', 'First-year allowance (100%)', cost * b2, carWhy || '100% first-year allowance (e.g. zero-emission / qualifying energy-saving).');
+      case 'fullExp': return line('Main-rate plant', 'Full expensing (100%)', cost, 'Company full expensing — 100% on new & unused main-rate plant & machinery (uncapped).');
+      case 'fya40': return line('Main-rate plant', '40% first-year allowance', cost * 0.40, '40% first-year allowance (new & unused, from 1 Jan 2026). The remaining 60% enters the main pool next period.');
+      case 'sr50': return line('Special-rate plant', '50% special-rate FYA', cost * 0.50, 'Company 50% first-year allowance on new special-rate plant. The other 50% enters the special pool next period.');
+      case 'specialPool': return line(isCar(a) ? 'Car — special rate' : 'Special-rate plant', 'Special-rate pool WDA 6%', cost * specialFactor, carWhy || 'Special-rate expenditure (e.g. integral features / >50g car) — 6% writing-down allowance.');
+      default: return line(isCar(a) ? 'Car — main rate' : 'Main-rate plant', `Main pool WDA ${mainPct}%`, cost * mf.factor, carWhy || `Main-rate plant — writing-down allowance at ${mainPct}%${mf.straddles ? ' (blended across the 2026 rate change)' : ''}.`);
+    }
+  });
+  for (const { a, b, dv } of disposedTagged) {
+    const relieved = b !== 'mainPool' && b !== 'specialPool';
+    perAsset.push({
+      id: a.id, description: a.description || 'Asset', cost: Math.max(0, a.cost || 0),
+      classification: 'Disposal', allowanceType: relieved ? 'Balancing charge' : 'Proceeds to pool',
+      currentYear: 0, disposed: true, balancing: relieved ? r0(dv) : 0,
+      reason: relieved
+        ? 'Immediately-relieved asset (AIA / full expensing / FYA) disposed — the disposal value is a balancing charge (added back to profit).'
+        : 'Pooled asset disposed — the disposal value (capped at cost) comes off the pool.',
+    });
+  }
+
   return {
     aia, fya, fullExpensing, fya40, sr50, wdaMain, wdaSpecial, sba, singleAsset,
     balancingAllowance, balancingCharge: r0(balancingCharge), total,
     mainPoolCfwd, specialPoolCfwd, singlePoolsCfwd,
     mainPoolBeforeWda: r0(mainPool), specialPoolBeforeWda: r0(specialPool),
     aiaCapped, aiaLimit, mainSmallPool, specialSmallPool, periodDays, prorated,
-    mainRatePct: Math.round(mf.ratePct * 10) / 10, straddles2026: mf.straddles,
+    mainRatePct: mainPct, straddles2026: mf.straddles, perAsset,
   };
 }
 // Legacy aliases kept for callers that used the pre-itemised names.

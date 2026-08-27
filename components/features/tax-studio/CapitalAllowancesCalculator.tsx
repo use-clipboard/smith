@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Check, Plus, Trash2, Calculator } from 'lucide-react';
+import { X, Check, Plus, Trash2, Calculator, Coins, HelpCircle } from 'lucide-react';
 import { fmtMoney } from './data';
 import { computeCapitalAllowances, carClassify, type CapitalAllowancesResult } from './calc';
 import type { CapitalAllowancesState, CapexAddition, CapexDisposal, SbaAsset, SingleAssetPool } from './types';
@@ -84,8 +84,8 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
   }
 
   const addCols = company
-    ? 'grid-cols-[1fr_76px_96px_50px_150px_38px_28px]'
-    : 'grid-cols-[1fr_76px_96px_50px_140px_38px_52px_28px]';
+    ? 'grid-cols-[1fr_72px_92px_46px_144px_34px_48px]'
+    : 'grid-cols-[1fr_72px_88px_46px_130px_34px_48px_48px]';
   if (typeof document === 'undefined') return null;
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -126,7 +126,8 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
                   const isCar = a.assetType === 'car';
                   const carDeriv = isCar ? CAR_DERIVED[carClassify(a.co2, a.newUnused, period?.end || '')] : null;
                   return (
-                  <div key={a.id} className={`grid ${addCols} items-center gap-2`}>
+                  <div key={a.id} className="space-y-1">
+                  <div className={`grid ${addCols} items-center gap-2${a.disposed ? ' opacity-50' : ''}`}>
                     <input value={a.description ?? ''} placeholder={company ? 'e.g. Plant & machinery' : 'e.g. Van'} onChange={e => updAddition(a.id, { description: e.target.value })} className="input-base py-1 text-[12px]" />
                     <input type="number" value={a.cost || ''} placeholder="0" onChange={e => updAddition(a.id, { cost: Number(e.target.value) || 0 })} className="input-base py-1 text-right text-[12px]" />
                     <select value={a.assetType ?? 'plant'} onChange={e => updAddition(a.id, { assetType: e.target.value as CapexAddition['assetType'] })} className="input-base px-1 py-1 text-[11.5px]">
@@ -140,7 +141,21 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
                         </select>}
                     <input type="checkbox" checked={a.newUnused !== false} onChange={e => updAddition(a.id, { newUnused: e.target.checked })} className="mx-auto h-3.5 w-3.5 accent-[var(--accent)]" title="New & unused (required for full expensing / FYA)" />
                     {!company && <input type="number" value={a.businessUsePct ?? ''} placeholder="100" onChange={e => updAddition(a.id, { businessUsePct: e.target.value === '' ? undefined : Number(e.target.value) })} className="input-base py-1 text-right text-[12px]" />}
-                    <button onClick={() => delAddition(a.id)} className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-rose-50 hover:text-rose-500"><Trash2 size={13} /></button>
+                    <div className="flex items-center justify-end gap-0.5">
+                      <button onClick={() => updAddition(a.id, { disposed: !a.disposed })} title={a.disposed ? 'Undo disposal' : 'Mark as disposed'} className={`flex h-7 w-7 items-center justify-center rounded-lg ${a.disposed ? 'bg-amber-50 text-amber-600' : 'text-[var(--text-muted)] hover:bg-[var(--accent)]/5 hover:text-[var(--accent)]'}`}><Coins size={13} /></button>
+                      <button onClick={() => delAddition(a.id)} className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-rose-50 hover:text-rose-500"><Trash2 size={13} /></button>
+                    </div>
+                  </div>
+                  {a.disposed && (
+                    <div className="flex flex-wrap items-center gap-2 pl-2 text-[11px]">
+                      <span className="font-semibold text-amber-700">Disposed</span>
+                      <input type="date" value={a.disposalDate ?? ''} onChange={e => updAddition(a.id, { disposalDate: e.target.value || undefined })} className="input-base py-1 text-[11.5px]" />
+                      <span className="text-[var(--text-muted)]">Proceeds</span>
+                      <input type="number" value={a.proceeds ?? ''} placeholder="0" onChange={e => updAddition(a.id, { proceeds: Number(e.target.value) || 0 })} className="input-base w-24 py-1 text-right text-[11.5px]" />
+                      <span className="text-[10px] text-[var(--text-muted)]">Capped at cost; a relieved asset gives a balancing charge.</span>
+                    </div>
+                  )}
+                  {a.broughtForward && !a.disposed && <p className="pl-2 text-[10px] font-medium text-slate-400">Brought forward — held for a future disposal (no new allowance this year).</p>}
                   </div>
                   );
                 })}
@@ -244,6 +259,24 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
             <input type="checkbox" checked={!!st.cessation} onChange={e => setSt(s => ({ ...s, cessation: e.target.checked }))} className="h-3.5 w-3.5 accent-[var(--accent)]" />
             Final period (cessation) — write off remaining pools as balancing allowances (no WDA)
           </label>
+
+          {/* Per-asset breakdown (transparent register output) */}
+          {r.perAsset.length > 0 && (
+            <div>
+              <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]"><HelpCircle size={12} /> Per-asset breakdown</p>
+              <div className="overflow-hidden rounded-lg border border-[var(--border)]">
+                {r.perAsset.map((ln, i) => (
+                  <div key={ln.id + '-' + i} className={`px-3 py-2 ${i > 0 ? 'border-t border-[var(--border)]' : ''} ${ln.disposed ? 'bg-amber-50/50' : ''}`}>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="min-w-0 truncate text-[12px] font-semibold text-[var(--text-primary)]">{ln.description}<span className="ml-1 font-normal text-[var(--text-muted)]">· {ln.classification}</span></span>
+                      <span className="shrink-0 text-[12.5px] font-bold tabular-nums text-[var(--text-primary)]">{ln.disposed ? (ln.balancing ? `charge +${fmtMoney(ln.balancing)}` : 'to pool') : fmtMoney(ln.currentYear)}</span>
+                    </div>
+                    <p className="text-[10.5px] leading-snug text-[var(--text-muted)]"><span className="font-semibold text-[var(--text-secondary)]">{ln.allowanceType}</span> — {ln.reason}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Result */}

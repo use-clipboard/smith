@@ -189,13 +189,21 @@ export function rollForwardCt600(prior: Ct600Data): Ct600Data {
   const rolledSingles = (pca?.singleAssetPools ?? [])
     .filter(p => !p.disposed && (p.twdvCfwd ?? 0) > 0)
     .map(p => ({ id: p.id, description: p.description, rate: p.rate, businessUsePct: p.businessUsePct, twdvBfwd: p.twdvCfwd }));
-  const hasCa = pca && ((pca.mainPoolCfwd ?? 0) > 0 || (pca.specialPoolCfwd ?? 0) > 0 || (pca.sbaAssets ?? []).length > 0 || rolledSingles.length > 0);
+  // Carry the register forward: immediately-relieved assets (AIA / full expensing
+  // / FYA) and cars persist as held (brought-forward) assets so a later disposal
+  // creates the right balancing charge. Pooled plant lives in the pool aggregate.
+  const RELIEVED = new Set(['aia', 'full', 'fya', 'fya40', 'sr-fya']);
+  const rolledAssets = (pca?.additions ?? [])
+    .filter(a => !a.disposed && (RELIEVED.has(a.treatment) || a.assetType === 'car'))
+    .map(a => ({ ...a, broughtForward: true, disposed: false, proceeds: undefined, disposalDate: undefined }));
+  const hasCa = pca && ((pca.mainPoolCfwd ?? 0) > 0 || (pca.specialPoolCfwd ?? 0) > 0 || (pca.sbaAssets ?? []).length > 0 || rolledSingles.length > 0 || rolledAssets.length > 0);
   const trading: Ct600Data['trading'] = hasCa ? {
     capitalAllowancesCalc: {
       mainPoolBfwd: (pca!.mainPoolCfwd ?? 0) || undefined,
       specialPoolBfwd: (pca!.specialPoolCfwd ?? 0) || undefined,
       sbaAssets: (pca!.sbaAssets ?? []).map(a => ({ ...a })),
       singleAssetPools: rolledSingles,
+      additions: rolledAssets.length ? rolledAssets : undefined,
     },
   } : {};
   return {

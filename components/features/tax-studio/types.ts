@@ -367,6 +367,13 @@ export interface CapexAddition {
   co2?: number;             // g/km — drives a car's pool / FYA routing
   newUnused?: boolean;      // new & unused — required for FE / 40% FYA / 50% FYA / 100% FYA
   acquisitionDate?: string; // YYYY-MM-DD — for the car CO₂ threshold table (default: period)
+  // Asset-register fields — an asset persists across periods (even at £nil TWDV)
+  // so a later disposal can create the right balancing charge.
+  broughtForward?: boolean; // acquired in a prior period — held, gets no new allowance
+  disposed?: boolean;       // disposed in this period
+  disposalDate?: string;    // YYYY-MM-DD
+  proceeds?: number;        // disposal proceeds
+  marketValue?: number;     // used instead of proceeds for gifts / non-arm's-length
 }
 /** An asset sold/scrapped in the year — proceeds come off its pool. */
 export interface CapexDisposal {

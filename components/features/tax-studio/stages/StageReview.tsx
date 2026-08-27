@@ -1635,13 +1635,20 @@ function TradeCard({ t, idx, onChange, onRemove }: {
       )}
       {caOpen && (
         <CapitalAllowancesCalculator
+          mode="trader"
+          period={{ start: t.periodStart, end: t.periodEnd }}
           state={t.capitalAllowancesCalc}
           onClose={() => setCaOpen(false)}
           onApply={(caState, res) => {
             set({
               capitalAllowancesCalc: caState,
-              aia: res.aia, ca18: res.wdaMain, ca6: res.wdaSpecial,
-              enhancedCapitalAllowances: res.fya, allowancesOnSale: res.balancingAllowance,
+              aia: res.aia,
+              // main-pool WDA + single-asset pool WDAs (private-use assets)
+              ca18: res.wdaMain + res.singleAsset, ca6: res.wdaSpecial,
+              // 100% + 40% first-year allowances
+              enhancedCapitalAllowances: res.fya + res.fya40,
+              sba: res.sba,
+              allowancesOnSale: res.balancingAllowance,
               balancingCharges: res.balancingCharge,
             });
             setCaOpen(false);
