@@ -9,7 +9,7 @@
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment, LandlordProperty } from '@/types';
 import { computeRentComputation, buildComparisonRows, type LandlordEntityType, type RentComputation } from '@/utils/landlordComputation';
 import {
-  computePersonBreakdown, computePersonMatrix, matrixCell,
+  computePersonBreakdown, computePersonMatrix, matrixCell, financeReducerFor,
   personShareRows, personShareAdjustments, personOwnedProperties,
 } from '@/utils/landlordAllocation';
 
@@ -182,26 +182,36 @@ function computationTable(c: RentComputation, showLosses: boolean): string {
 
 // ── Schedules ────────────────────────────────────────────────────────────────
 
-function incomeSchedule(income: LandlordIncomeTransaction[]): string {
+function incomeSchedule(income: LandlordIncomeTransaction[], adjustments: LandlordAdjustment[]): string {
   const th = 'text-align:left;font-size:11px;font-weight:700;color:#475569;padding:0 8px 4px 0;border-bottom:1px solid #cbd5e1';
   const td = 'font-size:11.5px;color:#334155;padding:3px 8px 3px 0;vertical-align:top';
+  const adj = adjustments.filter(a => a.type === 'income');
   const rows = income.map(r => `<tr>
     <td style="${td};white-space:nowrap">${fmtDate(r.Date)}</td>
     <td style="${td}">${escapeHtml(r.PropertyAddress || 'Non Allocated')}</td>
     <td style="${td}">${escapeHtml(r.Description)}</td>
     <td style="${td}${AMT}">${money(r.Amount)}</td>
   </tr>`).join('');
-  const total = income.reduce((s, r) => s + (r.Amount || 0), 0);
+  // Manual adjustments have no date — they're keyed as a manual entry so the
+  // client sees where every figure in the computation came from.
+  const adjRows = adj.map(a => `<tr>
+    <td style="${td};white-space:nowrap;color:#7c3aed">Adjustment</td>
+    <td style="${td}">${escapeHtml(a.propertyAddress || 'Non Allocated')}</td>
+    <td style="${td}">${escapeHtml(a.description)}</td>
+    <td style="${td}${AMT}">${money(a.amount)}</td>
+  </tr>`).join('');
+  const total = income.reduce((s, r) => s + (r.Amount || 0), 0) + adj.reduce((s, a) => s + a.amount, 0);
   return `<table style="width:100%;border-collapse:collapse">
     <thead><tr><th style="${th}">Date</th><th style="${th}">Property</th><th style="${th}">Description</th><th style="${th};text-align:right">Amount £</th></tr></thead>
-    <tbody>${rows || `<tr><td colspan="4" style="${td};color:#94a3b8">No income.</td></tr>`}</tbody>
+    <tbody>${(rows + adjRows) || `<tr><td colspan="4" style="${td};color:#94a3b8">No income.</td></tr>`}</tbody>
     <tfoot><tr><td colspan="3" style="${td};font-weight:700;border-top:1px solid #cbd5e1">Total</td><td style="${td}${AMT};font-weight:700;border-top:1px solid #cbd5e1">${money(total)}</td></tr></tfoot>
   </table>`;
 }
 
-function expenseSchedule(expenses: LandlordExpenseTransaction[]): string {
+function expenseSchedule(expenses: LandlordExpenseTransaction[], adjustments: LandlordAdjustment[]): string {
   const th = 'text-align:left;font-size:11px;font-weight:700;color:#475569;padding:0 8px 4px 0;border-bottom:1px solid #cbd5e1';
   const td = 'font-size:11.5px;color:#334155;padding:3px 8px 3px 0;vertical-align:top';
+  const adj = adjustments.filter(a => a.type === 'expense');
   const rows = expenses.map(r => `<tr>
     <td style="${td};white-space:nowrap">${fmtDate(r.DueDate)}</td>
     <td style="${td}">${escapeHtml(r.Supplier)}</td>
@@ -211,10 +221,19 @@ function expenseSchedule(expenses: LandlordExpenseTransaction[]): string {
     <td style="${td};text-align:center">${r.CapitalExpense ? 'Capital' : ''}</td>
     <td style="${td}${AMT}">${money(r.Amount)}</td>
   </tr>`).join('');
-  const total = expenses.reduce((s, r) => s + (r.Amount || 0), 0);
+  const adjRows = adj.map(a => `<tr>
+    <td style="${td};white-space:nowrap;color:#7c3aed">Adjustment</td>
+    <td style="${td}">&mdash;</td>
+    <td style="${td}">${escapeHtml(a.description)}</td>
+    <td style="${td}">${escapeHtml(a.category)}</td>
+    <td style="${td}">${escapeHtml(a.propertyAddress || 'Non Allocated')}</td>
+    <td style="${td};text-align:center"></td>
+    <td style="${td}${AMT}">${money(a.amount)}</td>
+  </tr>`).join('');
+  const total = expenses.reduce((s, r) => s + (r.Amount || 0), 0) + adj.reduce((s, a) => s + a.amount, 0);
   return `<table style="width:100%;border-collapse:collapse">
     <thead><tr><th style="${th}">Date</th><th style="${th}">Supplier</th><th style="${th}">Description</th><th style="${th}">Category</th><th style="${th}">Property</th><th style="${th}"></th><th style="${th};text-align:right">Amount £</th></tr></thead>
-    <tbody>${rows || `<tr><td colspan="7" style="${td};color:#94a3b8">No expenses.</td></tr>`}</tbody>
+    <tbody>${(rows + adjRows) || `<tr><td colspan="7" style="${td};color:#94a3b8">No expenses.</td></tr>`}</tbody>
     <tfoot><tr><td colspan="6" style="${td};font-weight:700;border-top:1px solid #cbd5e1">Total</td><td style="${td}${AMT};font-weight:700;border-top:1px solid #cbd5e1">${money(total)}</td></tr></tfoot>
   </table>`;
 }
@@ -248,7 +267,7 @@ export function buildLandlordMatrixPages(data: LandlordPackData): string[] {
     ...data.expenses.filter(r => !r.CapitalExpense).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount, Category: r.Category })),
     ...data.adjustments.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount, Category: a.category || 'Other allowable property expenses' })),
   ];
-  const m = computePersonMatrix(inc, exp, data.properties, { id: data.primaryClientId, name: data.primaryClientName });
+  const m = computePersonMatrix(inc, exp, data.properties, { id: data.primaryClientId, name: data.primaryClientName }, { entityType: data.entityType });
   if (m.properties.length === 0) return [];
 
   const groups: MatrixGroup[] = m.properties.map(p => ({
@@ -313,6 +332,22 @@ export function buildLandlordMatrixPages(data: LandlordPackData): string[] {
       }).join('')}
     </tr>`;
 
+    // Residential finance costs — restricted for individuals (not in expenses/net
+    // above); shown separately with the 20% reducer, mirroring the main computation.
+    const financeSection = m.hasRestrictedFinance ? `
+      ${sectionRow('Finance costs (not deducted above)', '#b45309')}
+      <tr>
+        <td style="${LBL}">Residential finance costs</td>
+        ${flat.map(({ g, c }) => `<td style="${TD}">${money(value(g.id, c.key, m.financeCat))}</td>`).join('')}
+      </tr>
+      <tr>
+        <td style="${LBL}">Basic-rate tax reduction (20%, estimate)</td>
+        ${flat.map(({ g, c }) => {
+          const net = sumCats(g.id, c.key, m.incomeCats) - sumCats(g.id, c.key, m.expenseCats);
+          return `<td style="${TD}color:#047857">${money(financeReducerFor(value(g.id, c.key, m.financeCat), net))}</td>`;
+        }).join('')}
+      </tr>` : '';
+
     return `
       <div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a">
         <p style="${H_COMPANY}">${escapeHtml(data.clientName)}</p>
@@ -332,9 +367,10 @@ export function buildLandlordMatrixPages(data: LandlordPackData): string[] {
             ${m.expenseCats.length ? catRows(m.expenseCats) : `<tr><td colspan="${span}" style="${LBL}color:#94a3b8">No expenses</td></tr>`}
             ${totalRow('Total expenses', m.expenseCats)}
             ${netRow}
+            ${financeSection}
           </tbody>
         </table>
-        <p style="font-size:9px;color:#94a3b8;margin:10px 0 0">Each property&rsquo;s income and expenses are shared out by ownership % (shown under each name). Capital items are excluded.</p>
+        <p style="font-size:9px;color:#94a3b8;margin:10px 0 0">Each property&rsquo;s income and expenses are shared out by ownership % (shown under each name). Capital items are excluded.${m.hasRestrictedFinance ? ' For individuals, residential finance costs aren&rsquo;t deducted from profit — they give a 20% basic-rate tax reducer (capped at 20% of property profits), so they&rsquo;re shown separately below the net and excluded from Total expenses. The reduction depends on each person&rsquo;s total income, so treat it as an estimate. Commercial (non-residential) finance costs stay in expenses.' : ''}</p>
       </div>`;
   });
 }
@@ -442,9 +478,9 @@ export function buildLandlordPackHtml(data: LandlordPackData): string {
   // this person's share, so say so — the figures won't tie to the invoices.
   const schedSub = data.person ? `${data.person.name} — your share of each item` : undefined;
   parts.push(section('income-schedule', 'Income schedule',
-    sectionHead(data.clientName, 'Income Schedule', periodLine, schedSub) + incomeSchedule(data.income)));
+    sectionHead(data.clientName, 'Income Schedule', periodLine, schedSub) + incomeSchedule(data.income, data.adjustments)));
   parts.push(section('expense-schedule', 'Expenses schedule',
-    sectionHead(data.clientName, 'Expenses Schedule', periodLine, schedSub) + expenseSchedule(data.expenses)));
+    sectionHead(data.clientName, 'Expenses Schedule', periodLine, schedSub) + expenseSchedule(data.expenses, data.adjustments)));
 
   // 6. Notes
   if (data.notes.trim()) {

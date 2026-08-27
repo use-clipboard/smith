@@ -1,4 +1,5 @@
 import type { LandlordProperty } from '@/types';
+import { LANDLORD_FINANCE_COST_CATEGORY } from '@/components/features/landlord/categories';
 
 // ─── Address matching ───────────────────────────────────────────────────────
 // Deterministic fuzzy matching used to allocate a transaction's free-text
@@ -236,11 +237,21 @@ export interface PersonMatrix {
   /** Distinct people across every property — used for the per-person total columns. */
   people: MatrixPerson[];
   incomeCats: string[];
+  /** DEDUCTIBLE expense categories. When `restricted`, the residential finance
+   *  category is NOT in here — it's relieved as a tax reducer, not deducted, so
+   *  it must be excluded from Total expenses / Net profit. Its cells stay in
+   *  `cells` so the finance section can still show them. */
   expenseCats: string[];
   /** `${propertyId}|${ownerKey}|${category}` → that owner's share of the category. */
   cells: Map<string, number>;
   /** Amounts that couldn't be attributed to any property (no Non Allocated property set up). */
   unattributed: { income: number; expenses: number };
+  /** True for an individual landlord: residential finance costs are restricted. */
+  restricted: boolean;
+  /** The residential-finance category (excluded from expenseCats when restricted). */
+  financeCat: string;
+  /** True when there are restricted residential finance costs to show separately. */
+  hasRestrictedFinance: boolean;
 }
 
 interface Categorised { PropertyAddress: string; Amount: number; Category: string }
@@ -249,12 +260,22 @@ export function matrixCell(m: PersonMatrix, propertyId: string, ownerKey: string
   return m.cells.get(`${propertyId}|${ownerKey}|${category}`) ?? 0;
 }
 
+/** One column's (or a person's) residential finance costs = the finance-category
+ *  cells summed. `net` is that column's profit AFTER excluding finance, so the
+ *  reducer is capped at 20% of profit — mirrors computeRentComputation. */
+export function financeReducerFor(financeCosts: number, netExclFinance: number): number {
+  return FINANCE_RELIEF_RATE * Math.min(Math.max(0, financeCosts), Math.max(0, netExclFinance));
+}
+const FINANCE_RELIEF_RATE = 0.20;
+
 export function computePersonMatrix(
   income: Categorised[],
   expenses: Categorised[],
   properties: LandlordProperty[],
   primaryClient: { id: string | null; name: string },
+  opts?: { entityType?: 'individual' | 'company' },
 ): PersonMatrix {
+  const restricted = (opts?.entityType ?? 'individual') === 'individual';
   const unallocProp = findUnallocatedProperty(properties);
   const primaryKey = primaryClient.id ?? `name:${primaryClient.name.toLowerCase()}`;
 
@@ -306,12 +327,23 @@ export function computePersonMatrix(
     }
   }
 
+  // Residential finance is restricted for individuals: drop it from the
+  // deductible expense rows, but keep its cells so the finance section can show
+  // it separately. Companies deduct it normally, so it stays an expense row.
+  const hasRestrictedFinance = restricted && expenseCatSet.has(LANDLORD_FINANCE_COST_CATEGORY);
+  const expenseCats = Array.from(expenseCatSet)
+    .filter(c => !(restricted && c === LANDLORD_FINANCE_COST_CATEGORY))
+    .sort((a, b) => a.localeCompare(b));
+
   return {
     properties: matrixProps,
     people: Array.from(peopleMap.values()),
     incomeCats: Array.from(incomeCatSet).sort((a, b) => a.localeCompare(b)),
-    expenseCats: Array.from(expenseCatSet).sort((a, b) => a.localeCompare(b)),
+    expenseCats,
     cells,
     unattributed,
+    restricted,
+    financeCat: LANDLORD_FINANCE_COST_CATEGORY,
+    hasRestrictedFinance,
   };
 }

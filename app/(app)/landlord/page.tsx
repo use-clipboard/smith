@@ -17,7 +17,7 @@ import { useModules } from '@/components/ui/ModulesProvider';
 import type { IncomeRow, ExpenseRow } from '@/components/features/landlord/LandlordEditModal';
 import {
   matchProperty, computePersonMatrix, matrixCell, findUnallocatedProperty, UNALLOCATED_LABEL,
-  personShareRows, personShareAdjustments, normalizeForMatch,
+  personShareRows, personShareAdjustments, normalizeForMatch, financeReducerFor,
 } from '@/utils/landlordAllocation';
 import { computeRentComputation, buildComparisonRows, PROPERTY_INCOME_ALLOWANCE, type LandlordEntityType, type RentComputationOpts, type RentComputation } from '@/utils/landlordComputation';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
@@ -27,7 +27,7 @@ import {
   House, Download, Undo2, Redo2, AlertTriangle, Pencil, Flag,
   CheckCircle, ChevronDown, ChevronUp, LayoutList, LayoutGrid,
   Plus, Trash2, TrendingUp, ArrowLeft, ArrowRight, Sparkles,
-  UploadCloud, Check, Building2, CalendarDays, ShieldCheck, Coins, Receipt, Calculator, X, Users, MapPin, FileText, Loader2, FileSpreadsheet,
+  UploadCloud, Check, Building2, CalendarDays, ShieldCheck, Coins, Receipt, Calculator, X, Users, MapPin, FileText, Loader2, FileSpreadsheet, Info, Home,
 } from 'lucide-react';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
 import { exportLandlordWorkbook } from '@/utils/landlordExport';
@@ -46,7 +46,7 @@ type AppState = 'idle' | 'loading' | 'scan_results' | 'property_review' | 'succe
 
 /** Address used for the single combined property when "group all properties" is on. */
 const GROUP_LABEL = 'All properties';
-type LandlordView = 'income' | 'expenses' | 'rent_comp' | 'flagged';
+type LandlordView = 'properties' | 'income' | 'expenses' | 'rent_comp' | 'flagged';
 type Breakdown = 'all' | 'property' | 'person';
 type PropertyMode = 'suggest' | 'preset';
 type TaggedIncome = LandlordIncomeTransaction & { _recordType: 'income' };
@@ -601,9 +601,11 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   const flaggedExpenses = useMemo(() => current.expenses.filter(r => r._flagged), [current.expenses]);
   const allFlagged      = useMemo(() => [...flaggedIncome, ...flaggedExpenses],    [flaggedIncome, flaggedExpenses]);
 
+  // Raw line-item totals for the Income / Expenses table footers (these list
+  // every row as-is). The headline KPI strip uses `kpi` below, which restricts
+  // residential finance for individuals.
   const incomeTotal    = useMemo(() => inRangeIncome.reduce((s, r) => s + (r.Amount || 0), 0),   [inRangeIncome]);
   const expensesTotal  = useMemo(() => inRangeExpenses.reduce((s, r) => s + (r.Amount || 0), 0), [inRangeExpenses]);
-  const netProfit      = incomeTotal - expensesTotal;
 
   // Property grouping
   const incomeByProperty = useMemo(() => {
@@ -637,13 +639,22 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
       ...inRangeExpenses.filter(r => !r.CapitalExpense).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount, Category: r.Category })),
       ...adjustments.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount, Category: a.category || 'Other allowable property expenses' })),
     ];
-    return computePersonMatrix(inc, exp, properties, pc);
-  }, [inRangeIncome, inRangeExpenses, adjustments, properties, selectedClient?.id, selectedClient?.name]);
+    return computePersonMatrix(inc, exp, properties, pc, { entityType });
+  }, [inRangeIncome, inRangeExpenses, adjustments, properties, selectedClient?.id, selectedClient?.name, entityType]);
 
   // Portfolio-level computation (for the allowance nudge in the options card).
   const rentCompAll = useMemo(
     () => computeRentComputation(inRangeIncome, inRangeExpenses, adjustments, { entityType, useAllowance, broughtForwardLoss: parseFloat(broughtForwardLoss) || 0 }),
     [inRangeIncome, inRangeExpenses, adjustments, entityType, useAllowance, broughtForwardLoss],
+  );
+
+  // Headline strip figures. Runs the full computation (so residential finance is
+  // restricted for individuals — NOT counted as a deductible expense) but ignores
+  // the £1,000 allowance and losses, which are computation refinements shown in
+  // the Rent Computation tab, not headline totals.
+  const kpi = useMemo(
+    () => computeRentComputation(inRangeIncome, inRangeExpenses, adjustments, { entityType }),
+    [inRangeIncome, inRangeExpenses, adjustments, entityType],
   );
 
   // One owner's own computation: scale their share of every row FIRST, then apply
@@ -1988,8 +1999,38 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                 return <td key={`net|t|${pp.key}`} className={`${td} font-bold ${n < 0 ? 'text-red-500' : 'text-emerald-600'} ${i === 0 ? 'border-l-2 border-[var(--accent)]/40' : ''}`}>{money(n)}</td>;
               })}
             </tr>
+
+            {/* Residential finance costs — not deducted for individuals; shown
+                separately with the 20% reducer, mirroring the main computation. */}
+            {m.hasRestrictedFinance && (() => {
+              const colNet = (c: { pid: string; owner: { key: string } }) => sumCats(c.pid, c.owner.key, m.incomeCats) - sumCats(c.pid, c.owner.key, m.expenseCats);
+              const colFin = (c: { pid: string; owner: { key: string } }) => cell(c.pid, c.owner.key, m.financeCat);
+              const personNet = (key: string) => personCats(key, m.incomeCats) - personCats(key, m.expenseCats);
+              const personFin = (key: string) => personCat(key, m.financeCat);
+              return (
+                <>
+                  {sectionRow('Finance costs (not deducted above)', 'bg-amber-50/60 dark:bg-amber-900/10 text-amber-700 dark:text-amber-400')}
+                  <tr>
+                    <td className={`${stickyL} text-[var(--text-secondary)]`}>Residential finance costs</td>
+                    {cols.map(c => <td key={`fin|${c.pid}|${c.owner.key}`} className={`${td} text-[var(--text-primary)]`}>{money(colFin(c))}</td>)}
+                    {m.people.map((pp, i) => <td key={`fin|t|${pp.key}`} className={`${td} font-medium text-[var(--text-primary)] ${i === 0 ? 'border-l-2 border-[var(--accent)]/40' : ''}`}>{money(personFin(pp.key))}</td>)}
+                  </tr>
+                  <tr>
+                    <td className={`${stickyL} text-[var(--text-secondary)]`}>Basic-rate tax reduction (20%, estimate)</td>
+                    {cols.map(c => <td key={`frd|${c.pid}|${c.owner.key}`} className={`${td} text-emerald-600`}>{money(financeReducerFor(colFin(c), colNet(c)))}</td>)}
+                    {m.people.map((pp, i) => <td key={`frd|t|${pp.key}`} className={`${td} font-medium text-emerald-600 ${i === 0 ? 'border-l-2 border-[var(--accent)]/40' : ''}`}>{money(financeReducerFor(personFin(pp.key), personNet(pp.key)))}</td>)}
+                  </tr>
+                </>
+              );
+            })()}
           </tbody>
         </table>
+
+        {m.hasRestrictedFinance && (
+          <p className="px-3 py-2.5 text-[11px] text-[var(--text-muted)] leading-snug border-t border-[var(--border)] bg-amber-50/40 dark:bg-amber-900/5">
+            For individuals, residential finance costs aren&apos;t deducted from profit — they give a 20% basic-rate tax reducer (capped at 20% of property profits), so they&apos;re excluded from Total expenses and Net profit above. The final figure also depends on each person&apos;s total income, so treat the reduction as an estimate. Commercial (non-residential) finance costs stay in expenses.
+          </p>
+        )}
 
         {hasUnattributed && (
           <div className="flex items-center justify-between gap-3 flex-wrap px-3 py-2 bg-amber-50/70 dark:bg-amber-900/10 border-t border-[var(--border)]">
@@ -2285,27 +2326,37 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
             <WizardStepper steps={wizardSteps} current={wizardSteps.length - 1} onStep={() => setAppState('idle')} />
           </div>
 
-          {/* Summary strip */}
+          {/* Summary strip — uses the restricted computation, so residential
+              finance costs are excluded from expenses (individuals). */}
           <div className="grid grid-cols-3 gap-3">
             <div className="glass-solid rounded-xl px-4 py-3">
               <p className="text-xs text-[var(--text-muted)] mb-0.5">Total Income</p>
-              <p className="text-base font-semibold text-emerald-600 dark:text-emerald-400">{fmt(incomeTotal)}</p>
+              <p className="text-base font-semibold text-emerald-600 dark:text-emerald-400">{fmt(kpi.totalIncome)}</p>
             </div>
             <div className="glass-solid rounded-xl px-4 py-3">
               <p className="text-xs text-[var(--text-muted)] mb-0.5">Total Expenses</p>
-              <p className="text-base font-semibold text-red-500 dark:text-red-400">{fmt(expensesTotal)}</p>
+              <p className="text-base font-semibold text-red-500 dark:text-red-400">{fmt(kpi.totalExpenses)}</p>
             </div>
             <div className="glass-solid rounded-xl px-4 py-3">
-              <p className="text-xs text-[var(--text-muted)] mb-0.5">Net {netProfit >= 0 ? 'Profit' : 'Loss'}</p>
-              <p className={`text-base font-semibold ${netProfit >= 0 ? 'text-[var(--text-primary)]' : 'text-red-500 dark:text-red-400'}`}>{fmt(Math.abs(netProfit))}</p>
+              <p className="text-xs text-[var(--text-muted)] mb-0.5">Net {kpi.netProfit >= 0 ? 'Profit' : 'Loss'}</p>
+              <p className={`text-base font-semibold ${kpi.netProfit >= 0 ? 'text-[var(--text-primary)]' : 'text-red-500 dark:text-red-400'}`}>{fmt(Math.abs(kpi.netProfit))}</p>
             </div>
           </div>
+          {kpi.restricted && kpi.financeCosts > 0 && (
+            <p className="-mt-1 text-[11px] text-[var(--text-muted)] leading-snug flex items-start gap-1.5">
+              <Info size={12} className="shrink-0 mt-0.5 text-[var(--accent)]" />
+              <span>
+                Residential finance costs of <strong>{fmt(kpi.financeCosts)}</strong> aren&apos;t in expenses above — for individuals they&apos;re not deducted from profit but give a 20% basic-rate tax reducer (capped at 20% of property profits). Commercial (non-residential) finance costs stay in expenses. See the Rent Computation for the full treatment.
+              </span>
+            </p>
+          )}
 
           {/* Toolbar */}
           <div className="flex items-center justify-between flex-wrap gap-3">
             {/* Tabs */}
             <div className="flex gap-2 flex-wrap">
               {([
+                { id: 'properties', label: 'Properties',                            icon: <Home size={13} />,       active: 'bg-[var(--accent)] text-white' },
                 { id: 'income',     label: `Income (${inRangeIncome.length})`,    icon: null,                   active: 'bg-[var(--accent)] text-white' },
                 { id: 'expenses',   label: `Expenses (${inRangeExpenses.length})`, icon: null,                  active: 'bg-[var(--accent)] text-white' },
                 { id: 'rent_comp',  label: 'Rent Computation',                     icon: <TrendingUp size={13} />, active: 'bg-purple-600 text-white' },
@@ -2451,6 +2502,21 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
               <button onClick={handleBulkUnflag} className="btn-secondary text-xs py-1 text-emerald-600">
                 <CheckCircle size={11} /> Mark as Valid
               </button>
+            </div>
+          )}
+
+          {/* ── Properties view ── */}
+          {view === 'properties' && (
+            <div className="space-y-4">
+              <div className="glass-solid rounded-xl p-4 flex items-start gap-2.5">
+                <Info size={14} className="shrink-0 mt-0.5 text-[var(--accent)]" />
+                <p className="text-xs text-[var(--text-secondary)] leading-snug">
+                  Set each property&apos;s <strong>type</strong> (residential or commercial) and its <strong>owners and shares</strong>.
+                  The type decides how finance costs are relieved — residential finance is restricted to a 20% tax reducer for individuals,
+                  while commercial finance stays fully deductible. Owners and shares drive the per-person breakdown and the individual reports.
+                </p>
+              </div>
+              <PropertiesManageBlock />
             </div>
           )}
 
@@ -2705,7 +2771,14 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
               {/* Computation */}
               {breakdown === 'person' ? (
                 <div className="space-y-4">
-                  <PropertiesManageBlock />
+                  <div className="glass-solid rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+                    <span className="text-xs text-[var(--text-muted)] flex items-center gap-1.5">
+                      <MapPin size={12} className="text-[var(--accent)]" /> Property types, owners and shares are set on the Properties tab.
+                    </span>
+                    <button onClick={() => setView('properties')} className="btn-secondary text-xs py-1">
+                      <Home size={11} /> Edit properties
+                    </button>
+                  </div>
                   <PersonComputation />
                 </div>
               ) : breakdown === 'all' ? (

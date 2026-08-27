@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment, LandlordProperty } from '@/types';
-import { computePersonBreakdown, computePersonMatrix, matrixCell } from './landlordAllocation';
+import { computePersonBreakdown, computePersonMatrix, matrixCell, financeReducerFor } from './landlordAllocation';
 import { computeRentComputation, buildComparisonRows, type LandlordEntityType, type RentComputationOpts, type RentComputation } from './landlordComputation';
 
 type Row = (string | number)[];
@@ -350,6 +350,7 @@ function buildPersonSheet(
   properties: LandlordProperty[],
   primary: { id: string | null; name: string },
   meta: ReportMeta,
+  entityType: LandlordEntityType,
 ): XLSX.WorkSheet {
   // Same full working as the screen + PDF: properties across the top, each split
   // by individual (with %), income/expense categories down the left, then a Total
@@ -362,7 +363,7 @@ function buildPersonSheet(
     ...expenses.filter(r => !r.CapitalExpense).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount, Category: r.Category })),
     ...adjustments.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount, Category: a.category || 'Other allowable property expenses' })),
   ];
-  const m = computePersonMatrix(inc, exp, properties, primary);
+  const m = computePersonMatrix(inc, exp, properties, primary, { entityType });
 
   const header = reportHeader('Income by Person', meta.clientName, meta.clientCode, meta.dateFrom, meta.dateTo);
 
@@ -427,12 +428,27 @@ function buildPersonSheet(
   rows.push(['NET PROFIT / (LOSS)', ...flat.map(({ g, c }) =>
     sumCats(g.id, c.key, m.incomeCats) - sumCats(g.id, c.key, m.expenseCats))]);
 
+  // Residential finance — restricted for individuals; shown separately with the
+  // 20% reducer, so the sheet ties to the on-screen and PDF workings.
+  if (m.hasRestrictedFinance) {
+    rows.push([]);
+    rows.push(['FINANCE COSTS (NOT DEDUCTED ABOVE)']);
+    rows.push(['Residential finance costs', ...flat.map(({ g, c }) => value(g.id, c.key, m.financeCat))]);
+    rows.push(['Basic-rate tax reduction (20%, estimate)', ...flat.map(({ g, c }) => {
+      const net = sumCats(g.id, c.key, m.incomeCats) - sumCats(g.id, c.key, m.expenseCats);
+      return financeReducerFor(value(g.id, c.key, m.financeCat), net);
+    })]);
+  }
+
   if (m.unattributed.income > 0.001 || m.unattributed.expenses > 0.001) {
     rows.push([]);
     rows.push([`Not matched to a property (not split): income ${fmtAmt(m.unattributed.income)}, expenses ${fmtAmt(m.unattributed.expenses)}`]);
   }
   rows.push([]);
   rows.push(["Each property's income and expenses are shared out by ownership % (shown beside each name). Capital items are excluded."]);
+  if (m.hasRestrictedFinance) {
+    rows.push(['For individuals, residential finance costs are not deducted from profit — they give a 20% basic-rate tax reducer (capped at 20% of property profits), so they are excluded from Total expenses / Net above. The reduction also depends on each person’s total income, so treat it as an estimate. Commercial (non-residential) finance costs stay in expenses.']);
+  }
 
   const ws = makeSheet(rows);
   // Merge each property's label across its owner columns.
@@ -582,7 +598,7 @@ export function exportLandlordWorkbook(data: LandlordExportData): void {
   }
   if (data.properties && data.properties.length > 0) {
     const primary = { id: data.primaryClientId ?? null, name: data.primaryClientName ?? data.clientName ?? 'This client' };
-    XLSX.utils.book_append_sheet(wb, buildPersonSheet(inRangeIncome, inRangeExpenses, data.adjustments, data.properties, primary, meta), 'By Person');
+    XLSX.utils.book_append_sheet(wb, buildPersonSheet(inRangeIncome, inRangeExpenses, data.adjustments, data.properties, primary, meta, entityType), 'By Person');
   }
   if (outRangeIncome.length > 0 || outRangeExpenses.length > 0) {
     XLSX.utils.book_append_sheet(wb, buildOutOfRangeSheet(outRangeIncome, outRangeExpenses, meta, driveLinks), 'Out of Date Range');
