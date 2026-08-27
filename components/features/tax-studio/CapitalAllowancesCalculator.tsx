@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Check, Plus, Trash2, Calculator } from 'lucide-react';
 import { fmtMoney } from './data';
-import { computeCapitalAllowances, type CapitalAllowancesResult } from './calc';
+import { computeCapitalAllowances, carClassify, type CapitalAllowancesResult } from './calc';
 import type { CapitalAllowancesState, CapexAddition, CapexDisposal, SbaAsset, SingleAssetPool } from './types';
 
 const rid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
@@ -12,17 +12,32 @@ const rid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1e4)
 const TREATMENTS_TRADER: { value: CapexAddition['treatment']; label: string }[] = [
   { value: 'aia', label: 'AIA — 100%' },
   { value: 'fya', label: 'First-year — 100%' },
-  { value: 'main', label: 'Main pool — 18%' },
+  { value: 'fya40', label: '40% FYA (from Jan 2026)' },
+  { value: 'main', label: 'Main pool' },
   { value: 'special', label: 'Special rate — 6%' },
 ];
 const TREATMENTS_COMPANY: { value: CapexAddition['treatment']; label: string }[] = [
   { value: 'aia', label: 'AIA — 100%' },
   { value: 'full', label: 'Full expensing — 100%' },
   { value: 'fya', label: 'First-year — 100% (zero-emission)' },
+  { value: 'fya40', label: '40% FYA (from Jan 2026)' },
   { value: 'sr-fya', label: 'Special-rate FYA — 50%' },
-  { value: 'main', label: 'Main pool — 18%' },
+  { value: 'main', label: 'Main pool' },
   { value: 'special', label: 'Special rate — 6%' },
 ];
+const ASSET_TYPES: { value: NonNullable<CapexAddition['assetType']>; label: string }[] = [
+  { value: 'plant', label: 'Plant / equipment' },
+  { value: 'car', label: 'Car' },
+  { value: 'van', label: 'Van' },
+  { value: 'motorcycle', label: 'Motorcycle' },
+  { value: 'lorry', label: 'Lorry / truck' },
+  { value: 'other', label: 'Other commercial' },
+];
+const CAR_DERIVED: Record<'fya100' | 'main' | 'special', string> = {
+  fya100: '→ 100% FYA (zero-emission)',
+  main: '→ Main pool',
+  special: '→ Special rate',
+};
 
 // Capital Allowances Calculator — pools (18%/6%), AIA, first-year allowances
 // (incl. full expensing + 50% special-rate FYA for companies), Structures &
@@ -68,7 +83,9 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
     onApply({ ...st, mainPoolCfwd: r.mainPoolCfwd, specialPoolCfwd: r.specialPoolCfwd, singleAssetPools }, r);
   }
 
-  const addCols = company ? 'grid-cols-[1fr_100px_160px_28px]' : 'grid-cols-[1fr_90px_140px_70px_28px]';
+  const addCols = company
+    ? 'grid-cols-[1fr_76px_96px_50px_150px_38px_28px]'
+    : 'grid-cols-[1fr_76px_96px_50px_140px_38px_52px_28px]';
   if (typeof document === 'undefined') return null;
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -86,7 +103,7 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
           <div>
             <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Pools brought forward (TWDV)</p>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <Field label="Main pool b/fwd (18%)" value={st.mainPoolBfwd ?? 0} onChange={v => setBfwd('mainPoolBfwd', v)} />
+              <Field label="Main pool b/fwd (TWDV)" value={st.mainPoolBfwd ?? 0} onChange={v => setBfwd('mainPoolBfwd', v)} />
               <Field label="Special-rate pool b/fwd (6%)" value={st.specialPoolBfwd ?? 0} onChange={v => setBfwd('specialPoolBfwd', v)} />
             </div>
             <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Rolled in automatically from last year&apos;s closing balances when the {company ? 'return' : 'trade'} is carried forward.{r.prorated && ` Period is ${r.periodDays} days — writing-down allowances and the AIA cap are prorated.`}</p>
@@ -103,24 +120,35 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
             ) : (
               <div className="space-y-1.5">
                 <div className={`grid ${addCols} gap-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]`}>
-                  <span>Description</span><span className="text-right">Cost</span><span>Treatment</span>{!company && <span className="text-right">Bus %</span>}<span></span>
+                  <span>Description</span><span className="text-right">Cost</span><span>Type</span><span className="text-right">CO₂</span><span>Treatment</span><span className="text-center">New</span>{!company && <span className="text-right">Bus %</span>}<span></span>
                 </div>
-                {(st.additions ?? []).map(a => (
+                {(st.additions ?? []).map(a => {
+                  const isCar = a.assetType === 'car';
+                  const carDeriv = isCar ? CAR_DERIVED[carClassify(a.co2, a.newUnused, period?.end || '')] : null;
+                  return (
                   <div key={a.id} className={`grid ${addCols} items-center gap-2`}>
                     <input value={a.description ?? ''} placeholder={company ? 'e.g. Plant & machinery' : 'e.g. Van'} onChange={e => updAddition(a.id, { description: e.target.value })} className="input-base py-1 text-[12px]" />
                     <input type="number" value={a.cost || ''} placeholder="0" onChange={e => updAddition(a.id, { cost: Number(e.target.value) || 0 })} className="input-base py-1 text-right text-[12px]" />
-                    <select value={a.treatment} onChange={e => updAddition(a.id, { treatment: e.target.value as CapexAddition['treatment'] })} className="input-base py-1 text-[12px]">
-                      {treatments.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    <select value={a.assetType ?? 'plant'} onChange={e => updAddition(a.id, { assetType: e.target.value as CapexAddition['assetType'] })} className="input-base px-1 py-1 text-[11.5px]">
+                      {ASSET_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
+                    <input type="number" value={a.co2 ?? ''} placeholder={isCar ? '0' : '—'} disabled={!isCar} onChange={e => updAddition(a.id, { co2: e.target.value === '' ? undefined : Number(e.target.value) })} className={`input-base py-1 text-right text-[12px]${isCar ? '' : ' cursor-not-allowed bg-slate-50 text-slate-300'}`} />
+                    {isCar
+                      ? <span className="truncate text-[11px] font-semibold text-[var(--accent)]" title={`${carDeriv} — cars can't take AIA / full expensing / FYA40`}>{carDeriv}</span>
+                      : <select value={a.treatment} onChange={e => updAddition(a.id, { treatment: e.target.value as CapexAddition['treatment'] })} className="input-base px-1 py-1 text-[11.5px]">
+                          {treatments.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                        </select>}
+                    <input type="checkbox" checked={a.newUnused !== false} onChange={e => updAddition(a.id, { newUnused: e.target.checked })} className="mx-auto h-3.5 w-3.5 accent-[var(--accent)]" title="New & unused (required for full expensing / FYA)" />
                     {!company && <input type="number" value={a.businessUsePct ?? ''} placeholder="100" onChange={e => updAddition(a.id, { businessUsePct: e.target.value === '' ? undefined : Number(e.target.value) })} className="input-base py-1 text-right text-[12px]" />}
                     <button onClick={() => delAddition(a.id)} className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-rose-50 hover:text-rose-500"><Trash2 size={13} /></button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
-            <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">{company
-              ? 'Full expensing = 100% on new main-pool plant & machinery (uncapped). 50% special-rate FYA gives half now, half into the special pool.'
-              : 'Business-use % applies to AIA / first-year assets (private use). For a car with private use, use a single-asset pool below.'}</p>
+            <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Cars follow the CO₂ / new-unused decision tree (no AIA, full expensing or 40% FYA); vans and commercial vehicles are ordinary plant. New &amp; unused is required for full expensing / 40% / 50% / 100% FYA. {company
+              ? 'Full expensing = 100% on new main-pool P&M (uncapped); 50% special-rate FYA gives half now, half into the special pool next period.'
+              : 'Business-use % applies to AIA / first-year assets; a car with private use belongs in a single-asset pool below.'}</p>
           </div>
 
           {/* Disposals */}
@@ -224,8 +252,9 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
             <Line label="AIA" value={r.aia} note={r.aiaCapped ? 'capped' : undefined} />
             {company && r.fullExpensing > 0 && <Line label="Full expensing" value={r.fullExpensing} />}
             {r.fya > 0 && <Line label="First-year (100%)" value={r.fya} />}
+            {r.fya40 > 0 && <Line label="40% FYA" value={r.fya40} />}
             {company && r.sr50 > 0 && <Line label="Special-rate FYA (50%)" value={r.sr50} />}
-            <Line label="Main WDA 18%" value={r.wdaMain} note={r.mainSmallPool ? 'small pool' : undefined} />
+            <Line label={`Main WDA ${r.mainRatePct}%`} value={r.wdaMain} note={r.mainSmallPool ? 'small pool' : undefined} />
             <Line label="Special WDA 6%" value={r.wdaSpecial} note={r.specialSmallPool ? 'small pool' : undefined} />
             {r.sba > 0 && <Line label="SBA 3%" value={r.sba} />}
             {!company && r.singleAsset > 0 && <Line label="Single-asset pools" value={r.singleAsset} />}
@@ -235,6 +264,7 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
             <Line label="Main pool c/fwd" value={r.mainPoolCfwd} />
             <Line label="Special pool c/fwd" value={r.specialPoolCfwd} />
           </div>
+          {r.straddles2026 && <p className="mt-1.5 text-[10.5px] font-semibold text-[var(--accent)]">Period straddles the 2026 rate change — main-pool WDA blended to {r.mainRatePct}% (18% before / 14% after).</p>}
           {r.aiaCapped && <p className="mt-1.5 text-[10.5px] font-semibold text-amber-700">AIA spend exceeds the {fmtMoney(r.aiaLimit)} limit{r.prorated ? ' (prorated for the period)' : ''} — the claim has been capped.</p>}
           <div className="mt-3 flex items-center justify-end gap-2">
             <button onClick={onClose} className="btn-secondary">Cancel</button>

@@ -352,11 +352,21 @@ export interface CapexAddition {
   cost: number;
   /** aia = 100% Annual Investment Allowance; fya = 100% first-year (e.g.
    *  zero-emission); full = 100% full expensing (companies, new main-pool P&M,
-   *  uncapped); sr-fya = 50% special-rate first-year (companies), remaining 50%
-   *  into the special pool; main = 18% main pool; special = 6% special-rate pool. */
-  treatment: 'aia' | 'fya' | 'full' | 'sr-fya' | 'main' | 'special';
+   *  uncapped); fya40 = 40% first-year allowance (from 1 Jan 2026, new main-rate
+   *  P&M, 60% residue to the pool next period); sr-fya = 50% special-rate
+   *  first-year (companies), remaining 50% into the special pool; main = main
+   *  pool; special = special-rate pool. For cars the treatment is derived from
+   *  the CO₂ / new-unused / acquisition-date car decision tree. */
+  treatment: 'aia' | 'fya' | 'full' | 'fya40' | 'sr-fya' | 'main' | 'special';
   /** Business-use % (sole traders) — restricts this asset's allowance. Default 100. */
   businessUsePct?: number;
+  /** Vehicle / asset kind. Cars have their own decision tree and can't take
+   *  AIA / full expensing / 40% FYA; vans and other commercial vehicles are
+   *  ordinary plant. Default 'plant'. */
+  assetType?: 'plant' | 'car' | 'van' | 'motorcycle' | 'lorry' | 'other';
+  co2?: number;             // g/km — drives a car's pool / FYA routing
+  newUnused?: boolean;      // new & unused — required for FE / 40% FYA / 50% FYA / 100% FYA
+  acquisitionDate?: string; // YYYY-MM-DD — for the car CO₂ threshold table (default: period)
 }
 /** An asset sold/scrapped in the year — proceeds come off its pool. */
 export interface CapexDisposal {

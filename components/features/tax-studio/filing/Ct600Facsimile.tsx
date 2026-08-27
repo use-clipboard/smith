@@ -381,7 +381,7 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
           <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-black/70">Capital allowances</p>
           <Money n={690} label="Annual investment allowance" value={ca ? ca.aia : 0} />
           <Money n={688} label="Full expensing" value={ca ? ca.fullExpensing : 0} />
-          <Money n={705} label="Machinery and plant — main pool" value={ca ? ca.wdaMain + ca.fya + ca.balancingAllowance : caTotal} />
+          <Money n={705} label="Machinery and plant — main pool" value={ca ? ca.wdaMain + ca.fya + ca.fya40 + ca.balancingAllowance : caTotal} />
           <Money n={695} label="Machinery and plant — special rate pool" value={ca ? ca.wdaSpecial + ca.sr50 : 0} />
           <Money n={711} label="Structures and buildings" value={ca ? ca.sba : 0} />
           <p className="mb-1.5 mt-3 text-[10px] font-bold uppercase tracking-wide text-black/70">Balancing charges</p>

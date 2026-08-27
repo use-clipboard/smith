@@ -481,17 +481,19 @@ export function tradeCapitalAccountEnd(t: TradeSource): number {
 }
 
 // ── Capital allowances calculator (main + special-rate pools, AIA, FYA, WDA) ──
-const AIA_LIMIT = 1_000_000;   // Annual Investment Allowance (2025/26)
-const WDA_MAIN = 0.18;         // main pool writing-down allowance
-const WDA_SPECIAL = 0.06;      // special-rate pool writing-down allowance
+const AIA_LIMIT = 1_000_000;   // Annual Investment Allowance
+const WDA_MAIN_OLD = 0.18;     // main pool WDA — CT to 31 Mar 2026 / IT to 5 Apr 2026
+const WDA_MAIN_NEW = 0.14;     // main pool WDA — CT from 1 Apr 2026 / IT from 6 Apr 2026
+const WDA_SPECIAL = 0.06;      // special-rate pool writing-down allowance (unchanged)
 const SMALL_POOLS = 1000;      // small-pools write-off threshold
 
 export interface CapitalAllowancesResult {
   aia: number;                 // 100% Annual Investment Allowance
-  fya: number;                 // 100% first-year (e.g. zero-emission)
+  fya: number;                 // 100% first-year (e.g. zero-emission cars)
   fullExpensing: number;       // 100% full expensing (companies — new main-pool P&M)
+  fya40: number;               // 40% first-year allowance (from 1 Jan 2026, main-rate)
   sr50: number;                // 50% special-rate first-year allowance (companies)
-  wdaMain: number;             // 18% main pool WDA
+  wdaMain: number;             // main pool WDA (18% / 14% / hybrid)
   wdaSpecial: number;          // 6% special-rate pool WDA
   sba: number;                 // structures & buildings allowance (3% straight-line)
   singleAsset: number;         // single-asset pool WDAs (business-use restricted)
@@ -510,6 +512,8 @@ export interface CapitalAllowancesResult {
   specialSmallPool: boolean;
   periodDays: number;
   prorated: boolean;           // true when the period ≠ 365 days
+  mainRatePct: number;         // effective main WDA rate applied (for display)
+  straddles2026: boolean;      // period straddles the 18%→14% change
 }
 
 const DAY_MS = 86_400_000;
@@ -519,6 +523,43 @@ function inclusiveDays(startIso?: string, endIso?: string): number | null {
   const a = new Date(startIso), b = new Date(endIso);
   if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime()) || b < a) return null;
   return Math.round((b.getTime() - a.getTime()) / DAY_MS) + 1;
+}
+
+// Main-pool WDA factor for a period: the fraction of the pool given as WDA,
+// blending 18%/14% by days each side of the 2026 rate change (1 Apr for CT,
+// 6 Apr for IT) and time-apportioning for a period ≠ 365 days.
+function mainWdaFactor(mode: 'company' | 'trader' | undefined, startIso?: string, endIso?: string): { factor: number; ratePct: number; straddles: boolean } {
+  const periodDays = inclusiveDays(startIso, endIso) ?? 365;
+  const pf = Math.max(0, periodDays) / 365;
+  if (!startIso || !endIso) return { factor: WDA_MAIN_OLD * pf, ratePct: 18, straddles: false };
+  const changeIso = mode === 'company' ? '2026-04-01' : '2026-04-06';
+  const change = new Date(changeIso).getTime();
+  const start = new Date(startIso).getTime(), end = new Date(endIso).getTime();
+  let d1 = 0, d2 = 0; // days at old (18%) / new (14%) rate
+  if (end < change) d1 = periodDays;
+  else if (start >= change) d2 = periodDays;
+  else { d1 = Math.round((change - start) / DAY_MS); d2 = periodDays - d1; }
+  const weighted = WDA_MAIN_OLD * d1 + WDA_MAIN_NEW * d2; // ≈ rate × days
+  return { factor: weighted / 365, ratePct: periodDays > 0 ? (weighted / periodDays) * 100 : 18, straddles: d1 > 0 && d2 > 0 };
+}
+
+// Car capital-allowance routing by CO₂ (g/km), new/unused status and acquisition
+// date — standard published thresholds (verify against HMRC/Capium). Returns the
+// pool a car's expenditure joins, or 'fya100' for a qualifying new zero-emission
+// car. Cars never take AIA / full expensing / 40% or 50% FYA.
+export function carClassify(co2: number | undefined, newUnused: boolean | undefined, dateIso: string): 'fya100' | 'main' | 'special' {
+  const c = co2 ?? 999;
+  const t = new Date(dateIso || '2025-04-06').getTime();
+  const D = (s: string) => new Date(s).getTime();
+  let fyaMax: number, poolMax: number;
+  if (t >= D('2021-04-01')) { fyaMax = 0; poolMax = 50; }
+  else if (t >= D('2018-04-01')) { fyaMax = 50; poolMax = 50; }
+  else if (t >= D('2015-04-01')) { fyaMax = 75; poolMax = 75; }
+  else if (t >= D('2013-04-01')) { fyaMax = 95; poolMax = 130; }
+  else if (t >= D('2009-04-01')) { fyaMax = 110; poolMax = 160; }
+  else { fyaMax = -1; poolMax = 160; } // pre-Apr-2009 expensive-car rules — flag separately
+  if (newUnused !== false && t < D('2027-04-01') && c <= fyaMax) return 'fya100';
+  return c <= poolMax ? 'main' : 'special';
 }
 
 /** Run the capital-allowances computation for one pool state.
@@ -550,24 +591,58 @@ export function computeCapitalAllowances(
   const pf = Math.max(0, periodDays) / 365;
   const prorated = periodDays !== 365;
 
+  // Date-driven WDA factors (18%/14% hybrid for the main pool; special-rate 6%).
+  const mf = mainWdaFactor(opts?.mode, opts?.periodStart, opts?.periodEnd);
+  const specialFactor = WDA_SPECIAL * pf;
+  const defaultDate = opts?.periodEnd || '';
+
+  // Classify each addition into an allowance bucket. Cars follow their own tree
+  // (CO₂ / new-unused / date → 100% FYA or main/special pool — never AIA / full
+  // expensing / 40% or 50% FYA). Full expensing and 50% FYA are companies-only;
+  // full expensing / 40% / 50% / 100% FYA all need a new & unused asset — a
+  // second-hand asset marked otherwise drops to the ordinary pool.
+  type Bucket = 'aia' | 'fya100' | 'fullExp' | 'fya40' | 'sr50' | 'mainPool' | 'specialPool';
+  const classify = (a: CapexAddition): Bucket => {
+    const isNew = a.newUnused !== false;
+    if (a.assetType === 'car') {
+      const c = carClassify(a.co2, a.newUnused, a.acquisitionDate || defaultDate);
+      return c === 'fya100' ? 'fya100' : c === 'special' ? 'specialPool' : 'mainPool';
+    }
+    switch (a.treatment) {
+      case 'aia': return 'aia';
+      case 'fya': return isNew ? 'fya100' : 'mainPool';
+      case 'full': return opts?.mode === 'company' && isNew ? 'fullExp' : 'mainPool';
+      case 'fya40': return isNew ? 'fya40' : 'mainPool';
+      case 'sr-fya': return opts?.mode === 'company' && isNew ? 'sr50' : 'specialPool';
+      case 'special': return 'specialPool';
+      default: return 'mainPool';
+    }
+  };
+  const tagged = adds.map(a => ({ a, b: classify(a) }));
+  const sumB = (b: Bucket) => tagged.filter(x => x.b === b).reduce((t, x) => t + Math.max(0, x.a.cost || 0), 0);
+  const sumBBus = (b: Bucket) => tagged.filter(x => x.b === b).reduce((t, x) => t + Math.max(0, x.a.cost || 0) * bus(x.a.businessUsePct), 0);
+
   // AIA — 100% up to the (prorated) £1m cap; business-use restricts the claim.
   const aiaLimit = Math.round(AIA_LIMIT * pf);
-  const sumBy = (pred: (a: CapexAddition) => boolean) => adds.filter(pred).reduce((t, a) => t + Math.max(0, a.cost || 0), 0);
-  const aiaGross = sumBy(a => a.treatment === 'aia');
+  const aiaGross = sumB('aia');
   const aiaCapped = aiaGross > aiaLimit;
   const aiaScale = aiaCapped && aiaGross > 0 ? aiaLimit / aiaGross : 1;
-  const aia = r0(adds.filter(a => a.treatment === 'aia').reduce((t, a) => t + Math.max(0, a.cost || 0) * bus(a.businessUsePct) * aiaScale, 0));
+  const aia = r0(tagged.filter(x => x.b === 'aia').reduce((t, x) => t + Math.max(0, x.a.cost || 0) * bus(x.a.businessUsePct) * aiaScale, 0));
 
-  // First-year allowances (not prorated).
-  const fya = r0(adds.filter(a => a.treatment === 'fya').reduce((t, a) => t + Math.max(0, a.cost || 0) * bus(a.businessUsePct), 0));
-  const fullExpensing = r0(sumBy(a => a.treatment === 'full'));
-  const sr50Gross = sumBy(a => a.treatment === 'sr-fya');
-  const sr50 = r0(sr50Gross * 0.5);         // half claimed now
-  const sr50ToPool = sr50Gross * 0.5;       // half into the special pool
+  // First-year allowances (not prorated). 40% FYA and 50% special-rate FYA give
+  // a partial allowance now and carry the residue into the pool for next period.
+  const fya = r0(sumBBus('fya100'));
+  const fullExpensing = r0(sumB('fullExp'));
+  const fya40Gross = sumB('fya40');
+  const fya40 = r0(fya40Gross * 0.40);
+  const fya40Residue = fya40Gross * 0.60;   // to the main pool next period
+  const sr50Gross = sumB('sr50');
+  const sr50 = r0(sr50Gross * 0.50);
+  const sr50Residue = sr50Gross * 0.50;     // to the special pool next period
 
   // Pool movements.
-  const mainAdds = sumBy(a => a.treatment === 'main');
-  const specialAdds = sumBy(a => a.treatment === 'special') + sr50ToPool;
+  const mainAdds = sumB('mainPool');
+  const specialAdds = sumB('specialPool');
   const mainDisp = disp.filter(d => d.pool === 'main').reduce((t, d) => t + Math.max(0, d.proceeds || 0), 0);
   const specialDisp = disp.filter(d => d.pool === 'special').reduce((t, d) => t + Math.max(0, d.proceeds || 0), 0);
 
@@ -582,17 +657,19 @@ export function computeCapitalAllowances(
   let wdaMain = 0, wdaSpecial = 0, mainSmallPool = false, specialSmallPool = false;
   let mainPoolCfwd: number, specialPoolCfwd: number;
   if (cessation) {
-    // Final period: no WDA — the remaining pools are balancing allowances.
-    balancingAllowance += mainPool + specialPool;
+    // Final period: no WDA — the remaining pools (incl. FYA residues) are
+    // balancing allowances.
+    balancingAllowance += mainPool + fya40Residue + specialPool + sr50Residue;
     mainPoolCfwd = 0; specialPoolCfwd = 0;
   } else {
     const smallThreshold = SMALL_POOLS * pf;
     mainSmallPool = mainPool > 0 && mainPool <= smallThreshold;
     specialSmallPool = specialPool > 0 && specialPool <= smallThreshold;
-    wdaMain = r0(mainSmallPool ? mainPool : mainPool * WDA_MAIN * pf);
-    wdaSpecial = r0(specialSmallPool ? specialPool : specialPool * WDA_SPECIAL * pf);
-    mainPoolCfwd = r0(mainPool - wdaMain);
-    specialPoolCfwd = r0(specialPool - wdaSpecial);
+    wdaMain = r0(mainSmallPool ? mainPool : mainPool * mf.factor);
+    wdaSpecial = r0(specialSmallPool ? specialPool : specialPool * specialFactor);
+    // FYA residues join the pool but get no WDA until the following period.
+    mainPoolCfwd = r0(mainPool - wdaMain + fya40Residue);
+    specialPoolCfwd = r0(specialPool - wdaSpecial + sr50Residue);
   }
 
   // Single-asset pools (sole-trader private use). The full WDA reduces the pool;
@@ -600,7 +677,7 @@ export function computeCapitalAllowances(
   let singleAsset = 0;
   const singlePoolsCfwd: { id: string; twdvCfwd: number }[] = [];
   for (const p of singles) {
-    const rate = p.rate === 'special' ? WDA_SPECIAL : WDA_MAIN;
+    const factor = p.rate === 'special' ? specialFactor : mf.factor;
     const b = bus(p.businessUsePct);
     const twdv = (p.twdvBfwd || 0) + (p.additionCost || 0);
     if (p.disposed) {
@@ -611,7 +688,7 @@ export function computeCapitalAllowances(
       balancingAllowance += r0(twdv * b);
       singlePoolsCfwd.push({ id: p.id, twdvCfwd: 0 });
     } else {
-      const wda = twdv * rate * pf;
+      const wda = twdv * factor;
       singleAsset += r0(wda * b);
       singlePoolsCfwd.push({ id: p.id, twdvCfwd: r0(twdv - wda) });
     }
@@ -633,13 +710,14 @@ export function computeCapitalAllowances(
   }
 
   balancingAllowance = r0(balancingAllowance);
-  const total = aia + fya + fullExpensing + sr50 + wdaMain + wdaSpecial + sba + singleAsset + balancingAllowance;
+  const total = aia + fya + fullExpensing + fya40 + sr50 + wdaMain + wdaSpecial + sba + singleAsset + balancingAllowance;
   return {
-    aia, fya, fullExpensing, sr50, wdaMain, wdaSpecial, sba, singleAsset,
+    aia, fya, fullExpensing, fya40, sr50, wdaMain, wdaSpecial, sba, singleAsset,
     balancingAllowance, balancingCharge: r0(balancingCharge), total,
     mainPoolCfwd, specialPoolCfwd, singlePoolsCfwd,
     mainPoolBeforeWda: r0(mainPool), specialPoolBeforeWda: r0(specialPool),
     aiaCapped, aiaLimit, mainSmallPool, specialSmallPool, periodDays, prorated,
+    mainRatePct: Math.round(mf.ratePct * 10) / 10, straddles2026: mf.straddles,
   };
 }
 // Legacy aliases kept for callers that used the pre-itemised names.
