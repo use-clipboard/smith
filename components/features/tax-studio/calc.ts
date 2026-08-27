@@ -515,6 +515,8 @@ export interface CapitalAllowancesResult {
   mainRatePct: number;         // effective main WDA rate applied (for display)
   straddles2026: boolean;      // period straddles the 18%→14% change
   perAsset: CaAssetLine[];     // transparent per-asset breakdown (register)
+  maxWdaMain: number;          // maximum main-pool WDA available (before any disclaim)
+  maxWdaSpecial: number;       // maximum special-rate WDA available (before disclaim)
 }
 
 /** One line of the transparent per-asset register output. */
@@ -685,7 +687,11 @@ export function computeCapitalAllowances(
   if (mainPool < 0) { balancingCharge += -mainPool; mainPool = 0; }
   if (specialPool < 0) { balancingCharge += -specialPool; specialPool = 0; }
 
-  let wdaMain = 0, wdaSpecial = 0, mainSmallPool = false, specialSmallPool = false;
+  // Claim optimisation — WDA can be claimed below the maximum (a claim, not a
+  // requirement); the un-claimed part stays in the pool.
+  const mainClaim = Math.max(0, Math.min(100, s.mainWdaClaimPct ?? 100)) / 100;
+  const specialClaim = Math.max(0, Math.min(100, s.specialWdaClaimPct ?? 100)) / 100;
+  let wdaMain = 0, wdaSpecial = 0, maxWdaMain = 0, maxWdaSpecial = 0, mainSmallPool = false, specialSmallPool = false;
   let mainPoolCfwd: number, specialPoolCfwd: number;
   if (cessation) {
     // Final period: no WDA — the remaining pools (incl. FYA residues) are
@@ -696,8 +702,10 @@ export function computeCapitalAllowances(
     const smallThreshold = SMALL_POOLS * pf;
     mainSmallPool = mainPool > 0 && mainPool <= smallThreshold;
     specialSmallPool = specialPool > 0 && specialPool <= smallThreshold;
-    wdaMain = r0(mainSmallPool ? mainPool : mainPool * mf.factor);
-    wdaSpecial = r0(specialSmallPool ? specialPool : specialPool * specialFactor);
+    maxWdaMain = r0(mainSmallPool ? mainPool : mainPool * mf.factor);
+    maxWdaSpecial = r0(specialSmallPool ? specialPool : specialPool * specialFactor);
+    wdaMain = r0(maxWdaMain * mainClaim);
+    wdaSpecial = r0(maxWdaSpecial * specialClaim);
     // FYA residues join the pool but get no WDA until the following period.
     mainPoolCfwd = r0(mainPool - wdaMain + fya40Residue);
     specialPoolCfwd = r0(specialPool - wdaSpecial + sr50Residue);
@@ -787,7 +795,55 @@ export function computeCapitalAllowances(
     mainPoolBeforeWda: r0(mainPool), specialPoolBeforeWda: r0(specialPool),
     aiaCapped, aiaLimit, mainSmallPool, specialSmallPool, periodDays, prorated,
     mainRatePct: mainPct, straddles2026: mf.straddles, perAsset,
+    maxWdaMain, maxWdaSpecial,
   };
+}
+
+/** Review flags for the capital-allowances claim — things to check rather than
+ *  silently assume (spec §34). Returns most-important first. */
+export function capitalAllowancesWarnings(
+  state: CapitalAllowancesState | undefined,
+  opts: { mode?: 'company' | 'trader'; periodStart?: string; periodEnd?: string } | undefined,
+  r: CapitalAllowancesResult,
+): { level: 'warn' | 'info' | 'tip'; text: string }[] {
+  const out: { level: 'warn' | 'info' | 'tip'; text: string }[] = [];
+  const adds = state?.additions ?? [];
+  const company = opts?.mode === 'company';
+  const money = (n: number) => `£${Math.round(n).toLocaleString()}`;
+
+  // Cars with no CO₂ figure — routed to special rate by default.
+  const carsNoCo2 = adds.filter(a => a.assetType === 'car' && !a.disposed && a.co2 == null);
+  if (carsNoCo2.length) out.push({ level: 'warn', text: `${carsNoCo2.length === 1 ? 'A car has' : `${carsNoCo2.length} cars have`} no CO₂ figure — routed to the special-rate pool (>50g). Enter CO₂ for correct treatment.` });
+
+  // Second-hand assets marked for a first-year allowance — downgraded to the pool.
+  const badNew = adds.filter(a => a.assetType !== 'car' && a.newUnused === false && ['full', 'fya', 'fya40', 'sr-fya'].includes(a.treatment));
+  if (badNew.length) out.push({ level: 'warn', text: `${badNew.length === 1 ? 'An asset is' : `${badNew.length} assets are`} marked not new — full expensing / FYA needs a new & unused asset, so ${badNew.length === 1 ? 'it has' : 'they have'} been treated as ordinary pool expenditure.` });
+
+  // Disposals of fully-relieved assets → balancing charges.
+  const relievedDisposals = r.perAsset.filter(l => l.disposed && (l.balancing ?? 0) > 0);
+  if (relievedDisposals.length) out.push({ level: 'warn', text: `Disposal of ${relievedDisposals.length === 1 ? 'a fully-relieved asset' : `${relievedDisposals.length} fully-relieved assets`} creates a balancing charge (${money(relievedDisposals.reduce((t, l) => t + (l.balancing ?? 0), 0))} added back to profit).` });
+
+  // Company private-use → benefit-in-kind, not a CA restriction.
+  if (company && adds.some(a => a.assetType === 'car' && !a.disposed)) out.push({ level: 'info', text: 'Company: private use of a car by a director/employee does not restrict the company’s capital allowances — consider the company-car benefit-in-kind (P11D / Class 1A NIC) separately.' });
+
+  // Period straddles the 2026 rate change.
+  if (r.straddles2026) out.push({ level: 'info', text: `Accounting period straddles the 2026 rate change — main-pool WDA blended to ${r.mainRatePct}% (18% before / 14% after).` });
+
+  // AIA capped.
+  if (r.aiaCapped) out.push({ level: 'warn', text: `AIA claimed exceeds the ${money(r.aiaLimit)} limit${r.prorated ? ' (prorated for the period)' : ''} — the claim has been capped. Watch for group / related-company AIA sharing.` });
+
+  // SBA reminder.
+  if (r.sba > 0) out.push({ level: 'info', text: 'SBA is 3% on qualifying construction / renovation cost only — land does not qualify.' });
+
+  // AIA optimisation tip — AIA on main-rate while special-rate spend gets 6% WDA.
+  const aiaOnMain = adds.some(a => !a.disposed && a.treatment === 'aia' && a.assetType !== 'car');
+  const specialSpend = adds.some(a => !a.disposed && (a.treatment === 'special' || (a.assetType === 'car' && (a.co2 ?? 999) > 50)));
+  if (aiaOnMain && specialSpend) out.push({ level: 'tip', text: 'Tax tip: AIA gives 100% relief now. Allocating it to special-rate expenditure (otherwise relieved at 6%/year) rather than main-rate (18%) usually accelerates relief.' });
+
+  // Cessation reminder.
+  if (state?.cessation) out.push({ level: 'warn', text: 'Final period (cessation) — remaining pools are written off as balancing allowances; make sure every disposal value (incl. assets kept personally) is entered.' });
+
+  return out;
 }
 // Legacy aliases kept for callers that used the pre-itemised names.
 export function tradeCapitalAllowances(t: TradeSource): number { return tradeCapitalAllowancesTotal(t); }

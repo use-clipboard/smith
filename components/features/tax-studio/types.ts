@@ -415,6 +415,10 @@ export interface CapitalAllowancesState {
   sbaAssets?: SbaAsset[];             // structures & buildings (companies + traders)
   singleAssetPools?: SingleAssetPool[]; // sole-trader private-use assets
   cessation?: boolean;        // final period — remaining pools become balancing allowances
+  // Claim optimisation — capital allowances are claims: WDA can be reduced below
+  // the maximum to preserve allowances / manage personal allowances (default 100%).
+  mainWdaClaimPct?: number;   // % of the maximum main-pool WDA to claim (default 100)
+  specialWdaClaimPct?: number; // % of the maximum special-rate WDA to claim (default 100)
   mainPoolCfwd?: number;      // TWDV carried forward — main pool (computed on apply)
   specialPoolCfwd?: number;   // TWDV carried forward — special-rate pool (computed on apply)
 }

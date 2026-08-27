@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Check, Plus, Trash2, Calculator, Coins, HelpCircle } from 'lucide-react';
 import { fmtMoney } from './data';
-import { computeCapitalAllowances, carClassify, type CapitalAllowancesResult } from './calc';
+import { computeCapitalAllowances, capitalAllowancesWarnings, carClassify, type CapitalAllowancesResult } from './calc';
 import type { CapitalAllowancesState, CapexAddition, CapexDisposal, SbaAsset, SingleAssetPool } from './types';
 
 const rid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
@@ -60,8 +60,11 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
     sbaAssets: (state?.sbaAssets ?? []).map(a => ({ ...a })),
     singleAssetPools: (state?.singleAssetPools ?? []).map(p => ({ ...p })),
     cessation: state?.cessation ?? false,
+    mainWdaClaimPct: state?.mainWdaClaimPct,
+    specialWdaClaimPct: state?.specialWdaClaimPct,
   }));
   const r = computeCapitalAllowances(st, { mode, periodStart: period?.start, periodEnd: period?.end });
+  const warnings = capitalAllowancesWarnings(st, { mode, periodStart: period?.start, periodEnd: period?.end }, r);
   const treatments = company ? TREATMENTS_COMPANY : TREATMENTS_TRADER;
 
   const setBfwd = (k: 'mainPoolBfwd' | 'specialPoolBfwd', v: number) => setSt(s => ({ ...s, [k]: v }));
@@ -259,6 +262,39 @@ export default function CapitalAllowancesCalculator({ state, onApply, onClose, m
             <input type="checkbox" checked={!!st.cessation} onChange={e => setSt(s => ({ ...s, cessation: e.target.checked }))} className="h-3.5 w-3.5 accent-[var(--accent)]" />
             Final period (cessation) — write off remaining pools as balancing allowances (no WDA)
           </label>
+
+          {/* Claim strategy — WDA is a claim; it can be reduced to preserve allowances. */}
+          {!st.cessation && (r.maxWdaMain > 0 || r.maxWdaSpecial > 0) && (
+            <div className="rounded-lg border border-[var(--border)] bg-black/[0.015] px-3 py-2.5">
+              <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Claim strategy — writing-down allowances</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-24 shrink-0 text-[11.5px] text-[var(--text-muted)]">Main pool claim</span>
+                  <input type="number" min={0} max={100} value={st.mainWdaClaimPct ?? 100} onChange={e => setSt(s => ({ ...s, mainWdaClaimPct: e.target.value === '' ? undefined : Number(e.target.value) }))} className="input-base w-16 py-1 text-right text-[12px]" />
+                  <span className="text-[11px] text-[var(--text-muted)]">% · max {fmtMoney(r.maxWdaMain)}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-24 shrink-0 text-[11.5px] text-[var(--text-muted)]">Special pool claim</span>
+                  <input type="number" min={0} max={100} value={st.specialWdaClaimPct ?? 100} onChange={e => setSt(s => ({ ...s, specialWdaClaimPct: e.target.value === '' ? undefined : Number(e.target.value) }))} className="input-base w-16 py-1 text-right text-[12px]" />
+                  <span className="text-[11px] text-[var(--text-muted)]">% · max {fmtMoney(r.maxWdaSpecial)}</span>
+                </div>
+              </div>
+              <p className="mt-1.5 text-[10.5px] text-[var(--text-muted)]">Capital allowances are claims — reduce the WDA to preserve allowances (e.g. to keep a sole trader’s personal allowance). The un-claimed part stays in the pool for future years.</p>
+            </div>
+          )}
+
+          {/* Review flags */}
+          {warnings.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Review &amp; tips</p>
+              {warnings.map((w, i) => (
+                <div key={i} className={`flex items-start gap-2 rounded-lg border px-3 py-1.5 text-[11px] leading-snug ${w.level === 'warn' ? 'border-amber-200 bg-amber-50 text-amber-800' : w.level === 'tip' ? 'border-[var(--accent)]/20 bg-[var(--accent)]/[0.04] text-[var(--accent)]' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+                  <span className="mt-px shrink-0">{w.level === 'warn' ? '⚠️' : w.level === 'tip' ? '💡' : 'ℹ️'}</span>
+                  <span>{w.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Per-asset breakdown (transparent register output) */}
           {r.perAsset.length > 0 && (
