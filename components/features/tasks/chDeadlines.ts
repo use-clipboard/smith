@@ -36,6 +36,39 @@ export async function fetchClientChDeadlines(clientId: string): Promise<ClientCh
   }
 }
 
+export interface ScanClientResult {
+  ok: boolean;
+  deadlines?: Record<ChDeadlineType, string | null>;
+  error?: string;
+}
+
+/**
+ * On-demand Companies House scan for a single client — used when the client
+ * isn't in the CH Secretarial cache yet (e.g. mid-onboarding). Fetches the
+ * company live, merges it into the firm's CH cache, and returns the freshly
+ * resolved deadline dates. Maps the known error codes to friendly messages.
+ */
+export async function scanClientChDeadlines(clientId: string): Promise<ScanClientResult> {
+  try {
+    const r = await fetch('/api/ch-secretarial/scan-client', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const map: Record<string, string> = {
+        NO_API_KEY: 'No Companies House API key is set for your firm (add one in Settings → API).',
+        RATE_LIMITED: 'Companies House is rate-limiting requests — please try again in a moment.',
+      };
+      return { ok: false, error: map[d?.error as string] ?? (d?.error as string) ?? 'Scan failed.' };
+    }
+    return { ok: true, deadlines: d.deadlines };
+  } catch {
+    return { ok: false, error: 'Scan failed. Please try again.' };
+  }
+}
+
 /** dd-mm-yyyy, or a placeholder when the date isn't cached yet. */
 export function formatDeadlineDate(iso: string | null | undefined): string {
   if (!iso) return 'not yet available';

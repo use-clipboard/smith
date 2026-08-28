@@ -6,7 +6,7 @@ import ClientSearchInput from '@/components/ui/ClientSearchInput';
 import type { RecurrenceType } from '@/types';
 import type { CreateTaskData } from './CreateTaskModal';
 import { useModules } from '@/components/ui/ModulesProvider';
-import { CH_DEADLINE_LABELS, CH_DEADLINE_TYPES, fetchClientChDeadlines, formatDeadlineDate, type ChDeadlineType, type ClientChDeadlines } from './chDeadlines';
+import { CH_DEADLINE_LABELS, CH_DEADLINE_TYPES, fetchClientChDeadlines, scanClientChDeadlines, formatDeadlineDate, type ChDeadlineType, type ClientChDeadlines } from './chDeadlines';
 
 // Local helper type so the state declaration below stays readable rather
 // than carrying a five-arm union inline.
@@ -68,6 +68,18 @@ export default function QuickTaskModal({ onClose, onCreate, teamMembers, default
   const chModuleActive = isModuleActive('ch-secretarial');
   const [chInfo, setChInfo] = useState<ClientChDeadlines | null>(null);
   const chEligible = chModuleActive && !isInternal && !!clientId && !!chInfo?.eligible;
+  // On-demand CH scan for clients not yet in the CH Secretarial cache.
+  const [chScanning, setChScanning] = useState(false);
+  const [chScanError, setChScanError] = useState<string | null>(null);
+  const chHasNoDates = !!chInfo && CH_DEADLINE_TYPES.every(dt => !chInfo.deadlines[dt]);
+  async function runChScan() {
+    if (!clientId) return;
+    setChScanning(true); setChScanError(null);
+    const res = await scanClientChDeadlines(clientId);
+    if (res.ok && res.deadlines) setChInfo(prev => (prev ? { ...prev, deadlines: res.deadlines! } : prev));
+    else setChScanError(res.error ?? 'Scan failed.');
+    setChScanning(false);
+  }
 
   useEffect(() => {
     if (!chModuleActive || isInternal || !clientId) { setChInfo(null); return; }
@@ -314,6 +326,20 @@ export default function QuickTaskModal({ onClose, onCreate, teamMembers, default
                 )}
                 {isChLinked ? (
                   <>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={runChScan}
+                        disabled={chScanning}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                      >
+                        {chScanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                        {chScanning ? 'Scanning…' : chHasNoDates ? 'Scan this client now' : 'Re-scan from Companies House'}
+                      </button>
+                      {chScanError
+                        ? <span className="text-[11px] text-red-600">{chScanError}</span>
+                        : chHasNoDates && !chScanning && <span className="text-[11px] text-indigo-600">No dates cached yet — scan to fetch them.</span>}
+                    </div>
                     <select
                       value={chDeadlineType}
                       onChange={e => setChDeadlineType(e.target.value as ChDeadlineFilled)}

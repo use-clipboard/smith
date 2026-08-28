@@ -108,7 +108,7 @@ function parseAddress(raw: any): CHAddress {
 // Note: NO retry logic here — 429s are passed straight back to the client as
 // { error: 'RATE_LIMITED' } so the user can see what is happening.
 
-class RateLimitError extends Error {
+export class RateLimitError extends Error {
   constructor() { super('RATE_LIMITED'); }
 }
 
@@ -128,7 +128,7 @@ async function chFetch(path: string, apiKey: string): Promise<unknown> {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function fetchCompany(number: string, apiKey: string): Promise<CHCompanyData> {
+export async function fetchCompany(number: string, apiKey: string): Promise<CHCompanyData> {
   const n = number.trim().toUpperCase().padStart(8, '0');
   const chUrl = `https://find-and-update.company-information.service.gov.uk/company/${n}`;
 

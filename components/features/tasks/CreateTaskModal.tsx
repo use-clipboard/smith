@@ -9,7 +9,7 @@ import type { TemplateData } from './TemplateBuilder';
 import { triggerLabel } from './StartEndNodes';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
 import { useModules } from '@/components/ui/ModulesProvider';
-import { CH_DEADLINE_LABELS, fetchClientChDeadlines, formatDeadlineDate, type ChDeadlineType, type ClientChDeadlines } from './chDeadlines';
+import { CH_DEADLINE_LABELS, CH_DEADLINE_TYPES, fetchClientChDeadlines, scanClientChDeadlines, formatDeadlineDate, type ChDeadlineType, type ClientChDeadlines } from './chDeadlines';
 
 interface Props {
   onClose: () => void;
@@ -387,6 +387,18 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
   const [chDeadlineType, setChDeadlineType] = useState<ChDeadlineType>('accounts_due');
   const [chOffsetDays, setChOffsetDays] = useState(0);
   const chEligible = chModuleActive && !isInternal && !!clientId && !!chInfo?.eligible;
+  // On-demand CH scan (for clients not yet in the CH Secretarial cache).
+  const [chScanning, setChScanning] = useState(false);
+  const [chScanError, setChScanError] = useState<string | null>(null);
+  const chHasNoDates = !!chInfo && CH_DEADLINE_TYPES.every(dt => !chInfo.deadlines[dt]);
+  async function runChScan() {
+    if (!clientId) return;
+    setChScanning(true); setChScanError(null);
+    const res = await scanClientChDeadlines(clientId);
+    if (res.ok && res.deadlines) setChInfo(prev => (prev ? { ...prev, deadlines: res.deadlines! } : prev));
+    else setChScanError(res.error ?? 'Scan failed.');
+    setChScanning(false);
+  }
 
   // Load CH eligibility whenever the chosen client changes. Skipped entirely
   // when the firm doesn't have the CH Secretarial module.
@@ -668,6 +680,24 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
                         <Building2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
                         <span>The due date follows this Companies House deadline and auto-renews each cycle. No fixed date needed.</span>
                       </div>
+
+                      {/* On-demand scan — lets you link a deadline before the
+                          client has been through a full CH Secretarial refresh. */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={runChScan}
+                          disabled={chScanning}
+                          className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-blue-200 bg-white text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                        >
+                          {chScanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                          {chScanning ? 'Scanning…' : chHasNoDates ? 'Scan this client now' : 'Re-scan from Companies House'}
+                        </button>
+                        {chScanError
+                          ? <span className="text-[11px] text-red-600">{chScanError}</span>
+                          : chHasNoDates && !chScanning && <span className="text-[11px] text-blue-600">No dates cached yet — scan to fetch them.</span>}
+                      </div>
+
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Deadline</label>
                         <select
