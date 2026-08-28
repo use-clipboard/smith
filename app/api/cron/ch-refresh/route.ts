@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase-server';
 import { syncCHDeadlineLinks } from '@/lib/chDeadlineSync';
+import { getLinkedCompanyNumbers, unionCompanyNumbers } from '@/lib/chLinkedNumbers';
 
 // ─── Resumable cron architecture ──────────────────────────────────────────────
 // The Companies House refresh used to fetch every company for every firm in a
@@ -421,6 +422,11 @@ export async function GET(request: Request) {
           .map(c => c.companies_house_id)
           .filter(Boolean) as string[];
       }
+      // Safety net: always refresh companies that have an active deadline link,
+      // even if the firm's chosen list (esp. a custom list) omits them — so
+      // linked tasks never stop auto-updating.
+      const linkedNumbers = await getLinkedCompanyNumbers(service, f.id);
+      if (linkedNumbers.length > 0) numbers = unionCompanyNumbers(numbers, linkedNumbers);
       if (numbers.length === 0) {
         console.log(`[CH Cron] Firm ${f.id} — no company numbers, skipping`);
         results.push({ firmId: f.id, action: 'skipped_empty', processed: 0, remaining: 0 });

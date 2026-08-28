@@ -454,7 +454,22 @@ export default function CHSecretarialPage() {
 
   // Fetch data — one company at a time, client-side retry with visible countdown on 429
   const fetchData = useCallback(async () => {
-    const numbers = sourceMode === 'clients' ? clientNumbers : customNumbers;
+    let numbers = sourceMode === 'clients' ? clientNumbers : customNumbers;
+    // Safety net: always include companies with an active CH-deadline task link
+    // so their linked tasks keep auto-updating, even if the chosen list (esp. a
+    // custom list) omits them. Best-effort — never block the refresh on it.
+    try {
+      const lr = await fetch('/api/ch-secretarial/linked-numbers');
+      if (lr.ok) {
+        const { numbers: linked } = (await lr.json()) as { numbers: string[] };
+        if (linked?.length) {
+          const norm = (n: string) => n.trim().toUpperCase().padStart(8, '0');
+          const have = new Set(numbers.map(norm));
+          const extra = linked.filter(n => n?.trim() && !have.has(norm(n)));
+          if (extra.length) numbers = [...numbers, ...extra];
+        }
+      }
+    } catch { /* best-effort */ }
     if (numbers.length === 0) {
       setError(sourceMode === 'clients'
         ? 'No limited company clients found. Make sure your clients have a Company Number set as their Client Ref, and their business type includes "Limited".'
