@@ -38,7 +38,7 @@ export function ct600CompFileName(clientName: string, periodEnd?: string): strin
 }
 
 export async function renderCt600CompPdf(input: Ct600CompInput): Promise<Blob> {
-  const c = computeCt600(input.ct600, input.taxYear);
+  const c = computeCt600(input.ct600, input.taxYear, { periodStart: input.periodStart, periodEnd: input.periodEnd });
   const t = input.ct600?.trading ?? {};
   const n = (v?: number) => v || 0;
 

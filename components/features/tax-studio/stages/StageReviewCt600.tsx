@@ -111,7 +111,7 @@ export function Ct600ReturnEditor({ ret, patch }: {
   patch: (u: (r: TaxReturn) => TaxReturn) => void;
 }): JSX.Element {
   const ct: Ct600Data = ret.ct600 ?? emptyCt600();
-  const c = computeCt600(ct, ret.taxYear);
+  const c = computeCt600(ct, ret.taxYear, { periodStart: ret.periodStart, periodEnd: ret.periodEnd });
 
   const [tab, setTab] = useState<Tab>('trading');
   const [subTab, setSubTab] = useState<SubTab>('trading');
@@ -213,6 +213,11 @@ export function Ct600ReturnEditor({ ret, patch }: {
                 <Field label="R&D/Films Tax Credit — amount available to surrender for conversion" value={n(t.rdFilmsTaxCreditSurrender)} onChange={v => setTrading({ rdFilmsTaxCreditSurrender: v })} />
                 <Field label="Profit/(Loss) after Tax Credits" value={c.taxableTradingProfit} calc />
                 <Field label="Trading Losses Summary" value={n(L.trading.carriedForward)} calc />
+              </Section>
+
+              <Section title="Marginal relief">
+                <Field label="Number of associated companies in this period" value={n(t.associatedCompanies)} box="326" onChange={v => setTrading({ associatedCompanies: Math.max(0, Math.round(v)) })} />
+                <Field label="Franked investment income / exempt ABGH distributions" value={n(t.frankedInvestmentIncome)} box="620" onChange={v => setTrading({ frankedInvestmentIncome: v })} />
               </Section>
             </div>
           )}
@@ -354,7 +359,7 @@ export default function StageReviewCt600({ ret, patch, advance }: {
   advance: () => void;
 }): JSX.Element {
   const ct: Ct600Data = ret.ct600 ?? emptyCt600();
-  const c = computeCt600(ct, ret.taxYear);
+  const c = computeCt600(ct, ret.taxYear, { periodStart: ret.periodStart, periodEnd: ret.periodEnd });
   return (
     <div className="space-y-4">
       <Ct600ReturnEditor ret={ret} patch={patch} />
@@ -432,7 +437,13 @@ function Ct600ComputationCard({ c, ret }: { c: ReturnType<typeof computeCt600>; 
         <span>{(c.effectiveRate * 100).toFixed(1)}%</span>
       </p>
 
-      <p className="mt-2 text-[10.5px] text-[var(--text-muted)]">{c.notes[c.notes.length - 1]}</p>
+      {c.notes.length > 0 && (
+        <ul className="mt-2 space-y-0.5">
+          {c.notes.map((note, i) => (
+            <li key={i} className="text-[10.5px] leading-snug text-[var(--text-muted)]">{note}</li>
+          ))}
+        </ul>
+      )}
     </StudioCard>
   );
 }

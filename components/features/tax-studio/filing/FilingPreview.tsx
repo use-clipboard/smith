@@ -70,6 +70,7 @@ const FORM_TO_PAGE: Record<string, PageId> = {
 // editor — are click-to-edit. Keep in sync with the box props in StageReviewCt600.
 const CT600_EDITABLE = new Set([
   '145',                                            // turnover (Trading)
+  '326', '620',                                     // marginal relief: associated companies, FII (Trading)
   '160', '225', '285', '780', '785',                // Losses → Trading
   '170', '175', '230', '263', '795',                // Losses → Non-trading loan relationships
   '190', '805', '790',                              // Losses → Property (+ overseas trading c/f)

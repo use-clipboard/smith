@@ -1955,7 +1955,22 @@ function ct600StreamNet(s?: Ct600LossStream): number {
   return Math.max(0, n(s.incomeArising) - n(s.utilised) - n(s.broughtForward));
 }
 
-export function computeCt600(data: Ct600Data | undefined, taxYear = '2025/26'): Ct600Computation {
+/** Inclusive day count of an accounting period, or null if either date is absent
+ *  or unparseable. 1 Apr 2025 → 31 Mar 2026 = 365. */
+function ct600PeriodDays(startIso?: string, endIso?: string): number | null {
+  const s = parseIsoDate(startIso);
+  const e = parseIsoDate(endIso);
+  if (!s || !e) return null;
+  const ms = Date.UTC(e.y, e.m, e.d) - Date.UTC(s.y, s.m, s.d);
+  if (ms < 0) return null;
+  return Math.round(ms / 86_400_000) + 1; // inclusive of both endpoints
+}
+
+export function computeCt600(
+  data: Ct600Data | undefined,
+  taxYear = '2025/26',
+  opts?: { periodStart?: string; periodEnd?: string },
+): Ct600Computation {
   const t = data?.trading ?? {};
   const L = data?.losses;
   const n = (v?: number) => v || 0;
@@ -2002,25 +2017,60 @@ export function computeCt600(data: Ct600Data | undefined, taxYear = '2025/26'): 
 
   const pctct = Math.max(0, netProfits - lossesReliefs);
 
+  // ── Marginal-relief limits ──
+  // The £50k/£250k limits are (a) divided by the number of related 51% companies
+  // — one plus the associated companies in the period — and (b) proportionately
+  // reduced for accounting periods shorter than 12 months (by days ÷ 365).
+  const associates = Math.max(0, Math.floor(n(t.associatedCompanies)));
+  const divisor = 1 + associates;
+  const periodDays = ct600PeriodDays(opts?.periodStart, opts?.periodEnd);
+  let prorate = 1;
+  if (periodDays != null) {
+    if (periodDays > 366) {
+      // A CT accounting period cannot exceed 12 months; such a period must be
+      // split into two returns. Cap the factor so the limits aren't inflated.
+      prorate = 366 / 365;
+      notes.push('Accounting period exceeds 12 months — split it into two returns (limits shown are for a 12-month period).');
+    } else {
+      prorate = periodDays / 365;
+    }
+  }
+  const lowerLimit = CT_LOWER_LIMIT * prorate / divisor;
+  const upperLimit = CT_UPPER_LIMIT * prorate / divisor;
+
+  // ── Augmented profits ──
+  // The rate test and the marginal-relief restriction use augmented profits =
+  // PCTCT + franked investment income / exempt ABGH distributions (box 620).
+  const fii = Math.max(0, n(t.frankedInvestmentIncome));
+  const augmentedProfits = pctct + fii;
+
   // ── Corporation Tax charge ──
   let ctRatePct: number, taxBeforeMarginalRelief: number, marginalRelief = 0;
-  if (pctct <= CT_LOWER_LIMIT) {
+  if (pctct <= 0) {
+    ctRatePct = 0;
+    taxBeforeMarginalRelief = 0;
+  } else if (augmentedProfits <= lowerLimit) {
     ctRatePct = CT_SMALL_PROFITS_RATE * 100;
     taxBeforeMarginalRelief = r0(pctct * CT_SMALL_PROFITS_RATE);
-  } else if (pctct >= CT_UPPER_LIMIT) {
+  } else if (augmentedProfits >= upperLimit) {
     ctRatePct = CT_MAIN_RATE * 100;
     taxBeforeMarginalRelief = r0(pctct * CT_MAIN_RATE);
   } else {
-    // Main rate then marginal relief between the £50k–£250k limits.
-    taxBeforeMarginalRelief = pctct * CT_MAIN_RATE;
-    marginalRelief = r0((CT_UPPER_LIMIT - pctct) * CT_MR_FRACTION);
-    taxBeforeMarginalRelief = r0(taxBeforeMarginalRelief);
-    ctRatePct = pctct > 0 ? ((taxBeforeMarginalRelief - marginalRelief) / pctct) * 100 : 0;
-    notes.push('Marginal relief applied (profits between £50,000 and £250,000).');
+    // Main rate then marginal relief. The relief is restricted by the ratio of
+    // taxable total profits (PCTCT) to augmented profits:
+    //   MR = fraction × (upper limit − augmented) × (PCTCT ÷ augmented)
+    taxBeforeMarginalRelief = r0(pctct * CT_MAIN_RATE);
+    const ratio = augmentedProfits > 0 ? pctct / augmentedProfits : 1;
+    marginalRelief = r0((upperLimit - augmentedProfits) * CT_MR_FRACTION * ratio);
+    ctRatePct = ((taxBeforeMarginalRelief - marginalRelief) / pctct) * 100;
+    const gbp0 = (v: number) => `£${Math.round(v).toLocaleString('en-GB')}`;
+    notes.push(`Marginal relief applied (augmented profits between ${gbp0(lowerLimit)} and ${gbp0(upperLimit)}).`);
   }
   const corporationTax = Math.max(0, taxBeforeMarginalRelief - marginalRelief);
 
-  notes.push('Simplified corporation-tax computation — associated-company limits, group relief and the calculator sub-modules apply later.');
+  if (associates > 0) notes.push(`Limits divided by ${divisor} for ${associates} associated ${associates === 1 ? 'company' : 'companies'}.`);
+  if (fii > 0) notes.push('Rate test and marginal relief use augmented profits (PCTCT plus franked investment income).');
+  notes.push('Group relief, quarterly instalments and ring-fence profits are not modelled — apply them separately if relevant.');
 
   return {
     taxYear,

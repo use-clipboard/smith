@@ -594,7 +594,7 @@ function ReturnRow({ item, onOpen, busy: rowBusy, onDelete, onArchive }: {
 }) {
   const ret = item.ret;
   const status = deriveStatus(ret);
-  const c = useMemo(() => computeCt600(ret.ct600, ret.taxYear), [ret.ct600, ret.taxYear]);
+  const c = useMemo(() => computeCt600(ret.ct600, ret.taxYear, { periodStart: ret.periodStart, periodEnd: ret.periodEnd }), [ret.ct600, ret.taxYear, ret.periodStart, ret.periodEnd]);
   // Submitted (filed/amended) returns are locked — no delete/archive.
   const canModify = ret.approvalStatus !== 'submitted';
 

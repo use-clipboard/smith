@@ -1572,6 +1572,12 @@ export interface Ct600Trading {
   expenditureNotInAccounts?: number;    // Expenditure not in accounts but allowable for taxation purposes
   rdOrFilmsRelief?: number;             // R&D or Films Relief (calculator)
   capitalAllowances?: number;           // Capital Allowances (calculator)
+  /** Marginal-relief inputs (FY2023 onwards). Number of associated companies in
+   *  the period (box 326) divides the £50k/£250k limits; franked investment income
+   *  / exempt ABGH distributions (box 620) is added to PCTCT to give augmented
+   *  profits, which drive the rate test and the marginal-relief restriction. */
+  associatedCompanies?: number;         // box 326 — associated companies in the period
+  frankedInvestmentIncome?: number;     // box 620 — FII / exempt ABGH distributions
   rdFilmsTaxCreditSurrender?: number;   // R&D/Films Tax Credit — amount to surrender for conversion
   /** Working state for the shared Capital Allowances calculator — its total
    *  feeds `capitalAllowances` and its balancing charge feeds `balancingCharges`. */

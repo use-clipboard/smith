@@ -13,7 +13,7 @@ export default function StageAnalyseCt600({
   patch: (u: (r: TaxReturn) => TaxReturn) => void;
   advance: () => void;
 }): JSX.Element {
-  const c = computeCt600(ret.ct600, ret.taxYear);
+  const c = computeCt600(ret.ct600, ret.taxYear, { periodStart: ret.periodStart, periodEnd: ret.periodEnd });
   const connected = ret.connected ?? [];
 
   return (

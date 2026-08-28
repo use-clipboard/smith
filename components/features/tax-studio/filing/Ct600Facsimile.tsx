@@ -69,7 +69,7 @@ function TickRow({ n, label, on }: { n: React.ReactNode; label: string; on?: boo
 // ── the form ─────────────────────────────────────────────────────────────────
 
 export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boolean }) {
-  const c = computeCt600(ret.ct600, ret.taxYear);
+  const c = computeCt600(ret.ct600, ret.taxYear, { periodStart: ret.periodStart, periodEnd: ret.periodEnd });
   const t = ret.ct600?.trading ?? {};
   const L = ret.ct600?.losses;
   const n = (v?: number) => v || 0;
@@ -285,8 +285,8 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         <Teal>Tax calculation</Teal>
         <Panel>
           <div className="grid grid-cols-2 gap-x-8">
-            <Cells n={326} label="Number of associated companies in this period" groups={[4]} value={''} />
-            <TickRow n={329} label="Put an ‘X’ if the company is chargeable at the small profit rate or is entitled to marginal relief" on={c.marginalRelief > 0 || c.ctRatePct < 25} />
+            <Cells n={326} label="Number of associated companies in this period" groups={[4]} value={t.associatedCompanies ? String(t.associatedCompanies) : ''} />
+            <TickRow n={329} label="Put an ‘X’ if the company is chargeable at the small profit rate or is entitled to marginal relief" on={c.pctct > 0 && c.ctRatePct < 25} />
           </div>
         </Panel>
         <p className="mb-1 text-[10.5px] font-bold text-black">Enter how much profit has to be charged and at what rate</p>
@@ -362,7 +362,7 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         </Panel>
         <Teal>Indicators and information</Teal>
         <Panel>
-          <Money n={620} label="Franked investment income / Exempt ABGH distributions" value={0} />
+          <Money n={620} label="Franked investment income / Exempt ABGH distributions" value={n(t.frankedInvestmentIncome)} />
           <Cells n={625} label="Number of 51% group companies" groups={[4]} value={''} />
           <div className="mt-1 space-y-1 text-[9.5px] text-black">
             <TickRow n={630} label="Should have made instalment payments as a large company" />

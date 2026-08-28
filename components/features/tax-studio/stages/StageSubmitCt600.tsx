@@ -12,7 +12,7 @@ export default function StageSubmitCt600({
   ret: TaxReturn;
   patch: (u: (r: TaxReturn) => TaxReturn) => void;
 }): JSX.Element {
-  const c = computeCt600(ret.ct600, ret.taxYear);
+  const c = computeCt600(ret.ct600, ret.taxYear, { periodStart: ret.periodStart, periodEnd: ret.periodEnd });
   const approved = ret.approvalStatus === 'approved' || ret.approvalStatus === 'submitted';
   const submitted = ret.approvalStatus === 'submitted';
 
