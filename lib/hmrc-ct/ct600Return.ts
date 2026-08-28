@@ -14,14 +14,18 @@
 // CT schema XSD before the first test submission (Phase A/F, docs/ct-filing.md).
 // Every wire-format correction lands in THIS file — the calc and UI never change.
 //
-// NOT YET EMITTED (later phases):
-//   • <AttachedFiles> — the accounts + computation iXBRL (Phases C/D).
+// NOT YET DONE (later phases):
+//   • Sourcing the accounts iXBRL from the matching Accounts Studio engagement —
+//     the caller (ct-submit route, Phase E) passes it in via opts.accountsIxbrl;
+//     the computation iXBRL is attached here automatically.
 //   • Financial-year apportionment for periods straddling 1 April (single FY here).
 //   • Group relief, instalments, ring-fence — not modelled by computeCt600.
 
 import type { TaxReturn } from '@/components/features/tax-studio/types';
 import { computeCt600 } from '@/components/features/tax-studio/calc';
 import { el, group, isoDate, moneyDown, digitsOnly, clip } from './xml';
+import { buildCt600ComputationIxbrl } from './computationIxbrl';
+import { buildAttachedFiles } from './attachments';
 
 // CT600 return namespace. ⚠ Confirm the exact version segment against the schema
 // pack in use at build time before validating.
@@ -43,7 +47,17 @@ export interface Ct600BuildResult {
   utr: string | null;
 }
 
-export function buildCt600Return(ret: TaxReturn): Ct600BuildResult {
+export function buildCt600Return(
+  ret: TaxReturn,
+  opts?: {
+    /** Statutory-accounts iXBRL to attach (from buildIxbrlFromEngagement). When
+     *  omitted, the accounts attachment is left out — a full CT600 needs it. */
+    accountsIxbrl?: string | null;
+    /** Override the computation iXBRL. Defaults to buildCt600ComputationIxbrl(ret)
+     *  so the attached computation always matches the return being filed. */
+    computationIxbrl?: string | null;
+  },
+): Ct600BuildResult {
   const periodStart = isoDate(ret.periodStart);
   const periodEnd = isoDate(ret.periodEnd);
   const utr = digitsOnly(ret.utr ?? undefined, 10);
@@ -140,13 +154,18 @@ export function buildCt600Return(ret: TaxReturn): Ct600BuildResult {
     el('Status', 'Agent'),
   ]);
 
+  // Attached iXBRL — the tax computation (always, matching this return) and the
+  // statutory accounts (when the caller sourced them from Accounts Studio).
+  const computationIxbrl = opts?.computationIxbrl ?? buildCt600ComputationIxbrl(ret).document;
+  const attachedFiles = buildAttachedFiles({ computationIxbrl, accountsIxbrl: opts?.accountsIxbrl });
+
   const companyTaxReturn = group('CompanyTaxReturn', [
     companyInformation,
     turnover,
     companyTaxCalculation,
     taxOutstanding,
     declaration,
-    // TODO(Phase C/D): <AttachedFiles> — accounts iXBRL + computation iXBRL.
+    attachedFiles,
   ], { ReturnType: 'new' });
 
   const irEnvelope = `<IRenvelope xmlns="${CT_NS}">${irHeader}${companyTaxReturn}</IRenvelope>`;
