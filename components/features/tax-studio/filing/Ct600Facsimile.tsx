@@ -11,6 +11,7 @@
 import type React from 'react';
 import type { TaxReturn } from '../types';
 import { computeCt600, ct600FilingDue, computeCapitalAllowances } from '../calc';
+import { computeRdFilms } from '../RdFilmsCalculator';
 import {
   FormThemeContext, CT600_THEME, TEAL,
   Page, Panel, Teal, SubHead, Note, Label, BoxNum, Money, Tick, Line, Cells, HmrcLogo, toDDMMYYYY,
@@ -90,6 +91,16 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
   const fyRows = ct600FyRows(ret.periodStart, ret.periodEnd, c.pctct, statutoryRatePct, c.taxBeforeMarginalRelief);
 
   const rd = t.rdFilmsCalc;
+  // Aggregate every R&D / creative claim so the boxes reflect all entries, not
+  // just the first. Sum qualifying spend and additional deduction per scheme.
+  const rdComp = computeRdFilms(rd);
+  const rdHas = (...s: string[]) => rdComp.lines.some(l => l.entry.scheme && s.includes(l.entry.scheme));
+  const rdSum = (pred: (s?: string) => boolean, key: 'qualifying' | 'additionalDeduction') =>
+    rdComp.lines.filter(l => pred(l.entry.scheme)).reduce((a, l) => a + l.result[key], 0);
+  const rdSmeQualifying = rdSum(s => s === 'sme' || s === 'eris', 'qualifying');
+  const rdSmeDeduction = rdSum(s => s === 'sme' || s === 'eris', 'additionalDeduction');
+  const rdCreativeCore = rdSum(s => s === 'creative', 'qualifying');
+  const rdCreativeDeduction = rdSum(s => s === 'creative', 'additionalDeduction');
   // Capital-allowances breakdown for boxes 690–775. Prefer the calculator's
   // working state (gives the AIA / main-pool / special-rate split); otherwise
   // fall back to the single applied total in box 705.
@@ -362,17 +373,17 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         <SubHead>Research and Development (R&D) or creatives enhanced expenditure and tax reliefs</SubHead>
         <Panel>
           <div className="space-y-1 text-[9.5px] text-black">
-            <TickRow n={650} label="R&D claim made by a small or medium-sized enterprise (SME)" on={rd?.scheme === 'sme' || rd?.scheme === 'eris'} />
-            <TickRow n={653} label="Claim made by an R&D intensive SME" on={rd?.scheme === 'eris'} />
-            <TickRow n={655} label="Claim made by a large company (RDEC / merged scheme)" on={rd?.scheme === 'merged' || rd?.scheme === 'rdec'} />
+            <TickRow n={650} label="R&D claim made by a small or medium-sized enterprise (SME)" on={rdHas('sme', 'eris')} />
+            <TickRow n={653} label="Claim made by an R&D intensive SME" on={rdHas('eris')} />
+            <TickRow n={655} label="Claim made by a large company (RDEC / merged scheme)" on={rdHas('merged', 'rdec')} />
             <TickRow n={657} label="R&D additional information form has been submitted" />
           </div>
           <div className="mt-2">
-            <Money n={659} label="R&D expenditure qualifying for SME / R&D intensive SME relief" value={rd?.scheme === 'sme' || rd?.scheme === 'eris' ? n(rd?.qualifyingExpenditure) : 0} />
-            <Money n={660} label="R&D enhanced expenditure" value={rd?.scheme === 'sme' || rd?.scheme === 'eris' ? n(t.rdOrFilmsRelief) : 0} />
-            <Money n={663} label="Creatives core expenditure" value={rd?.scheme === 'creative' ? n(rd?.qualifyingExpenditure) : 0} />
-            <Money n={665} label="Creatives additional deduction" value={rd?.scheme === 'creative' ? n(t.rdOrFilmsRelief) : 0} />
-            <Money n={670} label="R&D enhanced expenditure and creatives additional deduction — total box 660 and box 665" value={rd?.scheme === 'sme' || rd?.scheme === 'eris' || rd?.scheme === 'creative' ? n(t.rdOrFilmsRelief) : 0} />
+            <Money n={659} label="R&D expenditure qualifying for SME / R&D intensive SME relief" value={rdSmeQualifying} />
+            <Money n={660} label="R&D enhanced expenditure" value={rdSmeDeduction} />
+            <Money n={663} label="Creatives core expenditure" value={rdCreativeCore} />
+            <Money n={665} label="Creatives additional deduction" value={rdCreativeDeduction} />
+            <Money n={670} label="R&D enhanced expenditure and creatives additional deduction — total box 660 and box 665" value={rdSmeDeduction + rdCreativeDeduction} />
           </div>
         </Panel>
         <Teal>Capital allowances and balancing charges</Teal>

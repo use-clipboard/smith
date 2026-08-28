@@ -1632,15 +1632,32 @@ export interface Ct600Losses {
  *  SME (86% deduction + 14.5% payable); sme/rdec = legacy pre-Apr-2024 schemes.
  *  Creative: avec (Audio-Visual) / vgec (Video Games) expenditure credits; creative
  *  = theatre/orchestra/museums additional deduction. */
-export interface Ct600RdCalc {
+/** One R&D / Films / Creative claim. A company can have several — R&D plus a
+ *  creative claim, or multiple productions (each film / game / production is its
+ *  own expenditure credit, potentially at a different rate). */
+export interface Ct600RdEntry {
+  id: string;
   scheme?: 'merged' | 'eris' | 'sme' | 'rdec' | 'avec' | 'vgec' | 'creative';
-  qualifyingExpenditure?: number;       // qualifying R&D or creative expenditure
-  avecType?: 'film-hetv' | 'animation-children'; // AVEC sub-rate (34% / 39%)
-  rate?: number;                        // rate % override (creative / manual)
-  lossMaking?: boolean;                 // surrenders a loss for a payable credit
-  surrenderableLoss?: number;           // loss available to surrender (payable-credit base)
-  payeNic?: number;                     // relevant PAYE/NIC for the cap
-  creativeRate?: number;                // legacy field — additional-deduction % for 'creative'
+  description?: string;                  // e.g. "R&D 2025", "Film — Project X"
+  qualifyingExpenditure?: number;
+  avecType?: 'film-hetv' | 'animation-children';
+  rate?: number;
+  lossMaking?: boolean;
+  surrenderableLoss?: number;
+  payeNic?: number;
+}
+
+export interface Ct600RdCalc {
+  entries?: Ct600RdEntry[];             // the list of claims (multi-entry)
+  // Legacy single-entry fields — migrated into `entries` on load.
+  scheme?: 'merged' | 'eris' | 'sme' | 'rdec' | 'avec' | 'vgec' | 'creative';
+  qualifyingExpenditure?: number;
+  avecType?: 'film-hetv' | 'animation-children';
+  rate?: number;
+  lossMaking?: boolean;
+  surrenderableLoss?: number;
+  payeNic?: number;
+  creativeRate?: number;
 }
 
 /** The full CT600 return data (limited companies). */
