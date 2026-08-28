@@ -1929,6 +1929,7 @@ export interface Ct600Computation {
   otherIncome: number;
   chargeableGains: number;
   totalProfits: number;           // before broad losses & reliefs
+  netProfits: number;             // box 235 — total profits less boxes 225 and 230
   lossesReliefs: number;          // management expenses, loss c/f claimed against total profits, etc.
   pctct: number;                  // profits chargeable to corporation tax
   ctRatePct: number;              // headline rate applied (19 / 25 / effective)
@@ -1983,15 +1984,23 @@ export function computeCt600(data: Ct600Data | undefined, taxYear = '2025/26'): 
   const totalProfits = Math.max(0, taxableTradingProfit)
     + nonTradingLoanProfit + propertyProfit + overseasProfit + intangiblesProfit + otherIncome + chargeableGains;
 
-  // ── Broad losses & reliefs set against total profits ──
+  // ── Box 235 — profits before other deductions and reliefs ──
+  // Net of the two brought-forward items the form deducts here: box 225 (losses
+  // b/f against certain investment income) and box 230 (non-trade loan-relationship
+  // deficits b/f against non-trading profits). Keeping these in box 235 (not box
+  // 295) makes both boxes agree with their printed formulae.
+  const box225 = n(L?.trading.bfSetInvestmentIncome);
+  const box230 = n(L?.ntlr.bfSetNonTradeProfits);
+  const netProfits = Math.max(0, totalProfits - box225 - box230);
+
+  // ── Broad losses & reliefs set against total profits (box 295) ──
   const lossesReliefs = r0(
     n(L?.managementExpenses.utilised) + n(L?.managementExpenses.broughtForward)
     + n(L?.trading.cfClaimedTotalProfits)     // Box 285
-    + n(L?.trading.bfSetInvestmentIncome)     // Box 225
     + n(L?.ntlr.bfSetTotalProfits),           // Box 263
   );
 
-  const pctct = Math.max(0, totalProfits - lossesReliefs);
+  const pctct = Math.max(0, netProfits - lossesReliefs);
 
   // ── Corporation Tax charge ──
   let ctRatePct: number, taxBeforeMarginalRelief: number, marginalRelief = 0;
@@ -2019,6 +2028,7 @@ export function computeCt600(data: Ct600Data | undefined, taxYear = '2025/26'): 
     taxableTradingProfit,
     nonTradingLoanProfit, propertyProfit, overseasProfit, intangiblesProfit, otherIncome, chargeableGains,
     totalProfits: r0(totalProfits),
+    netProfits: r0(netProfits),
     lossesReliefs,
     pctct: r0(pctct),
     ctRatePct,
@@ -2030,26 +2040,46 @@ export function computeCt600(data: Ct600Data | undefined, taxYear = '2025/26'): 
   };
 }
 
+/** Add whole calendar months to a Y/M/D triple (month 0-based), clamping the day
+ *  to the last day of the target month so that e.g. 31 May + 9 months → 28 Feb
+ *  (not an overflow into March). Avoids the JS `Date.setMonth` roll-over bug. */
+function addCalendarMonths(y: number, m: number, d: number, months: number): { y: number; m: number; d: number } {
+  const total = m + months;
+  const ny = y + Math.floor(total / 12);
+  const nm = ((total % 12) + 12) % 12;
+  const lastDay = new Date(ny, nm + 1, 0).getDate(); // day 0 of next month = last of this
+  return { y: ny, m: nm, d: Math.min(d, lastDay) };
+}
+
+/** Parse a `YYYY-MM-DD` string into numeric parts, or null. */
+function parseIsoDate(iso?: string): { y: number; m: number; d: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? '');
+  if (!match) return null;
+  return { y: +match[1], m: +match[2] - 1, d: +match[3] };
+}
+
+const isoOut = (y: number, m: number, d: number) => {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${y}-${p(m + 1)}-${p(d)}`;
+};
+
 /** CT600 corporation-tax payment deadline — 9 months and 1 day after the
  *  accounting-period end (for companies not paying by instalments). ISO in/out. */
 export function ct600PaymentDue(periodEndIso?: string): string {
-  if (!periodEndIso) return '';
-  const d = new Date(periodEndIso);
-  if (Number.isNaN(d.getTime())) return '';
-  d.setMonth(d.getMonth() + 9);
-  d.setDate(d.getDate() + 1);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  const parts = parseIsoDate(periodEndIso);
+  if (!parts) return '';
+  // 9 months (day-clamped), then + 1 calendar day.
+  const nine = addCalendarMonths(parts.y, parts.m, parts.d, 9);
+  const plusOne = new Date(nine.y, nine.m, nine.d + 1); // JS normalises the +1 day
+  return isoOut(plusOne.getFullYear(), plusOne.getMonth(), plusOne.getDate());
 }
 
 /** CT600 return filing deadline — 12 months after the accounting-period end. */
 export function ct600FilingDue(periodEndIso?: string): string {
-  if (!periodEndIso) return '';
-  const d = new Date(periodEndIso);
-  if (Number.isNaN(d.getTime())) return '';
-  d.setFullYear(d.getFullYear() + 1);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  const parts = parseIsoDate(periodEndIso);
+  if (!parts) return '';
+  const due = addCalendarMonths(parts.y, parts.m, parts.d, 12); // 29 Feb → 28 Feb
+  return isoOut(due.y, due.m, due.d);
 }
 
 // ── Legacy adapters ──────────────────────────────────────────────────────────

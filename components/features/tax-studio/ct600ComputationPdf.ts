@@ -126,7 +126,7 @@ export async function renderCt600CompPdf(input: Ct600CompInput): Promise<Blob> {
   // 3) Total profits → PCTCT
   heading('Profits chargeable to Corporation Tax');
   row('Total profits', gbp2(c.totalProfits), { bold: true });
-  row('Less: losses and reliefs', m(-c.lossesReliefs));
+  row('Less: losses and reliefs', m(-(c.totalProfits - c.pctct)));
   row('Profits chargeable to Corporation Tax', gbp2(c.pctct), { bold: true, ruleAbove: true });
 
   // 4) The CT charge

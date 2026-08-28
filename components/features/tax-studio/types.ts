@@ -1681,6 +1681,9 @@ export interface TaxReturn {
   periodStart?: string;
   periodEnd?: string;
   utr?: string | null;
+  /** Companies House registration number (CT600 box 2) — seeded from the client
+   *  record in Setup, editable, and required on a filed CT600. */
+  companyRegNumber?: string | null;
   /** Taxpayer personal details for the return — pulled from the client record,
    *  editable in Setup, and used on the tax return itself. */
   taxpayer?: {

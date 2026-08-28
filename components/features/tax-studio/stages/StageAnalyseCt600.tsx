@@ -29,7 +29,7 @@ export default function StageAnalyseCt600({
 
         <Row label="Taxable trading profit" value={fmtMoney(c.taxableTradingProfit)} />
         <Row label="Total profits" value={fmtMoney(c.totalProfits)} bold />
-        {c.lossesReliefs > 0 && <Row label="Less: losses & reliefs" value={`(${fmtMoney(c.lossesReliefs)})`} />}
+        {c.totalProfits - c.pctct > 0 && <Row label="Less: losses & reliefs" value={`(${fmtMoney(c.totalProfits - c.pctct)})`} />}
 
         <div className="my-2 rounded-xl bg-[var(--accent)]/5 px-3 py-2.5">
           <div className="flex items-center justify-between">

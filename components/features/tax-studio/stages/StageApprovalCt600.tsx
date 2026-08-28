@@ -18,7 +18,17 @@ export default function StageApprovalCt600({
   const paymentDue = ct600PaymentDue(ret.periodEnd);
   const filingDue = ct600FilingDue(ret.periodEnd);
 
+  // Don't let approval be recorded on a return that's missing its essentials —
+  // approval feeds the "filed" gate downstream.
+  const missing: string[] = [];
+  if (!ret.periodStart || !ret.periodEnd) missing.push('accounting period');
+  if (!ret.companyRegNumber) missing.push('company registration number');
+  if (!ret.utr) missing.push('CT UTR');
+  if (!(c.turnover > 0 || c.totalProfits > 0 || c.corporationTax > 0)) missing.push('return figures');
+  const canApprove = missing.length === 0;
+
   function markApproved() {
+    if (!canApprove) return;
     patch(r => ({
       ...r,
       approvalStatus: 'approved',
@@ -58,9 +68,12 @@ export default function StageApprovalCt600({
             </div>
           </div>
         ) : (
-          <button onClick={markApproved} className="btn-primary w-full justify-center">
+          <button onClick={markApproved} disabled={!canApprove} className="btn-primary w-full justify-center disabled:opacity-40">
             <CheckCircle2 size={15} /> Mark as approved
           </button>
+        )}
+        {!approved && !canApprove && (
+          <p className="mt-2 text-[10.5px] text-rose-500">Add the {missing.join(', ')} in Setup and Review before recording approval.</p>
         )}
         <p className="mt-3 text-[10.5px] text-[var(--text-muted)]">Client approval pack PDF for CT600 is coming soon.</p>
       </StudioCard>

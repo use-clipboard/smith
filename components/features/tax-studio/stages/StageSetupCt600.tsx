@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { ArrowRight, Building2, FileText, MapPin, Phone, Calendar, CalendarClock, Banknote } from 'lucide-react';
 import { StudioCard } from '../primitives';
 import { ct600PaymentDue, ct600FilingDue } from '../calc';
@@ -26,7 +26,6 @@ export default function StageSetupCt600({
    *  to and highlights the matching Setup field (company / registration / utr / period). */
   reveal?: { field: string; nonce: number } | null;
 }): JSX.Element {
-  const [regNumber, setRegNumber] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
 
   // Reveal a field when arrived-at from a click on the form preview.
@@ -54,10 +53,10 @@ export default function StageSetupCt600({
     (async () => {
       try {
         const { client } = await fetchJson<{ client: ClientRecord }>(`/api/clients/${ret.clientId}`, { cache: 'no-store' });
-        setRegNumber(client.registration_number ?? '');
         patch(r => ({
           ...r,
           utr: r.utr ? r.utr : (client.utr_number ?? r.utr ?? null),
+          companyRegNumber: r.companyRegNumber ? r.companyRegNumber : (client.registration_number ?? r.companyRegNumber ?? null),
           taxpayer: {
             ...r.taxpayer,
             address: r.taxpayer?.address ? r.taxpayer.address : (client.address ?? ''),
@@ -83,7 +82,15 @@ export default function StageSetupCt600({
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <ReadField icon={Building2} label="Company name" value={ret.clientName || '—'} anchor="company" />
-          <ReadField icon={FileText} label="Company registration number" value={regNumber || '—'} anchor="registration" />
+          <div data-setup-field="registration">
+            <Label icon={FileText}>Company registration number</Label>
+            <input
+              value={ret.companyRegNumber ?? ''}
+              onChange={e => patch(r => ({ ...r, companyRegNumber: e.target.value }))}
+              placeholder="8-digit CRN"
+              className="input-base py-1.5 text-sm"
+            />
+          </div>
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">

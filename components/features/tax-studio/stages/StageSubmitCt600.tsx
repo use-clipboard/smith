@@ -18,10 +18,14 @@ export default function StageSubmitCt600({
 
   const checks: { ok: boolean; label: string; detail?: string }[] = [
     { ok: !!ret.periodStart && !!ret.periodEnd, label: 'Accounting period set', detail: `${fmtDateUK(ret.periodStart ?? '')} – ${fmtDateUK(ret.periodEnd ?? '')}` },
+    { ok: !!ret.companyRegNumber, label: 'Company registration number entered', detail: ret.companyRegNumber ?? undefined },
     { ok: !!ret.utr, label: 'CT UTR entered', detail: ret.utr ?? undefined },
-    { ok: c.pctct >= 0, label: 'Corporation Tax computed', detail: fmtMoney(c.corporationTax) },
+    { ok: c.turnover > 0 || c.totalProfits > 0 || c.corporationTax > 0, label: 'Return figures entered', detail: fmtMoney(c.corporationTax) },
     { ok: approved, label: 'Client approval recorded' },
   ];
+  // Every readiness check must pass before the return can be recorded as filed —
+  // a blank return (no period, UTR or figures) must not reach a "filed" state.
+  const ready = checks.every(chk => chk.ok);
 
   function markFiled() {
     patch(r => ({
@@ -83,12 +87,12 @@ export default function StageSubmitCt600({
             </div>
           </div>
         ) : (
-          <button onClick={markFiled} disabled={!approved} className="btn-primary disabled:opacity-40">
+          <button onClick={markFiled} disabled={!ready} className="btn-primary disabled:opacity-40">
             <CheckCircle2 size={15} /> Mark as filed
           </button>
         )}
-        {!submitted && !approved && (
-          <p className="mt-2 text-[10.5px] text-[var(--text-muted)]">Record client approval before marking the return as filed.</p>
+        {!submitted && !ready && (
+          <p className="mt-2 text-[10.5px] text-[var(--text-muted)]">Complete every readiness check above before marking the return as filed.</p>
         )}
       </StudioCard>
     </div>

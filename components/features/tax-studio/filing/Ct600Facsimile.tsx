@@ -78,11 +78,17 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
   const periodTo = toDDMMYYYY(ret.periodEnd);
   const filingDue = ct600FilingDue(ret.periodEnd);
 
-  // Box 235 — profits before other deductions and reliefs (total profits here).
-  const box235 = c.totalProfits;
+  // Box 165 — net trading profits (box 155 trading profits less box 160 losses b/f).
+  const box165 = Math.max(0, c.taxableTradingProfit - n(L?.trading.bfSetTradingProfits));
+  // Box 235 — profits before other deductions and reliefs (net of boxes 225/230).
+  const box235 = c.netProfits;
   // Box 295 total deductions & reliefs; box 300 profits before donations/group relief.
   const box295 = c.lossesReliefs;
   const box300 = Math.max(0, box235 - box295);
+  // Box 545 — R&D / creative expenditure credits set against the liability; box 600
+  // tax outstanding = box 525 (self-assessed tax) less those credits (560/565/595 nil).
+  const box545 = n(t.rdec) + n(t.avec) + n(t.vgec);
+  const box600 = Math.max(0, c.corporationTax - box545);
   // The FY grid shows the statutory rate (25% main / 19% small profits) with the
   // gross tax; any marginal relief is shown separately in box 435 on page 5. So
   // derive the statutory rate from the pre-marginal-relief tax, not the blended
@@ -132,7 +138,7 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         <Teal>Company information</Teal>
         <Panel>
           <Line n={1} label="Company name" value={ret.clientName} />
-          <Cells n={2} label="Company registration number" groups={[8]} value={''} />
+          <Cells n={2} label="Company registration number" groups={[8]} value={ret.companyRegNumber ?? ''} />
           <Cells n={3} label="Tax reference" groups={[10]} value={ret.utr || ''} />
           <Cells n={4} label="Type of company" groups={[2]} value={''} />
         </Panel>
@@ -215,6 +221,7 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         <Panel>
           <Money n={155} label="Trading profits" value={Math.max(0, c.taxableTradingProfit)} />
           <Money n={160} label="Trading losses brought forward set against trading profits" value={n(L?.trading.bfSetTradingProfits)} />
+          <Money n={165} label="Net trading profits — box 155 minus box 160" value={box165} />
           <Money n={170} label="Loan relationships and derivative contracts (financial instruments)" value={n(L?.ntlr.incomeLoanRelationships)} />
         </Panel>
       </Page>
@@ -339,7 +346,7 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
           <Money n={530} label="Research and Development credit" value={n(t.rdec)} />
           <Money n={540} label="Creatives tax credit" value={0} />
           <Money n={541} label="Audio-Visual expenditure credit (AVEC) and Video Games expenditure credit (VGEC)" value={n(t.avec) + n(t.vgec)} />
-          <Money n={545} label="Total of R&D credit, creatives tax credit and AVEC/VGEC — total box 530 to 541" value={n(t.rdec) + n(t.avec) + n(t.vgec)} />
+          <Money n={545} label="Total of R&D credit, creatives tax credit and AVEC/VGEC — total box 530 to 541" value={box545} />
         </Panel>
       </Page>
 
@@ -348,7 +355,7 @@ export default function Ct600Facsimile({ ret }: { ret: TaxReturn; editable?: boo
         <p className="mb-1 text-[12px] font-bold text-black">Tax reconciliation — continued</p>
         <Panel>
           <Money n={595} label="Tax already paid (and not already repaid)" value={0} />
-          <Money n={600} label="Tax outstanding — box 525 minus boxes 545, 560, 565 and 595" value={c.corporationTax} />
+          <Money n={600} label="Tax outstanding — box 525 minus boxes 545, 560, 565 and 595" value={box600} />
           <Money n={605} label="Tax overpaid including surplus or payable credits" value={0} />
           <Money n={610} label="Group tax refunds surrendered to this company" value={0} />
           <Money n={615} label="Research and Development expenditure credits surrendered to this company" value={0} />
