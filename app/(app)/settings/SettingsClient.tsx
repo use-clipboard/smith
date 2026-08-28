@@ -15,6 +15,7 @@ import BillingTab from './tabs/BillingTab';
 import TeamTab from './tabs/TeamTab';
 import ApiKeySettings from '@/components/features/settings/ApiKeySettings';
 import SaFilingSettings from '@/components/features/settings/SaFilingSettings';
+import CtFilingSettings from '@/components/features/settings/CtFilingSettings';
 import CalendarSettingsTab from './tabs/CalendarSettingsTab';
 import StaffHireSettingsTab from './tabs/StaffHireSettingsTab';
 import TasksSettingsTab from './tabs/TasksSettingsTab';
@@ -675,8 +676,9 @@ export default function SettingsClient({
       )}
 
       {activeTab === 'sa-filing' && isAdmin && taxStudioActive && (
-        <div className="max-w-2xl">
+        <div className="max-w-2xl space-y-4">
           <SaFilingSettings />
+          <CtFilingSettings />
         </div>
       )}
 
