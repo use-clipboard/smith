@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { X, Loader2, Lock, Unlock, Check, AlertTriangle, CalendarClock, CalendarRange, FileText, Info } from 'lucide-react';
+import { X, Loader2, Lock, Unlock, Check, AlertTriangle, CalendarClock, CalendarRange, FileText, Info, Plus } from 'lucide-react';
 import type { FinancialYear } from '@/types/bookkeeping';
 import DateInput, { fromIso, toIso } from '../input/DateInput';
 import Tooltip from '@/components/ui/Tooltip';
@@ -103,6 +103,12 @@ export default function YearEndsDialog({ bookId, isAdmin, onClose, onChanged }: 
   const [reopening, setReopening] = useState(false);
   const [reopenError, setReopenError] = useState('');
 
+  // Add-next-year state. `nextYearRange` is null when the book already runs a
+  // year ahead — the button hides rather than offering a doomed year.
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState('');
+  const [nextYearRange, setNextYearRange] = useState<{ start: string; end: string } | null>(null);
+
   // Change-year-end lightbox state.
   const [changeFy, setChangeFy] = useState<FinancialYear | null>(null);
   const [newEndUk, setNewEndUk] = useState('');
@@ -116,6 +122,9 @@ export default function YearEndsDialog({ bookId, isAdmin, onClose, onChanged }: 
       if (!r.ok) throw new Error('Failed to load financial years');
       const d = await r.json();
       setYears((d.years ?? []) as FinancialYear[]);
+      // The server decides whether another year may be added, so the button
+      // never offers one the generator would prune away on the next load.
+      setNextYearRange((d.next_year ?? null) as { start: string; end: string } | null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -127,6 +136,22 @@ export default function YearEndsDialog({ bookId, isAdmin, onClose, onChanged }: 
 
   // Most recent first.
   const sorted = [...years].sort((a, b) => b.start_date.localeCompare(a.start_date));
+
+  async function addYear() {
+    setAdding(true); setAddError(''); setFlash('');
+    try {
+      const r = await fetch(`/api/bookkeeping/books/${bookId}/years`, { method: 'POST' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? 'Could not add the year.');
+      await load();
+      setFlash(`${yearLabel(d.year as FinancialYear)} added.`);
+      onChanged?.();
+    } catch (e) {
+      setAddError(e instanceof Error ? e.message : 'Could not add the year.');
+    } finally {
+      setAdding(false);
+    }
+  }
   // The single FY that may be closed next = the earliest open/reopened year
   // with no still-open earlier year. Equivalently: years close in date order,
   // so the next closable is the oldest non-closed year.
@@ -373,6 +398,31 @@ export default function YearEndsDialog({ bookId, isAdmin, onClose, onChanged }: 
                 );
               })}
             </ul>
+          )}
+
+          {/* Add the next year. Deliberately "next" rather than free-form
+              dates: years close and reopen in date order and the engine assumes
+              a contiguous run of periods, so one-at-a-time can't leave a gap or
+              an overlap. The range is shown so it's never a surprise. */}
+          {isAdmin && !loading && nextYearRange && (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => void addYear()}
+                disabled={adding}
+                className="w-full inline-flex items-center justify-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-dashed border-gray-300 text-gray-600 hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50/40 disabled:opacity-50 transition-colors"
+              >
+                {adding ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                {adding
+                  ? 'Adding…'
+                  : `Add next year — ${fmtDate(nextYearRange.start)} → ${fmtDate(nextYearRange.end)}`}
+              </button>
+              {addError && (
+                <p className="mt-1 text-[11px] text-rose-700 flex items-start gap-1">
+                  <AlertTriangle size={10} className="mt-0.5 shrink-0" /> {addError}
+                </p>
+              )}
+            </div>
           )}
 
           {!isAdmin && (

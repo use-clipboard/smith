@@ -8,7 +8,7 @@
 // short first year via enumerateFys). Existing rows are never modified.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { parseYearEndMd, enumerateFys, addDay } from '@/lib/bookkeeping/financialYears';
+import { parseYearEndMd, enumerateFys, addDay, fyContaining } from '@/lib/bookkeeping/financialYears';
 
 export async function backfillForwardFys(
   supabase: SupabaseClient,
@@ -18,17 +18,27 @@ export async function backfillForwardFys(
   const pattern = parseYearEndMd(opts.yearEndMd);
   if (!pattern) return;
 
-  // Prune empty future placeholders beyond the current period. Any FY starting
-  // after `throughIso` has no transactions (a transaction there would have
-  // pushed throughIso to cover it), so removing it just declutters — later
-  // years regenerate on demand. Only ever touches plain 'open' rows; closed/
-  // reopened years are in the past and never match this filter.
+  // Prune empty future placeholders — but keep ONE year beyond the current
+  // period. Any FY starting past `throughIso` has no transactions (a
+  // transaction there would have pushed throughIso to cover it), so dropping
+  // the far-future ones just declutters; they regenerate on demand.
+  //
+  // The immediately-next year is deliberately spared, because the user can now
+  // create it by hand from the Financial years dialog and it must survive the
+  // next page load — this generator runs on every book open. Generation itself
+  // still never creates it (enumerateFys only reaches throughIso), so an
+  // untouched book gains nothing here.
+  //
+  // Only ever touches plain 'open' rows; closed/reopened years are in the past
+  // and never match this filter.
+  const currentFy = fyContaining(pattern, opts.throughIso);
+  const nextFyStart = addDay(currentFy.end);
   await supabase
     .from('bookkeeping_financial_years')
     .delete()
     .eq('book_id', bookId)
     .eq('status', 'open')
-    .gt('start_date', opts.throughIso);
+    .gt('start_date', nextFyStart);
 
   const { data: existing } = await supabase
     .from('bookkeeping_financial_years')
