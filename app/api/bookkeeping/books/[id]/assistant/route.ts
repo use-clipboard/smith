@@ -5,6 +5,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@/lib/supabase-server';
 import { getBookkeepingContext } from '@/lib/bookkeeping/server';
 import { getAnthropicForFirm, ApiKeyNotConfiguredError } from '@/lib/getAnthropicForFirm';
+import { stripAccountIds } from '@/lib/bookkeeping/sanitiseReply';
 import { BOOK_TEMPLATE_LABEL, VAT_SCHEME_LABEL } from '@/types/bookkeeping';
 
 // ── POST /api/bookkeeping/books/[id]/assistant ───────────────────────────────
@@ -228,7 +229,12 @@ Book context:
 - Today's date: ${today}
 
 Chart of accounts (id in brackets — use these exact ids in proposals):
-${coaText}`;
+${coaText}
+
+The bracketed ids are internal plumbing for tool calls ONLY. NEVER write an
+account id in your reply to the user — refer to accounts by name ("Advertising
+and PR"), never "Advertising and PR [a751d806-…]". The user has no use for the
+id and it makes the answer look broken.`;
 
   // ── Agentic tool loop ──────────────────────────────────────────────────────
   const messages: Anthropic.MessageParam[] = body.messages.map(m => ({ role: m.role, content: m.content }));
@@ -295,7 +301,9 @@ ${coaText}`;
   });
 
   return NextResponse.json({
-    reply: replyText.trim() || 'I’ve prepared the suggestion below.',
+    // Belt-and-braces with the "never write an account id" system-prompt rule:
+    // ids handed over for tool calls must not surface in the answer.
+    reply: stripAccountIds(replyText).trim() || 'I’ve prepared the suggestion below.',
     proposals,
   });
 }

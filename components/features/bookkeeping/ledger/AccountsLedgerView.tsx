@@ -896,8 +896,13 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
   );
 
   // ── Render ────────────────────────────────────────────────────────────
+  // minmax(0,1fr) rather than 1fr: a grid track sized `1fr` still refuses to go
+  // below its content's min-content width, so the wide entries table pushed this
+  // whole view wider than its column and spilled underneath the AI Adviser panel
+  // beside it. minmax(0,…) lets the track shrink; the table scrolls inside its
+  // own container instead.
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3 items-start">
+    <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-3 items-start">
       {/* ── Master list ─────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col" style={{ height: 'calc(100vh - 14rem)' }}>
         <div className="px-3 pt-3 pb-2 border-b border-slate-100">
@@ -1045,7 +1050,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
       </div>
 
       {/* ── Detail pane ─────────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col" style={{ height: 'calc(100vh - 14rem)' }}>
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col min-w-0" style={{ height: 'calc(100vh - 14rem)' }}>
         {!selectedAccountId ? (
           <div className="p-10 text-center text-sm text-slate-400">
             Pick a {(title.endsWith('s') ? title.slice(0, -1) : title).toLowerCase()} on the left to see their statement.
@@ -1244,8 +1249,10 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
               </div>
             ) : (
             <>
-            {/* Entries table — scrolls inside the fixed-height card */}
-            <div className="flex-1 overflow-y-auto min-h-0">
+            {/* Entries table — scrolls inside the fixed-height card, in BOTH
+                directions: without overflow-x the wide row of columns pushes
+                the card past its grid track and under the panel beside it. */}
+            <div className="flex-1 overflow-y-auto overflow-x-auto min-h-0">
               {entriesError && (
                 <div className="m-3 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{entriesError}</div>
               )}

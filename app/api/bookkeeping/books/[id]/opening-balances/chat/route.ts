@@ -4,6 +4,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@/lib/supabase-server';
 import { getBookkeepingContext } from '@/lib/bookkeeping/server';
 import { getAnthropicForFirm, ApiKeyNotConfiguredError } from '@/lib/getAnthropicForFirm';
+import { stripAccountIds } from '@/lib/bookkeeping/sanitiseReply';
 import { BOOK_TEMPLATE_LABEL } from '@/types/bookkeeping';
 
 // ── POST /api/bookkeeping/books/[id]/opening-balances/chat ───────────────────
@@ -168,6 +169,10 @@ ${book.name} — ${BOOK_TEMPLATE_LABEL[book.template_type as keyof typeof BOOK_T
 CHART OF ACCOUNTS (use these exact ids)
 ${coaText}
 
+The bracketed ids are for your ops only. NEVER write an account id in your reply
+— refer to accounts by name. The user has no use for the id and it makes the
+answer look broken.
+
 CURRENT PROPOSAL
 ${stateText}`;
 
@@ -199,11 +204,15 @@ ${stateText}`;
     return NextResponse.json({ error: 'SMITH hit a problem answering. Please try again.' }, { status: 500 });
   }
 
-  const reply = message.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map(b => b.text.trim())
-    .filter(Boolean)
-    .join('\n\n');
+  // The chart of accounts goes into the prompt as "- [<id>] Name" so SMITH can
+  // name real accounts in its ops; those ids must never reach the user's screen.
+  const reply = stripAccountIds(
+    message.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map(b => b.text.trim())
+      .filter(Boolean)
+      .join('\n\n'),
+  ).trim();
 
   const toolUse = message.content.find(b => b.type === 'tool_use') as Anthropic.ToolUseBlock | undefined;
   const raw = toolUse?.input as { summary?: string; ops?: Array<Record<string, unknown>> } | undefined;
