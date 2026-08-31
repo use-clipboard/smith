@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ListTodo, LayoutGrid, Building2, Layers, CalendarDays, BookTemplate,
-  FileStack, History, RefreshCw, Download,
+  FileStack, History, RefreshCw, Download, List, Kanban, GanttChartSquare,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
@@ -56,16 +56,15 @@ export default function TasksSlimRail({
   }, []);
 
   const onList = view === 'list';
-  const isMyWork = onList && scope === 'me' && layout === 'list';
-  const isAllWork = onList && scope === 'firm' && layout === 'list';
+  const isMyWork = onList && scope === 'me';
+  const isAllWork = onList && scope === 'firm';
   const isGroupActive = onList && layout === 'list' && groupBy !== 'none';
-  const isCalActive = onList && layout === 'calendar';
 
   function goList(next: { scope?: 'me' | 'firm'; group?: GroupBy; layout?: Layout }) {
     setView('list');
     if (next.scope) setScope(next.scope);
     if (next.group !== undefined) setGroupBy(next.group);
-    setLayout(next.layout ?? 'list');
+    if (next.layout) setLayout(next.layout);
     setPop(null);
   }
 
@@ -73,6 +72,16 @@ export default function TasksSlimRail({
     <div ref={railRef} className="relative w-14 shrink-0 my-3 ml-3 rounded-2xl border border-slate-200 bg-slate-50 shadow flex flex-col items-center py-2.5 gap-1 self-start">
       <RailBtn icon={<ListTodo className={IC} />} label="My Work" active={isMyWork} badge={myCount} onClick={() => goList({ scope: 'me' })} />
       <RailBtn icon={<LayoutGrid className={IC} />} label="All Tasks" active={isAllWork} onClick={() => goList({ scope: 'firm' })} />
+
+      <div className="w-6 h-px bg-slate-200 my-1.5" />
+
+      {/* Layout switcher */}
+      <RailBtn icon={<List className={IC} />} label="List" active={onList && layout === 'list'} onClick={() => goList({ layout: 'list' })} />
+      <RailBtn icon={<Kanban className={IC} />} label="Kanban" active={onList && layout === 'board'} onClick={() => goList({ layout: 'board' })} />
+      <RailBtn icon={<CalendarDays className={IC} />} label="Calendar" active={onList && layout === 'calendar'} onClick={() => goList({ layout: 'calendar' })} />
+      <RailBtn icon={<GanttChartSquare className={IC} />} label="Timeline" active={onList && layout === 'timeline'} onClick={() => goList({ layout: 'timeline' })} />
+
+      <div className="w-6 h-px bg-slate-200 my-1.5" />
 
       {/* Departments popover — opens the dedicated Departments view */}
       <RailBtn
@@ -115,9 +124,6 @@ export default function TasksSlimRail({
           <PopItem label="Status" active={onList && groupBy === 'status'} onClick={() => goList({ group: 'status' })} />
         </Popover>
       )}
-
-      {/* Calendar layout (Week / Month toggle lives inside it) */}
-      <RailBtn icon={<CalendarDays className={IC} />} label="Calendar" active={isCalActive} onClick={() => goList({ layout: 'calendar' })} />
 
       <div className="w-6 h-px bg-slate-200 my-1.5" />
 

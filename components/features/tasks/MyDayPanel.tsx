@@ -33,6 +33,7 @@ function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d
 
 export default function MyDayPanel({ tasks, currentUserId, onOpenTask, onMarkDone, onClose, extras = [] }: Props) {
   const [min, setMin] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [pos, setPos] = useState<{ x: number; y: number }>({ x: -1, y: -1 });
   const drag = useRef<{ dx: number; dy: number } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -131,7 +132,7 @@ export default function MyDayPanel({ tasks, currentUserId, onOpenTask, onMarkDon
                     <span className="ml-auto text-[10px] font-bold text-gray-400 tabular-nums">{plan[bkt.key].length}</span>
                   </div>
                   <div className="space-y-1.5">
-                    {plan[bkt.key].slice(0, 6).map(t => (
+                    {(expanded.has(bkt.key) ? plan[bkt.key] : plan[bkt.key].slice(0, 6)).map(t => (
                       <div key={t.id} className={`flex items-center gap-2 rounded-xl border border-gray-100 ${bkt.bg} px-3 py-2 hover:border-indigo-200 transition-colors group`}>
                         <button onClick={() => onOpenTask(t)} className="min-w-0 flex-1 text-left">
                           <p className="text-[12.5px] font-semibold text-gray-800 truncate">{t.title}</p>
@@ -146,7 +147,14 @@ export default function MyDayPanel({ tasks, currentUserId, onOpenTask, onMarkDon
                         </button>
                       </div>
                     ))}
-                    {plan[bkt.key].length > 6 && <p className="text-[11px] text-gray-400 pl-1">+ {plan[bkt.key].length - 6} more</p>}
+                    {plan[bkt.key].length > 6 && (
+                      <button
+                        onClick={() => setExpanded(s => { const n = new Set(s); if (n.has(bkt.key)) n.delete(bkt.key); else n.add(bkt.key); return n; })}
+                        className="text-[11px] font-semibold text-indigo-600 hover:underline pl-1"
+                      >
+                        {expanded.has(bkt.key) ? 'Show less' : `+ ${plan[bkt.key].length - 6} more`}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

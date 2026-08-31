@@ -6,7 +6,7 @@ import {
   CheckSquare, Plus, Loader2, FileStack, PlayCircle,
   BarChart3, X,
 } from 'lucide-react';
-import ViewModeToggle, { ViewModeProvider } from './ViewModeToggle';
+import { ViewModeProvider } from './ViewModeToggle';
 import TasksSlimRail from './TasksSlimRail';
 import TasksKpiStrip from './TasksKpiStrip';
 import TasksRightRail from './TasksRightRail';
@@ -20,7 +20,7 @@ import TimelineView from './views/TimelineView';
 import TaskFilters from './TaskFilters';
 import { exportTasksXlsx } from '@/utils/taskExport';
 import { classifyTasks, applyDueFilter, type DueWindow } from './dueWindow';
-import { List, Kanban, CalendarDays, GanttChartSquare, PanelRight } from 'lucide-react';
+import { List, LayoutGrid, PanelRight } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import TemplateLibrary from './TemplateLibrary';
 import DueDatePill from './DueDatePill';
@@ -554,24 +554,24 @@ export default function TasksPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
-            {view === 'list' && (
-              <div className="inline-flex bg-gray-100 border border-gray-200 rounded-lg p-0.5">
-                {([
-                  { id: 'list', label: 'List', Icon: List },
-                  { id: 'board', label: 'Kanban', Icon: Kanban },
-                  { id: 'calendar', label: 'Calendar', Icon: CalendarDays },
-                  { id: 'timeline', label: 'Timeline', Icon: GanttChartSquare },
-                ] as const).map(({ id, label, Icon }) => (
-                  <button key={id} onClick={() => setLayout(id)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12.5px] font-semibold transition-colors ${layout === id ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                    <Icon className="h-3.5 w-3.5" /> <span className="hidden lg:inline">{label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
             {(view === 'list' || view === 'department') && (
               <>
-                {view === 'list' && layout === 'list' && <ViewModeToggle />}
+                {view === 'list' && layout === 'list' && (
+                  <>
+                    <Tooltip label="Card view">
+                      <button onClick={() => handleSetViewMode('grid')} aria-label="Card view" aria-pressed={viewMode === 'grid'}
+                        className={`w-9 h-9 rounded-lg grid place-items-center border transition-colors ${viewMode === 'grid' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-700'}`}>
+                        <LayoutGrid className="h-4 w-4" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="List view">
+                      <button onClick={() => handleSetViewMode('list')} aria-label="List view" aria-pressed={viewMode === 'list'}
+                        className={`w-9 h-9 rounded-lg grid place-items-center border transition-colors ${viewMode === 'list' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-700'}`}>
+                        <List className="h-4 w-4" />
+                      </button>
+                    </Tooltip>
+                  </>
+                )}
                 <Tooltip label={kpiOpen ? 'Hide stats' : 'Show stats'}>
                   <button onClick={toggleKpi} aria-label="Toggle stats panel" aria-pressed={kpiOpen}
                     className={`w-9 h-9 rounded-lg grid place-items-center border transition-colors ${kpiOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-700'}`}>

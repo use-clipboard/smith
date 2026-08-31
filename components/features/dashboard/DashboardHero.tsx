@@ -123,44 +123,48 @@ export default function DashboardHero() {
                   : `· ${total} item${total === 1 ? '' : 's'} on your plate`}
               </span>
             )}
-            <button
-              onClick={() => setShowMyDay(true)}
-              className="ml-auto shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg shadow-sm transition-transform hover:-translate-y-0.5"
-              style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
-            >
-              <Wand2 size={13} /> Organise my day
-            </button>
           </div>
 
           {loading ? (
             <HeroSkeleton rows={2} />
           ) : (
             <>
-              {metrics.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-                  {metrics.map(m => {
-                    const Icon = m.icon;
-                    return (
-                      <button
-                        key={m.key}
-                        onClick={m.onClick}
-                        className="group text-left rounded-lg px-2.5 py-1.5 bg-white/70 border border-[var(--border-card)] shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:border-[var(--accent)] hover:bg-white transition-all duration-150"
-                      >
-                        <div className="flex items-center justify-between mb-0.5">
-                          <Icon size={12} style={{ color: m.color }} />
-                          <ArrowUpRight size={11} className="text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </div>
-                        {m.value === null ? (
-                          <span className="inline-block w-5 h-5 rounded bg-current/15 animate-pulse" style={{ color: m.color }} />
-                        ) : (
-                          <p className="text-lg font-bold leading-none" style={{ color: m.color }}>{m.value}</p>
-                        )}
-                        <p className="text-[10px] text-[var(--text-muted)] mt-0.5 leading-tight">{m.label}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                {metrics.map(m => {
+                  const Icon = m.icon;
+                  return (
+                    <button
+                      key={m.key}
+                      onClick={m.onClick}
+                      className="group text-left rounded-lg px-2.5 py-1.5 bg-white/70 border border-[var(--border-card)] shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:border-[var(--accent)] hover:bg-white transition-all duration-150"
+                    >
+                      <div className="flex items-center justify-between mb-0.5">
+                        <Icon size={12} style={{ color: m.color }} />
+                        <ArrowUpRight size={11} className="text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                      {m.value === null ? (
+                        <span className="inline-block w-5 h-5 rounded bg-current/15 animate-pulse" style={{ color: m.color }} />
+                      ) : (
+                        <p className="text-lg font-bold leading-none" style={{ color: m.color }}>{m.value}</p>
+                      )}
+                      <p className="text-[10px] text-[var(--text-muted)] mt-0.5 leading-tight">{m.label}</p>
+                    </button>
+                  );
+                })}
+                {/* Organise my day — same rectangle tile, purple to stand out */}
+                <button
+                  onClick={() => setShowMyDay(true)}
+                  className="group text-left rounded-lg px-2.5 py-1.5 text-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-150"
+                  style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
+                >
+                  <div className="flex items-center justify-between mb-0.5">
+                    <Wand2 size={12} />
+                    <ArrowUpRight size={11} className="opacity-70" />
+                  </div>
+                  <p className="text-[13px] font-bold leading-none mt-1">Organise</p>
+                  <p className="text-[10px] opacity-90 mt-0.5 leading-tight">my day</p>
+                </button>
+              </div>
 
               {suggestions.length > 0 && (
                 <div className="mt-auto pt-1 shrink-0">
