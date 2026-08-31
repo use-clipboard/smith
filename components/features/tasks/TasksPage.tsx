@@ -20,7 +20,7 @@ import TimelineView from './views/TimelineView';
 import TaskFilters from './TaskFilters';
 import { exportTasksXlsx } from '@/utils/taskExport';
 import { classifyTasks, applyDueFilter, type DueWindow } from './dueWindow';
-import { List, LayoutGrid, PanelRight } from 'lucide-react';
+import { PanelRight } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import TemplateLibrary from './TemplateLibrary';
 import DueDatePill from './DueDatePill';
@@ -532,6 +532,8 @@ export default function TasksPage() {
         setGroupBy={setGroupBy}
         layout={layout}
         setLayout={setLayout}
+        viewMode={viewMode}
+        setViewMode={handleSetViewMode}
         activeDepartment={activeDepartment}
         onSelectDepartment={(c) => { setActiveDepartment(c); setView('department'); }}
         departments={departments}
@@ -556,22 +558,6 @@ export default function TasksPage() {
           <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
             {(view === 'list' || view === 'department') && (
               <>
-                {view === 'list' && layout === 'list' && (
-                  <>
-                    <Tooltip label="Card view">
-                      <button onClick={() => handleSetViewMode('grid')} aria-label="Card view" aria-pressed={viewMode === 'grid'}
-                        className={`w-9 h-9 rounded-lg grid place-items-center border transition-colors ${viewMode === 'grid' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-700'}`}>
-                        <LayoutGrid className="h-4 w-4" />
-                      </button>
-                    </Tooltip>
-                    <Tooltip label="List view">
-                      <button onClick={() => handleSetViewMode('list')} aria-label="List view" aria-pressed={viewMode === 'list'}
-                        className={`w-9 h-9 rounded-lg grid place-items-center border transition-colors ${viewMode === 'list' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-700'}`}>
-                        <List className="h-4 w-4" />
-                      </button>
-                    </Tooltip>
-                  </>
-                )}
                 <Tooltip label={kpiOpen ? 'Hide stats' : 'Show stats'}>
                   <button onClick={toggleKpi} aria-label="Toggle stats panel" aria-pressed={kpiOpen}
                     className={`w-9 h-9 rounded-lg grid place-items-center border transition-colors ${kpiOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-700'}`}>

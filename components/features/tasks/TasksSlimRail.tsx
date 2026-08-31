@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ListTodo, LayoutGrid, Building2, Layers, CalendarDays, BookTemplate,
-  FileStack, History, RefreshCw, Download, List, Kanban, GanttChartSquare,
+  FileStack, History, RefreshCw, Download, List, Kanban, GanttChartSquare, Grid2x2,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
@@ -26,6 +26,8 @@ interface Props {
   setGroupBy: (g: GroupBy) => void;
   layout: Layout;
   setLayout: (l: Layout) => void;
+  viewMode: 'grid' | 'list';
+  setViewMode: (m: 'grid' | 'list') => void;
   activeDepartment: string | null;
   onSelectDepartment: (category: string) => void;
   departments: Dept[];
@@ -40,7 +42,7 @@ interface Props {
 const IC = 'h-[18px] w-[18px]';
 
 export default function TasksSlimRail({
-  view, setView, scope, setScope, groupBy, setGroupBy, layout, setLayout,
+  view, setView, scope, setScope, groupBy, setGroupBy, layout, setLayout, viewMode, setViewMode,
   activeDepartment, onSelectDepartment, departments,
   myCount, draftCount, templatesCount, isAdmin, onRefresh, onExport,
 }: Props) {
@@ -76,7 +78,8 @@ export default function TasksSlimRail({
       <div className="w-6 h-px bg-slate-200 my-1.5" />
 
       {/* Layout switcher */}
-      <RailBtn icon={<List className={IC} />} label="List" active={onList && layout === 'list'} onClick={() => goList({ layout: 'list' })} />
+      <RailBtn icon={<List className={IC} />} label="List" active={onList && layout === 'list' && viewMode === 'list'} onClick={() => { goList({ layout: 'list' }); setViewMode('list'); }} />
+      <RailBtn icon={<Grid2x2 className={IC} />} label="Card view" active={onList && layout === 'list' && viewMode === 'grid'} onClick={() => { goList({ layout: 'list' }); setViewMode('grid'); }} />
       <RailBtn icon={<Kanban className={IC} />} label="Kanban" active={onList && layout === 'board'} onClick={() => goList({ layout: 'board' })} />
       <RailBtn icon={<CalendarDays className={IC} />} label="Calendar" active={onList && layout === 'calendar'} onClick={() => goList({ layout: 'calendar' })} />
       <RailBtn icon={<GanttChartSquare className={IC} />} label="Timeline" active={onList && layout === 'timeline'} onClick={() => goList({ layout: 'timeline' })} />
