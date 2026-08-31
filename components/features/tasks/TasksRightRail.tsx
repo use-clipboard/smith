@@ -67,7 +67,7 @@ export default function TasksRightRail({ tasks, currentUserId, onViewMine, onExp
   const spDue = sp?.due_date ? relDue(sp.due_date) : null;
 
   return (
-    <div className="w-[300px] flex-shrink-0 flex flex-col gap-3.5 overflow-y-auto pr-1">
+    <div className="w-full flex flex-col gap-3.5">
       {/* My Tasks donut */}
       <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
         <div className="flex items-center justify-between mb-3">

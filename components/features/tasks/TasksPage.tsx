@@ -481,6 +481,14 @@ export default function TasksPage() {
   const { classMap: dueClassMap, counts: dueCounts } = useMemo(() => classifyTasks(scopedFiltered), [scopedFiltered]);
   const visibleTasks = useMemo(() => applyDueFilter(scopedFiltered, dueClassMap, dueFilter), [scopedFiltered, dueClassMap, dueFilter]);
 
+  // Tasks in the active department (template category match) — feeds the KPI
+  // strip shown above the Departments view.
+  const departmentTasks = useMemo(() => {
+    if (!activeDepartment) return [] as Task[];
+    const catById = new Map(templates.map(t => [t.id, t.category]));
+    return tasks.filter(t => t.template_id != null && catById.get(t.template_id) === activeDepartment);
+  }, [tasks, templates, activeDepartment]);
+
   function handleSetViewMode(mode: 'grid' | 'list') {
     setViewMode(mode);
     sessionStorage.setItem('tasks_view_mode', mode);
@@ -559,16 +567,16 @@ export default function TasksPage() {
           </div>
         </div>
 
-        {/* KPI strip — reflects the current Scope; click a card to filter */}
-        {isTaskListView && kpiOpen && (
+        {/* KPI strip — the unified list (reflects Scope) + the Departments view */}
+        {(view === 'list' || view === 'department') && kpiOpen && (
           <div className="px-6 pt-4 flex-shrink-0">
             <TasksKpiStrip
-              tasks={scopeTasks}
-              onSelect={(f) => {
+              tasks={view === 'list' ? scopeTasks : departmentTasks}
+              onSelect={view === 'list' ? ((f) => {
                 setLayout('list');
                 if (f === 'open') { setDueFilter('all'); setStatusFilter('open'); }
                 else setDueFilter(f);
-              }}
+              }) : undefined}
             />
           </div>
         )}
@@ -700,7 +708,7 @@ export default function TasksPage() {
 
           {/* Right insight rail — auto-collapses below 1180px + manual toggle */}
           {isTaskListView && railWideOpen && (
-            <aside className="hidden min-[1180px]:flex flex-col w-[316px] flex-shrink-0 border-l border-gray-200 bg-gray-50/40 px-4 pt-4 pb-6 overflow-hidden">
+            <aside className="hidden min-[1180px]:flex flex-col w-[316px] flex-shrink-0 border-l border-gray-200 bg-gray-50/40 px-4 pt-4 pb-6 overflow-y-auto scrollbar-thin">
               <TasksRightRail
                 tasks={tasks}
                 currentUserId={currentUserId}

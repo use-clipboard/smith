@@ -49,39 +49,36 @@ export default function TasksKpiStrip({ tasks, onSelect }: Props) {
   }, [tasks]);
 
   const sel = (f: KpiFilter) => (onSelect ? () => onSelect(f) : undefined);
-  const cards: { label: string; val: string | number; tone: string; icon: React.ReactNode; click?: () => void }[] = [
-    { label: 'Open Tasks', val: k.open, tone: 'indigo', icon: <CheckSquare className="h-4 w-4" />, click: sel('open') },
-    { label: 'Due Today', val: k.dueToday, tone: 'amber', icon: <CalendarDays className="h-4 w-4" />, click: sel('today') },
-    { label: 'This Week', val: k.thisWeek, tone: 'blue', icon: <CalendarRange className="h-4 w-4" />, click: sel('this_week') },
-    { label: 'Overdue', val: k.overdue, tone: 'red', icon: <AlertCircle className="h-4 w-4" />, click: sel('overdue') },
-    { label: 'Completion Rate', val: `${k.rate}%`, tone: 'green', icon: <CheckCircle2 className="h-4 w-4" /> },
-    { label: 'Avg Days to Complete', val: k.avg == null ? '—' : k.avg.toFixed(1), tone: 'indigo', icon: <Clock className="h-4 w-4" /> },
+  // tint = hex accent; drives the corner glow + icon chip (Timesheets KpiCard style).
+  const cards: { label: string; val: string | number; tint: string; sub?: string; icon: React.ReactNode; click?: () => void }[] = [
+    { label: 'Open Tasks', val: k.open, tint: '#6366F1', icon: <CheckSquare className="h-[18px] w-[18px]" />, click: sel('open') },
+    { label: 'Due Today', val: k.dueToday, tint: '#F59E0B', icon: <CalendarDays className="h-[18px] w-[18px]" />, click: sel('today') },
+    { label: 'This Week', val: k.thisWeek, tint: '#0EA5E9', icon: <CalendarRange className="h-[18px] w-[18px]" />, click: sel('this_week') },
+    { label: 'Overdue', val: k.overdue, tint: '#F43F5E', icon: <AlertCircle className="h-[18px] w-[18px]" />, click: sel('overdue') },
+    { label: 'Completion Rate', val: `${k.rate}%`, tint: '#10B981', icon: <CheckCircle2 className="h-[18px] w-[18px]" /> },
+    { label: 'Avg Days to Complete', val: k.avg == null ? '—' : k.avg.toFixed(1), tint: '#8B5CF6', sub: 'days', icon: <Clock className="h-[18px] w-[18px]" /> },
   ];
-
-  const TONES: Record<string, { card: string; icon: string; val: string; hover: string }> = {
-    indigo: { card: 'bg-indigo-50 border-indigo-100', icon: 'text-indigo-600', val: 'text-indigo-700', hover: 'hover:border-indigo-300' },
-    amber:  { card: 'bg-amber-50 border-amber-100',   icon: 'text-amber-600',  val: 'text-amber-700',  hover: 'hover:border-amber-300' },
-    blue:   { card: 'bg-sky-50 border-sky-100',       icon: 'text-sky-600',    val: 'text-sky-700',    hover: 'hover:border-sky-300' },
-    red:    { card: 'bg-red-50 border-red-100',       icon: 'text-red-600',    val: 'text-red-700',    hover: 'hover:border-red-300' },
-    green:  { card: 'bg-emerald-50 border-emerald-100', icon: 'text-emerald-600', val: 'text-emerald-700', hover: 'hover:border-emerald-300' },
-  };
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
       {cards.map(c => {
         const Tag = c.click ? 'button' : 'div';
-        const tone = TONES[c.tone];
         return (
           <Tag
             key={c.label}
             {...(c.click ? { onClick: c.click, type: 'button' as const } : {})}
-            className={`text-left border rounded-2xl px-4 py-3.5 shadow-sm transition-all ${tone.card} ${c.click ? `${tone.hover} hover:-translate-y-0.5 cursor-pointer` : ''}`}
+            className={`group relative overflow-hidden text-left rounded-[20px] bg-white border border-gray-100 shadow-[0_8px_32px_rgba(31,38,88,0.07)] p-4 transition-all duration-300 ${c.click ? 'cursor-pointer hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(31,38,88,0.14)]' : ''}`}
           >
-            <div className="flex items-center justify-between">
-              <span className="text-[11.5px] font-semibold text-gray-600">{c.label}</span>
-              <span className={`w-7 h-7 rounded-lg grid place-items-center bg-white/70 ${tone.icon}`}>{c.icon}</span>
+            {/* corner glow */}
+            <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full opacity-40 blur-2xl transition-opacity group-hover:opacity-70" style={{ background: c.tint }} />
+            <div className="relative flex items-start justify-between">
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">{c.label}</p>
+                <p className="mt-1.5 text-[26px] font-bold leading-none tabular-nums text-gray-900">{c.val}</p>
+                {c.sub && <p className="mt-1.5 text-[11px] text-gray-400">{c.sub}</p>}
+              </div>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: `${c.tint}1f`, color: c.tint }}>{c.icon}</span>
             </div>
-            <div className={`text-2xl font-extrabold tracking-tight mt-2 tabular-nums ${tone.val}`}>{c.val}</div>
           </Tag>
         );
       })}
