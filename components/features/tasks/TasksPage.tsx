@@ -6,24 +6,21 @@ import {
   CheckSquare, Plus, Loader2, FileStack, PlayCircle,
   BarChart3, X,
 } from 'lucide-react';
-import { ViewModeProvider } from './ViewModeToggle';
+import ViewModeToggle, { ViewModeProvider } from './ViewModeToggle';
 import TasksSlimRail from './TasksSlimRail';
 import TasksKpiStrip from './TasksKpiStrip';
 import TasksRightRail from './TasksRightRail';
-import MyTasksView from './views/MyTasksView';
 import HistoryView from './views/HistoryView';
 import DepartmentView from './views/DepartmentView';
-import MyWeekView from './views/MyWeekView';
-import MyMonthView from './views/MyMonthView';
-import AllTasksView from './views/AllTasksView';
-import ByClientView from './views/ByClientView';
-import ByTeamView from './views/ByTeamView';
-import ByTypeView from './views/ByTypeView';
+import GroupedTasksView, { type GroupBy } from './views/GroupedTasksView';
 import BoardView from './views/BoardView';
 import CalendarView from './views/CalendarView';
 import TimelineView from './views/TimelineView';
 import TaskFilters from './TaskFilters';
-import { List, Kanban, CalendarDays, GanttChartSquare } from 'lucide-react';
+import DueWindowChips from './DueWindowChips';
+import ExportTasksButton from './ExportTasksButton';
+import { classifyTasks, applyDueFilter, type DueWindow } from './dueWindow';
+import { List, Kanban, CalendarDays, GanttChartSquare, Layers, ChevronDown } from 'lucide-react';
 import TemplateLibrary from './TemplateLibrary';
 import DueDatePill from './DueDatePill';
 import TaskDetailPanel from './TaskDetailPanel';
@@ -40,13 +37,20 @@ import type {
   Task, TaskStatus, TaskStep, TaskTemplate, DefaultTemplate,
 } from '@/types';
 
-type ViewId = 'my' | 'my-week' | 'my-month' | 'all' | 'by-client' | 'by-team' | 'by-type' | 'history' | 'department' | 'templates' | 'drafts';
+// The unified list ('list') replaces the old my / all / by-client / by-team /
+// by-type / my-week / my-month views — those are now Scope + Group-by + the
+// Calendar layout. Departments / History / Templates / Drafts keep dedicated views.
+type ViewId = 'list' | 'history' | 'department' | 'templates' | 'drafts';
 
 interface TeamMember { id: string; full_name: string | null; email: string }
 interface ClientRef  { id: string; name: string; client_ref: string; business_type?: string | null; status?: string | null; }
 
 export default function TasksPage() {
-  const [view, setView] = useState<ViewId>('my');
+  const [view, setView] = useState<ViewId>('list');
+  // Unified list controls: who (scope), how it's grouped, and the due-window chip.
+  const [scope, setScope] = useState<'me' | 'firm'>('me');
+  const [groupBy, setGroupBy] = useState<GroupBy>('none');
+  const [dueFilter, setDueFilter] = useState<DueWindow>('all');
   const [activeDepartment, setActiveDepartment] = useState<string | null>(null);
   const [departments, setDepartments] = useState<{ category: string; count: number }[]>([]);
 
@@ -126,22 +130,14 @@ export default function TasksPage() {
   const [showAIBuilder, setShowAIBuilder] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
 
-  // When switching to My Tasks, pre-select the current user in the assignee filter.
-  // When leaving My Tasks (and personal week/month views), reset it so other views show everyone by default.
-  useEffect(() => {
-    if (view === 'my' && currentUserId) {
-      setAssigneeFilter(currentUserId);
-    } else if (view !== 'my' && view !== 'my-week' && view !== 'my-month') {
-      setAssigneeFilter('');
-    }
-  }, [view, currentUserId]);
-
+  // "Mine" is now the Scope control (scope === 'me'), which filters by step
+  // assignee directly — the assignee dropdown is a separate, optional filter.
   function clearFilters() {
     setSearch('');
     setStatusFilter('open');
     setClientFilter('');
-    // On My Tasks keep the filter on the current user; on other views clear it
-    setAssigneeFilter(view === 'my' ? currentUserId : '');
+    setAssigneeFilter('');
+    setDueFilter('all');
   }
 
   // ── Data loading ────────────────────────────────────────────────────────────
@@ -448,24 +444,29 @@ export default function TasksPage() {
   const draftTasks = tasks.filter(t => t.status === 'draft');
   const draftCount = draftTasks.length;
 
-  // The KPI strip + right rail show on the task-list views, not the standalone
-  // modes (templates / drafts / history) which manage their own full-width UI.
-  const isTaskListView = !['templates', 'drafts', 'history'].includes(view);
+  // The unified list ('list') carries the KPI strip, view tabs and right rail;
+  // Departments / History / Templates / Drafts are their own full-width views.
+  const isTaskListView = view === 'list';
 
-  // Layout tabs (List / Board / Calendar / Timeline). List keeps the existing
-  // per-nav views; the others render over the shared filter set below.
+  // Layout tabs (List / Board / Calendar / Timeline).
   const [layout, setLayout] = useState<'list' | 'board' | 'calendar' | 'timeline'>('list');
-  const layoutFilteredTasks = useMemo(() => tasks.filter(t => {
-    if (search) {
-      const needle = search.toLowerCase();
-      if (!`${t.title} ${t.client?.name ?? ''} ${t.client?.client_ref ?? ''}`.toLowerCase().includes(needle)) return false;
-    }
-    if (statusFilter === 'open' ? t.status === 'complete' : (statusFilter !== 'all' && t.status !== statusFilter)) return false;
-    if (clientFilter === 'internal' && !t.is_internal) return false;
-    if (clientFilter && clientFilter !== 'internal' && t.client_id !== clientFilter) return false;
-    if (assigneeFilter && !t.steps?.some(s => s.assignee_id === assigneeFilter)) return false;
-    return true;
-  }), [tasks, search, statusFilter, clientFilter, assigneeFilter]);
+
+  // Scope (me/firm) + text/status/client/assignee filters. Feeds the due-window
+  // chips (counts), the due filter, and every layout.
+  const scopedFiltered = useMemo(() => {
+    const base = scope === 'me' ? tasks.filter(t => t.steps?.some(s => s.assignee_id === currentUserId)) : tasks;
+    return base.filter(t => {
+      if (search) { const n = search.toLowerCase(); if (!`${t.title} ${t.client?.name ?? ''} ${t.client?.client_ref ?? ''}`.toLowerCase().includes(n)) return false; }
+      if (statusFilter === 'open' ? t.status === 'complete' : (statusFilter !== 'all' && t.status !== statusFilter)) return false;
+      if (clientFilter === 'internal' && !t.is_internal) return false;
+      if (clientFilter && clientFilter !== 'internal' && t.client_id !== clientFilter) return false;
+      if (assigneeFilter && !t.steps?.some(s => s.assignee_id === assigneeFilter)) return false;
+      return true;
+    });
+  }, [tasks, scope, currentUserId, search, statusFilter, clientFilter, assigneeFilter]);
+
+  const { classMap: dueClassMap, counts: dueCounts } = useMemo(() => classifyTasks(scopedFiltered), [scopedFiltered]);
+  const visibleTasks = useMemo(() => applyDueFilter(scopedFiltered, dueClassMap, dueFilter), [scopedFiltered, dueClassMap, dueFilter]);
 
   function handleSetViewMode(mode: 'grid' | 'list') {
     setViewMode(mode);
@@ -473,21 +474,6 @@ export default function TasksPage() {
   }
 
   const isAdmin = currentUserRole === 'admin';
-
-  const viewProps = {
-    tasks, currentUserId, search, onSearchChange: setSearch,
-    statusFilter, onStatusChange: setStatusFilter,
-    clientFilter, onClientChange: setClientFilter,
-    assigneeFilter, onAssigneeChange: setAssigneeFilter,
-    clients, teamMembers, onClearFilters: clearFilters,
-    onTaskClick: setSelectedTask,
-    onStepUpdate: handleStepUpdate,
-    onTaskUpdate: handleUpdate,
-    viewMode,
-    isAdmin,
-    onDelete: handleDelete,
-    onStopRecurrence: handleStopRecurrence,
-  };
 
   return (
     <TaskDeadlineLinksProvider>
@@ -516,6 +502,12 @@ export default function TasksPage() {
       <TasksSlimRail
         view={view}
         setView={(v) => setView(v as ViewId)}
+        scope={scope}
+        setScope={setScope}
+        groupBy={groupBy}
+        setGroupBy={setGroupBy}
+        layout={layout}
+        setLayout={setLayout}
         activeDepartment={activeDepartment}
         onSelectDepartment={(c) => { setActiveDepartment(c); setView('department'); }}
         departments={departments}
@@ -554,34 +546,61 @@ export default function TasksPage() {
           </div>
         </div>
 
-        {/* KPI strip — task-list views only */}
+        {/* KPI strip — click a card to filter the list */}
         {isTaskListView && (
           <div className="px-6 pt-4 flex-shrink-0">
-            <TasksKpiStrip tasks={tasks} onOpenAll={() => setView('all')} />
+            <TasksKpiStrip
+              tasks={tasks}
+              onSelect={(f) => {
+                setLayout('list');
+                if (f === 'open') { setScope('firm'); setDueFilter('all'); setStatusFilter('open'); }
+                else { setScope('firm'); setDueFilter(f); }
+              }}
+            />
           </div>
         )}
 
-        {/* View tabs — List / Board / Calendar / Timeline */}
+        {/* Unified toolbar — Scope · View tabs · Group by · filters · due chips */}
         {isTaskListView && (
-          <div className="px-6 pt-3 flex-shrink-0">
-            <div className="inline-flex bg-gray-100 border border-gray-200 rounded-lg p-0.5">
-              {([
-                { id: 'list', label: 'List', Icon: List },
-                { id: 'board', label: 'Board', Icon: Kanban },
-                { id: 'calendar', label: 'Calendar', Icon: CalendarDays },
-                { id: 'timeline', label: 'Timeline', Icon: GanttChartSquare },
-              ] as const).map(({ id, label, Icon }) => (
-                <button
-                  key={id}
-                  onClick={() => setLayout(id)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12.5px] font-semibold transition-colors ${
-                    layout === id ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" /> {label}
-                </button>
-              ))}
+          <div className="px-6 pt-3 flex-shrink-0 space-y-2.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="inline-flex bg-gray-100 border border-gray-200 rounded-lg p-0.5">
+                {(['me', 'firm'] as const).map(s => (
+                  <button key={s} onClick={() => setScope(s)}
+                    className={`px-3 py-1.5 rounded-md text-[12.5px] font-semibold transition-colors ${scope === s ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                    {s === 'me' ? 'My Work' : 'Firm'}
+                  </button>
+                ))}
+              </div>
+              <div className="inline-flex bg-gray-100 border border-gray-200 rounded-lg p-0.5">
+                {([
+                  { id: 'list', label: 'List', Icon: List },
+                  { id: 'board', label: 'Board', Icon: Kanban },
+                  { id: 'calendar', label: 'Calendar', Icon: CalendarDays },
+                  { id: 'timeline', label: 'Timeline', Icon: GanttChartSquare },
+                ] as const).map(({ id, label, Icon }) => (
+                  <button key={id} onClick={() => setLayout(id)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12.5px] font-semibold transition-colors ${layout === id ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                    <Icon className="h-3.5 w-3.5" /> {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex-1" />
+              {layout === 'list' && <GroupByControl value={groupBy} onChange={setGroupBy} />}
+              {layout === 'list' && <ViewModeToggle />}
+              <ExportTasksButton tasks={visibleTasks} filename="tasks" />
             </div>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <TaskFilters
+                search={search} onSearchChange={setSearch}
+                statusFilter={statusFilter} onStatusChange={setStatusFilter}
+                clientFilter={clientFilter} onClientChange={setClientFilter}
+                assigneeFilter={assigneeFilter} onAssigneeChange={setAssigneeFilter}
+                clients={clients} teamMembers={teamMembers} onClear={clearFilters}
+              />
+              <span className="text-xs font-bold text-[var(--text-primary)] tabular-nums">{visibleTasks.length} task{visibleTasks.length !== 1 ? 's' : ''}</span>
+            </div>
+            <DueWindowChips value={dueFilter} onChange={setDueFilter} totalCount={scopedFiltered.length} counts={dueCounts} />
           </div>
         )}
 
@@ -593,87 +612,64 @@ export default function TasksPage() {
           <div className="flex items-center justify-center h-64">
             <Loader2 className="h-6 w-6 animate-spin text-[#5b21b6]" />
           </div>
-        ) : isTaskListView && layout !== 'list' ? (
-          <div className="pt-1">
-            <div className="sticky top-0 z-30 backdrop-blur-md pb-3 flex items-center justify-between flex-wrap gap-2">
-              <TaskFilters
-                search={search} onSearchChange={setSearch}
-                statusFilter={statusFilter} onStatusChange={setStatusFilter}
-                clientFilter={clientFilter} onClientChange={setClientFilter}
-                assigneeFilter={assigneeFilter} onAssigneeChange={setAssigneeFilter}
-                clients={clients} teamMembers={teamMembers} onClear={clearFilters}
-              />
-              <p className="text-xs font-bold text-[var(--text-primary)]">{layoutFilteredTasks.length} task{layoutFilteredTasks.length !== 1 ? 's' : ''}</p>
-            </div>
-            {layout === 'board' && (
-              <BoardView tasks={layoutFilteredTasks} currentUserId={currentUserId} onTaskClick={setSelectedTask} isAdmin={isAdmin} onDelete={handleDelete} onStopRecurrence={handleStopRecurrence} />
-            )}
-            {layout === 'calendar' && (
-              <CalendarView tasks={layoutFilteredTasks} currentUserId={currentUserId} onTaskClick={setSelectedTask} onStepUpdate={handleStepUpdate} onTaskUpdate={handleUpdate} viewMode={viewMode} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={handleDelete} onStopRecurrence={handleStopRecurrence} />
-            )}
-            {layout === 'timeline' && (
-              <TimelineView tasks={layoutFilteredTasks} onTaskClick={setSelectedTask} />
-            )}
+        ) : view === 'list' ? (
+          layout === 'list' ? (
+            <GroupedTasksView
+              tasks={visibleTasks} currentUserId={currentUserId}
+              clients={clients} teamMembers={teamMembers} templates={templates}
+              groupBy={groupBy} viewMode={viewMode} isAdmin={isAdmin}
+              onTaskClick={setSelectedTask} onStepUpdate={handleStepUpdate} onTaskUpdate={handleUpdate}
+              onDelete={handleDelete} onStopRecurrence={handleStopRecurrence}
+            />
+          ) : layout === 'board' ? (
+            <BoardView tasks={visibleTasks} currentUserId={currentUserId} onTaskClick={setSelectedTask} isAdmin={isAdmin} onDelete={handleDelete} onStopRecurrence={handleStopRecurrence} />
+          ) : layout === 'calendar' ? (
+            <CalendarView tasks={visibleTasks} currentUserId={currentUserId} onTaskClick={setSelectedTask} onStepUpdate={handleStepUpdate} onTaskUpdate={handleUpdate} viewMode={viewMode} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={handleDelete} onStopRecurrence={handleStopRecurrence} />
+          ) : (
+            <TimelineView tasks={visibleTasks} onTaskClick={setSelectedTask} />
+          )
+        ) : view === 'department' && activeDepartment ? (
+          <DepartmentView
+            category={activeDepartment}
+            tasks={tasks}
+            templates={templates}
+            clients={clients}
+            teamMembers={teamMembers}
+            currentUserId={currentUserId}
+            isAdmin={isAdmin}
+            onTaskClick={setSelectedTask}
+            onStepUpdate={handleStepUpdate}
+            onTaskUpdate={handleUpdate}
+            onDelete={handleDelete}
+            onStopRecurrence={handleStopRecurrence}
+          />
+        ) : view === 'history' ? (
+          <HistoryView />
+        ) : view === 'drafts' ? (
+          <div className="pt-5">
+            <DraftsView tasks={draftTasks} clients={clients} onActivate={handleActivateDraft} onDelete={handleDelete} />
           </div>
-        ) : (
-          <>
-            {view === 'my'        && <MyTasksView    {...viewProps} />}
-            {view === 'my-week'   && <MyWeekView     tasks={tasks} currentUserId={currentUserId} onTaskClick={setSelectedTask} onStepUpdate={handleStepUpdate} onTaskUpdate={handleUpdate} viewMode={viewMode} isAdmin={isAdmin} onDelete={handleDelete} onStopRecurrence={handleStopRecurrence} />}
-            {view === 'my-month'  && <MyMonthView    tasks={tasks} currentUserId={currentUserId} onTaskClick={setSelectedTask} onStepUpdate={handleStepUpdate} onTaskUpdate={handleUpdate} viewMode={viewMode} isAdmin={isAdmin} onDelete={handleDelete} onStopRecurrence={handleStopRecurrence} />}
-            {view === 'all'       && <AllTasksView   {...viewProps} />}
-            {view === 'by-client' && <ByClientView   {...viewProps} />}
-            {view === 'by-team'   && <ByTeamView     {...viewProps} />}
-            {view === 'by-type'   && <ByTypeView     {...viewProps} />}
-            {view === 'history'   && <HistoryView />}
-            {view === 'department' && activeDepartment && (
-              <DepartmentView
-                category={activeDepartment}
-                tasks={tasks}
-                templates={templates}
-                clients={clients}
-                teamMembers={teamMembers}
-                currentUserId={currentUserId}
-                isAdmin={isAdmin}
-                onTaskClick={setSelectedTask}
-                onStepUpdate={handleStepUpdate}
-                onTaskUpdate={handleUpdate}
-                onDelete={handleDelete}
-                onStopRecurrence={handleStopRecurrence}
-              />
-            )}
-            {view === 'drafts'    && (
-              <div className="pt-5">
-                <DraftsView
-                  tasks={draftTasks}
-                  clients={clients}
-                  onActivate={handleActivateDraft}
-                  onDelete={handleDelete}
-                />
+        ) : view === 'templates' ? (
+          <div className="space-y-4 pt-5">
+            {templateError && (
+              <div className="flex items-start gap-3 bg-red-50 border border-red-200 text-red-800 rounded-lg px-4 py-3 text-sm">
+                <span className="font-semibold flex-shrink-0">Import failed:</span>
+                <span className="flex-1">{templateError}</span>
+                <button onClick={() => setTemplateError(null)} className="text-red-400 hover:text-red-600 flex-shrink-0 font-bold ml-2">✕</button>
               </div>
             )}
-            {view === 'templates' && (
-              <div className="space-y-4 pt-5">
-                {templateError && (
-                  <div className="flex items-start gap-3 bg-red-50 border border-red-200 text-red-800 rounded-lg px-4 py-3 text-sm">
-                    <span className="font-semibold flex-shrink-0">Import failed:</span>
-                    <span className="flex-1">{templateError}</span>
-                    <button onClick={() => setTemplateError(null)} className="text-red-400 hover:text-red-600 flex-shrink-0 font-bold ml-2">✕</button>
-                  </div>
-                )}
-                <TemplateLibrary
-                  firmTemplates={templates}
-                  onCreateFromDefault={handleCreateFromDefault}
-                  onEdit={t => { setEditingTemplate(t); setShowTemplateBuilder(true); }}
-                  onCreateBlank={() => { setEditingTemplate(null); setAiBuilderInitialData(null); setShowTemplateBuilder(true); }}
-                  onCreateAI={() => setShowAIBuilder(true)}
-                  onDelete={handleDeleteTemplate}
-                  onCopy={handleCopyTemplate}
-                  isAdmin={isAdmin}
-                />
-              </div>
-            )}
-          </>
-        )}
+            <TemplateLibrary
+              firmTemplates={templates}
+              onCreateFromDefault={handleCreateFromDefault}
+              onEdit={t => { setEditingTemplate(t); setShowTemplateBuilder(true); }}
+              onCreateBlank={() => { setEditingTemplate(null); setAiBuilderInitialData(null); setShowTemplateBuilder(true); }}
+              onCreateAI={() => setShowAIBuilder(true)}
+              onDelete={handleDeleteTemplate}
+              onCopy={handleCopyTemplate}
+              isAdmin={isAdmin}
+            />
+          </div>
+        ) : null}
         </div>
           </main>
 
@@ -683,7 +679,7 @@ export default function TasksPage() {
               <TasksRightRail
                 tasks={tasks}
                 currentUserId={currentUserId}
-                onViewMine={() => setView('my')}
+                onViewMine={() => { setView('list'); setScope('me'); setLayout('list'); }}
                 onExploreTemplates={() => setView('templates')}
                 onOpenTask={setSelectedTask}
               />
@@ -712,7 +708,7 @@ export default function TasksPage() {
                 <TasksRightRail
                   tasks={tasks}
                   currentUserId={currentUserId}
-                  onViewMine={() => { setView('my'); setRailOpen(false); }}
+                  onViewMine={() => { setView('list'); setScope('me'); setLayout('list'); setRailOpen(false); }}
                   onExploreTemplates={() => { setView('templates'); setRailOpen(false); }}
                   onOpenTask={(t) => { setSelectedTask(t); setRailOpen(false); }}
                 />
@@ -833,6 +829,48 @@ export default function TasksPage() {
     </ViewModeProvider>
     </TaskClientStatusPolicyProvider>
     </TaskDeadlineLinksProvider>
+  );
+}
+
+// ── Group-by control ──────────────────────────────────────────────────────────
+
+const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
+  { value: 'none',       label: 'No grouping' },
+  { value: 'due',        label: 'Due date' },
+  { value: 'department', label: 'Department' },
+  { value: 'client',     label: 'Client' },
+  { value: 'type',       label: 'Type' },
+  { value: 'team',       label: 'Team' },
+  { value: 'status',     label: 'Status' },
+];
+
+function GroupByControl({ value, onChange }: { value: GroupBy; onChange: (g: GroupBy) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function h(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+  const label = GROUP_OPTIONS.find(o => o.value === value)?.label ?? 'No grouping';
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(o => !o)}
+        className="inline-flex items-center gap-1.5 text-[12.5px] font-medium border border-gray-200 rounded-lg px-3 py-2 bg-white hover:border-indigo-300 text-gray-700 transition-colors">
+        <Layers className="h-3.5 w-3.5 text-gray-400" /> Group: <span className="font-semibold text-gray-900">{label}</span>
+        <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-40 w-44 bg-white border border-gray-200 rounded-xl shadow-xl p-1.5">
+          {GROUP_OPTIONS.map(o => (
+            <button key={o.value} onClick={() => { onChange(o.value); setOpen(false); }}
+              className={`w-full text-left px-3 py-1.5 rounded-lg text-sm ${value === o.value ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

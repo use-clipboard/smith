@@ -7,14 +7,16 @@ import type { Task } from '@/types';
 // Firm-wide task KPIs, computed from the loaded task set (the list route ships
 // the whole firm graph). All figures are real — no placeholders.
 
+type KpiFilter = 'open' | 'today' | 'this_week' | 'overdue';
+
 interface Props {
   tasks: Task[];
-  onOpenAll?: () => void;
+  onSelect?: (f: KpiFilter) => void;
 }
 
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
 
-export default function TasksKpiStrip({ tasks, onOpenAll }: Props) {
+export default function TasksKpiStrip({ tasks, onSelect }: Props) {
   const k = useMemo(() => {
     const today = startOfToday();
     const day = today.getDay();
@@ -46,11 +48,12 @@ export default function TasksKpiStrip({ tasks, onOpenAll }: Props) {
     return { open, dueToday, thisWeek, overdue, rate, avg };
   }, [tasks]);
 
+  const sel = (f: KpiFilter) => (onSelect ? () => onSelect(f) : undefined);
   const cards: { label: string; val: string | number; tone: string; icon: React.ReactNode; click?: () => void }[] = [
-    { label: 'Open Tasks', val: k.open, tone: 'indigo', icon: <CheckSquare className="h-4 w-4" />, click: onOpenAll },
-    { label: 'Due Today', val: k.dueToday, tone: 'amber', icon: <CalendarDays className="h-4 w-4" /> },
-    { label: 'This Week', val: k.thisWeek, tone: 'blue', icon: <CalendarRange className="h-4 w-4" /> },
-    { label: 'Overdue', val: k.overdue, tone: 'red', icon: <AlertCircle className="h-4 w-4" /> },
+    { label: 'Open Tasks', val: k.open, tone: 'indigo', icon: <CheckSquare className="h-4 w-4" />, click: sel('open') },
+    { label: 'Due Today', val: k.dueToday, tone: 'amber', icon: <CalendarDays className="h-4 w-4" />, click: sel('today') },
+    { label: 'This Week', val: k.thisWeek, tone: 'blue', icon: <CalendarRange className="h-4 w-4" />, click: sel('this_week') },
+    { label: 'Overdue', val: k.overdue, tone: 'red', icon: <AlertCircle className="h-4 w-4" />, click: sel('overdue') },
     { label: 'Completion Rate', val: `${k.rate}%`, tone: 'green', icon: <CheckCircle2 className="h-4 w-4" /> },
     { label: 'Avg Days to Complete', val: k.avg == null ? '—' : k.avg.toFixed(1), tone: 'indigo', icon: <Clock className="h-4 w-4" /> },
   ];
