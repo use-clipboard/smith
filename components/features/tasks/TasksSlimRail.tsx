@@ -79,7 +79,7 @@ export default function TasksSlimRail({
 
       {/* Layout switcher */}
       <RailBtn icon={<List className={IC} />} label="List" active={onList && layout === 'list' && viewMode === 'list'} onClick={() => { goList({ layout: 'list' }); setViewMode('list'); }} />
-      <RailBtn icon={<Grid2x2 className={IC} />} label="Card view" active={onList && layout === 'list' && viewMode === 'grid'} onClick={() => { goList({ layout: 'list' }); setViewMode('grid'); }} />
+      <RailBtn icon={<Grid2x2 className={IC} />} label="Card" active={onList && layout === 'list' && viewMode === 'grid'} onClick={() => { goList({ layout: 'list' }); setViewMode('grid'); }} />
       <RailBtn icon={<Kanban className={IC} />} label="Kanban" active={onList && layout === 'board'} onClick={() => goList({ layout: 'board' })} />
       <RailBtn icon={<CalendarDays className={IC} />} label="Calendar" active={onList && layout === 'calendar'} onClick={() => goList({ layout: 'calendar' })} />
       <RailBtn icon={<GanttChartSquare className={IC} />} label="Timeline" active={onList && layout === 'timeline'} onClick={() => goList({ layout: 'timeline' })} />

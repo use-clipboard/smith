@@ -81,13 +81,13 @@ export default function MyWeekView({ tasks, currentUserId, onTaskClick, onStepUp
     return d;
   }, [monday]);
 
+  // Show whatever tasks are passed in (already scoped to My Work / Firm by the
+  // caller) that fall in the visible week — don't re-filter to the current user.
   const myTasks = useMemo(() => tasks.filter(t => {
     if (!t.due_date) return false;
-    const isMine = t.steps?.some(s => s.assignee_id === currentUserId);
-    if (!isMine) return false;
     const due = new Date(t.due_date);
     return due >= monday && due <= sundayEnd;
-  }), [tasks, currentUserId, monday, sundayEnd]);
+  }), [tasks, monday, sundayEnd]);
 
   const days = useMemo(() =>
     Array.from({ length: 7 }, (_, i) => {

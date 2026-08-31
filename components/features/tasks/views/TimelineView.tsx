@@ -1,12 +1,12 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { Task } from '@/types';
 
 // Timeline (Gantt-style) — dated tasks laid out across a horizontal range from
 // today to ~8 weeks out (plus an overdue lane on the far left). Each bar runs
 // from the task's start (created date, clamped) to its due date, coloured by
-// status. Clicking a row opens the detail panel.
+// status. Hover a bar for full details; click a row to open the detail panel.
 
 interface Props {
   tasks: Task[];
@@ -17,13 +17,31 @@ const STATUS_COLOR: Record<string, string> = {
   not_started: '#94a3b8', in_progress: '#2563eb', records_here: '#7c3aed',
   review: '#0891b2', waiting_on_client: '#d97706', complete: '#16a34a',
 };
+const STATUS_LABEL: Record<string, string> = {
+  not_started: 'Not Started', in_progress: 'In Progress', records_here: 'Records Here',
+  review: 'Review', waiting_on_client: 'Waiting on Client', complete: 'Complete',
+};
 
 const DAY = 86_400_000;
 const WEEKS = 8;
 
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
+function fmtDate(iso: string): string { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso); return m ? `${m[3]}-${m[2]}-${m[1]}` : iso; }
+function dueInfo(t: Task): { text: string; overdue: boolean } {
+  if (!t.due_date) return { text: 'No due date', overdue: false };
+  const today = startOfToday();
+  const due = new Date(t.due_date); due.setHours(0, 0, 0, 0);
+  const days = Math.round((due.getTime() - today.getTime()) / DAY);
+  const date = fmtDate(t.due_date);
+  if (t.status === 'complete') return { text: `Due ${date}`, overdue: false };
+  if (days < 0) return { text: `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} overdue · ${date}`, overdue: true };
+  if (days === 0) return { text: `Due today · ${date}`, overdue: true };
+  return { text: `Due ${date} · in ${days} day${days === 1 ? '' : 's'}`, overdue: false };
+}
 
 export default function TimelineView({ tasks, onTaskClick }: Props) {
+  const [hover, setHover] = useState<{ t: Task; x: number; y: number } | null>(null);
+
   const { rows, weeks, hiddenNoDate, todayLeft } = useMemo(() => {
     const today = startOfToday();
     const rangeStart = new Date(today); rangeStart.setDate(today.getDate() - 7); // 1 wk overdue lane
@@ -93,11 +111,17 @@ export default function TimelineView({ tasks, onTaskClick }: Props) {
                   >
                     <div className="px-4 py-2.5 min-w-0">
                       <p className="text-[12.5px] font-semibold text-gray-800 truncate">{t.title}</p>
-                      <p className="text-[11px] text-gray-400 truncate">{t.is_internal ? 'Internal' : (t.client?.name ?? '—')}</p>
+                      <p className="text-[11px] text-gray-400 truncate">
+                        {t.is_internal ? 'Internal' : (t.client?.name ?? '—')}
+                        {t.client?.client_ref && <span className="font-mono"> · {t.client.client_ref}</span>}
+                      </p>
                     </div>
                     <div className="relative h-9 pr-3">
                       <div
-                        className="absolute top-1/2 -translate-y-1/2 h-[22px] rounded-md flex items-center px-2 shadow-sm"
+                        onMouseEnter={e => setHover({ t, x: e.clientX, y: e.clientY })}
+                        onMouseMove={e => setHover({ t, x: e.clientX, y: e.clientY })}
+                        onMouseLeave={() => setHover(null)}
+                        className="absolute top-1/2 -translate-y-1/2 h-[22px] rounded-md flex items-center px-2 shadow-sm cursor-pointer"
                         style={{ left: `${left}%`, width: `${width}%`, background: color, boxShadow: overdue ? '0 0 0 2px #fecaca' : undefined }}
                       >
                         <span className="text-[10px] font-semibold text-white truncate">{t.title}</span>
@@ -112,6 +136,29 @@ export default function TimelineView({ tasks, onTaskClick }: Props) {
       {hiddenNoDate > 0 && (
         <p className="text-[11.5px] text-gray-400 px-4 py-2 border-t border-gray-100">{hiddenNoDate} task{hiddenNoDate === 1 ? '' : 's'} without a due date {hiddenNoDate === 1 ? 'is' : 'are'} not shown on the timeline.</p>
       )}
+
+      {/* Hover detail — black pill */}
+      {hover && (() => {
+        const di = dueInfo(hover.t);
+        const c = STATUS_COLOR[hover.t.status] ?? '#6366f1';
+        const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
+        return (
+          <div className="fixed z-[95] pointer-events-none" style={{ left: Math.min(hover.x + 14, vw - 290), top: hover.y + 14 }}>
+            <div className="bg-gray-900 text-white rounded-lg shadow-2xl px-3 py-2.5 max-w-[270px]">
+              <p className="text-[12.5px] font-semibold leading-snug">{hover.t.title}</p>
+              <p className="text-[11px] text-gray-300 mt-0.5">
+                {hover.t.is_internal ? 'Internal' : (hover.t.client?.name ?? '—')}
+                {hover.t.client?.client_ref && <span className="text-gray-400 font-mono"> · {hover.t.client.client_ref}</span>}
+              </p>
+              <div className="flex items-center gap-1.5 mt-2">
+                <span className="w-2 h-2 rounded-full" style={{ background: c }} />
+                <span className="text-[11px] font-semibold" style={{ color: c }}>{STATUS_LABEL[hover.t.status] ?? hover.t.status}</span>
+              </div>
+              <p className={`text-[11px] mt-1 ${di.overdue ? 'text-red-300 font-semibold' : 'text-gray-300'}`}>{di.text}</p>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

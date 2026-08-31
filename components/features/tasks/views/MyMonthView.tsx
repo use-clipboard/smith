@@ -86,13 +86,13 @@ export default function MyMonthView({ tasks, currentUserId, onTaskClick, onStepU
                       : monthOffset > 0 ? `${monthOffset} months ahead`
                       : `${Math.abs(monthOffset)} months ago`;
 
+  // Show whatever tasks are passed in (already scoped to My Work / Firm by the
+  // caller) that fall in the visible month — don't re-filter to the current user.
   const myTasks = useMemo(() => tasks.filter(t => {
     if (!t.due_date) return false;
-    const isMine = t.steps?.some(s => s.assignee_id === currentUserId);
-    if (!isMine) return false;
     const due = new Date(t.due_date);
     return due >= monthStart && due <= monthEnd;
-  }), [tasks, currentUserId, monthStart, monthEnd]);
+  }), [tasks, monthStart, monthEnd]);
 
   // Group into calendar weeks that intersect this month
   const weeks = useMemo(() => {
