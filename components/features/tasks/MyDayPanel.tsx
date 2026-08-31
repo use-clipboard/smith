@@ -13,7 +13,10 @@ interface Props {
   tasks: Task[];
   currentUserId: string;
   onOpenTask: (t: Task) => void;
+  onMarkDone: (taskId: string) => void;
   onClose: () => void;
+  /** Non-task briefing items (dashboard use) — emails, notifications, holidays… */
+  extras?: { key: string; label: string; count: number; color: string; onClick: () => void }[];
 }
 
 type BucketKey = 'overdue' | 'records' | 'review' | 'today' | 'soon';
@@ -28,7 +31,7 @@ const BUCKETS: { key: BucketKey; label: string; hint: string; color: string; bg:
 
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
 
-export default function MyDayPanel({ tasks, currentUserId, onOpenTask, onClose }: Props) {
+export default function MyDayPanel({ tasks, currentUserId, onOpenTask, onMarkDone, onClose, extras = [] }: Props) {
   const [min, setMin] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number }>({ x: -1, y: -1 });
   const drag = useRef<{ dx: number; dy: number } | null>(null);
@@ -81,8 +84,11 @@ export default function MyDayPanel({ tasks, currentUserId, onOpenTask, onClose }
     return b;
   }, [tasks, currentUserId]);
 
-  const total = BUCKETS.reduce((n, x) => n + plan[x.key].length, 0);
+  const taskTotal = BUCKETS.reduce((n, x) => n + plan[x.key].length, 0);
+  const extrasTotal = extras.reduce((n, e) => n + e.count, 0);
+  const total = taskTotal + extrasTotal;
   const activeBuckets = BUCKETS.filter(x => plan[x.key].length > 0);
+  const activeExtras = extras.filter(e => e.count > 0);
 
   if (typeof document === 'undefined') return null;
 
@@ -114,34 +120,57 @@ export default function MyDayPanel({ tasks, currentUserId, onOpenTask, onClose }
               <p className="text-sm font-semibold text-gray-800">You&rsquo;re on top of it</p>
               <p className="text-xs text-gray-500 mt-1">No overdue, records-in, review or due-soon tasks assigned to you.</p>
             </div>
-          ) : activeBuckets.map(bkt => (
-            <div key={bkt.key}>
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ background: bkt.color }} />
-                <span className="text-[11px] font-bold uppercase tracking-wide text-gray-600">{bkt.label}</span>
-                {bkt.hint && <span className="text-[10px] text-gray-400">· {bkt.hint}</span>}
-                <span className="ml-auto text-[10px] font-bold text-gray-400 tabular-nums">{plan[bkt.key].length}</span>
-              </div>
-              <div className="space-y-1.5">
-                {plan[bkt.key].slice(0, 6).map(t => (
-                  <button key={t.id} onClick={() => onOpenTask(t)}
-                    className={`w-full text-left rounded-xl border border-gray-100 ${bkt.bg} px-3 py-2 hover:border-indigo-200 transition-colors group`}>
-                    <div className="flex items-center gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[12.5px] font-semibold text-gray-800 truncate">{t.title}</p>
-                        <p className="text-[11px] text-gray-500 truncate">
-                          {t.is_internal ? 'Internal' : (t.client?.name ?? '—')}
-                          {t.due_date && <> · due {fmtDate(t.due_date)}</>}
-                        </p>
+          ) : (
+            <>
+              {activeBuckets.map(bkt => (
+                <div key={bkt.key}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="w-2 h-2 rounded-full" style={{ background: bkt.color }} />
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-gray-600">{bkt.label}</span>
+                    {bkt.hint && <span className="text-[10px] text-gray-400">· {bkt.hint}</span>}
+                    <span className="ml-auto text-[10px] font-bold text-gray-400 tabular-nums">{plan[bkt.key].length}</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {plan[bkt.key].slice(0, 6).map(t => (
+                      <div key={t.id} className={`flex items-center gap-2 rounded-xl border border-gray-100 ${bkt.bg} px-3 py-2 hover:border-indigo-200 transition-colors group`}>
+                        <button onClick={() => onOpenTask(t)} className="min-w-0 flex-1 text-left">
+                          <p className="text-[12.5px] font-semibold text-gray-800 truncate">{t.title}</p>
+                          <p className="text-[11px] text-gray-500 truncate">
+                            {t.is_internal ? 'Internal' : (t.client?.name ?? '—')}
+                            {t.due_date && <> · due {fmtDate(t.due_date)}</>}
+                          </p>
+                        </button>
+                        <button onClick={() => onMarkDone(t.id)} aria-label="Mark done"
+                          className="flex-shrink-0 w-7 h-7 rounded-lg grid place-items-center text-gray-300 hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
+                          <CheckCircle2 className="h-[18px] w-[18px]" />
+                        </button>
                       </div>
-                      <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-500 flex-shrink-0" />
-                    </div>
-                  </button>
-                ))}
-                {plan[bkt.key].length > 6 && <p className="text-[11px] text-gray-400 pl-1">+ {plan[bkt.key].length - 6} more</p>}
-              </div>
-            </div>
-          ))}
+                    ))}
+                    {plan[bkt.key].length > 6 && <p className="text-[11px] text-gray-400 pl-1">+ {plan[bkt.key].length - 6} more</p>}
+                  </div>
+                </div>
+              ))}
+
+              {activeExtras.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-gray-600">Also on your plate</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {activeExtras.map(e => (
+                      <button key={e.key} onClick={e.onClick}
+                        className="w-full flex items-center gap-2.5 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 hover:border-indigo-200 transition-colors group">
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: e.color }} />
+                        <span className="text-[12.5px] font-medium text-gray-800 flex-1 text-left">{e.label}</span>
+                        <span className="text-[11px] font-bold text-gray-500 tabular-nums bg-white border border-gray-200 rounded-full px-2 py-0.5">{e.count}</span>
+                        <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-500 flex-shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>,

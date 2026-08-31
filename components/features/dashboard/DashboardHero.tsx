@@ -16,11 +16,13 @@
  * comes from the shared DashboardDataProvider (one set of calls for the page).
  */
 
+import { useState } from 'react';
 import {
   Sparkles, Mail, CircleAlert, CalendarClock, CalendarDays,
-  Plane, BookOpen, ArrowRight, ArrowUpRight, CheckSquare, HeartHandshake, Bell,
+  Plane, BookOpen, ArrowRight, ArrowUpRight, CheckSquare, HeartHandshake, Bell, Wand2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import DashboardMyDay from '@/components/features/dashboard/DashboardMyDay';
 import { useModules } from '@/components/ui/ModulesProvider';
 import { useEmailCount } from '@/components/ui/EmailCountProvider';
 import { useTasksCount } from '@/components/ui/TasksCountProvider';
@@ -38,6 +40,7 @@ const C_NOTIF = '#ec4899'; // pink — header notifications
 const C_CAL   = '#0ea5e9'; // sky — calendar events
 
 export default function DashboardHero() {
+  const [showMyDay, setShowMyDay] = useState(false);
   const { isModuleActive } = useModules();
   const { openTab } = useTabContext();
   const data = useDashboardData();
@@ -87,6 +90,12 @@ export default function DashboardHero() {
 
   const total = metrics.reduce((s, m) => s + (m.value ?? 0), 0);
 
+  // Non-task briefing items for the "Organise my day" plan (tasks are bucketed
+  // by the plan itself, so overdue / due-this-week counts are excluded here).
+  const dayExtras = metrics
+    .filter(m => m.key !== 'overdue' && m.key !== 'week' && (m.value ?? 0) > 0)
+    .map(m => ({ key: m.key, label: m.label, count: m.value ?? 0, color: m.color, onClick: m.onClick }));
+
   // Rule-based suggested actions — top non-zero metrics, max 3.
   const suggestions = [
     (emails ?? 0) > 0    && { label: emailTraditional ? `Read ${emails} unread email${emails === 1 ? '' : 's'}` : `Triage ${emails} email${emails === 1 ? '' : 's'}`, onClick: () => open('email-triage', 'Email', '/email', Mail) },
@@ -114,6 +123,13 @@ export default function DashboardHero() {
                   : `· ${total} item${total === 1 ? '' : 's'} on your plate`}
               </span>
             )}
+            <button
+              onClick={() => setShowMyDay(true)}
+              className="ml-auto shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg shadow-sm transition-transform hover:-translate-y-0.5"
+              style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
+            >
+              <Wand2 size={13} /> Organise my day
+            </button>
           </div>
 
           {loading ? (
@@ -184,6 +200,7 @@ export default function DashboardHero() {
           )}
         </div>
       </div>
+      {showMyDay && <DashboardMyDay extras={dayExtras} onClose={() => setShowMyDay(false)} />}
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ListTodo, LayoutGrid, Building2, Layers, CalendarDays, BookTemplate,
-  FileStack, History, RefreshCw,
+  FileStack, History, RefreshCw, Download,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
@@ -34,6 +34,7 @@ interface Props {
   templatesCount: number;
   isAdmin: boolean;
   onRefresh: () => void;
+  onExport: () => void;
 }
 
 const IC = 'h-[18px] w-[18px]';
@@ -41,7 +42,7 @@ const IC = 'h-[18px] w-[18px]';
 export default function TasksSlimRail({
   view, setView, scope, setScope, groupBy, setGroupBy, layout, setLayout,
   activeDepartment, onSelectDepartment, departments,
-  myCount, draftCount, templatesCount, isAdmin, onRefresh,
+  myCount, draftCount, templatesCount, isAdmin, onRefresh, onExport,
 }: Props) {
   const [pop, setPop] = useState<null | 'dept' | 'views'>(null);
   const railRef = useRef<HTMLDivElement>(null);
@@ -57,7 +58,7 @@ export default function TasksSlimRail({
   const onList = view === 'list';
   const isMyWork = onList && scope === 'me' && layout === 'list';
   const isAllWork = onList && scope === 'firm' && layout === 'list';
-  const isGroupActive = onList && layout === 'list' && (groupBy === 'client' || groupBy === 'team' || groupBy === 'type');
+  const isGroupActive = onList && layout === 'list' && groupBy !== 'none';
   const isCalActive = onList && layout === 'calendar';
 
   function goList(next: { scope?: 'me' | 'firm'; group?: GroupBy; layout?: Layout }) {
@@ -106,10 +107,12 @@ export default function TasksSlimRail({
       />
       {pop === 'views' && (
         <Popover title="Group by">
-          <PopItem label="By Client" active={onList && groupBy === 'client'} onClick={() => goList({ group: 'client' })} />
-          <PopItem label="By Team" active={onList && groupBy === 'team'} onClick={() => goList({ group: 'team' })} />
-          <PopItem label="By Type" active={onList && groupBy === 'type'} onClick={() => goList({ group: 'type' })} />
           <PopItem label="No grouping" active={onList && groupBy === 'none'} onClick={() => goList({ group: 'none' })} />
+          <PopItem label="Due date" active={onList && groupBy === 'due'} onClick={() => goList({ group: 'due' })} />
+          <PopItem label="Client" active={onList && groupBy === 'client'} onClick={() => goList({ group: 'client' })} />
+          <PopItem label="Type" active={onList && groupBy === 'type'} onClick={() => goList({ group: 'type' })} />
+          <PopItem label="Team" active={onList && groupBy === 'team'} onClick={() => goList({ group: 'team' })} />
+          <PopItem label="Status" active={onList && groupBy === 'status'} onClick={() => goList({ group: 'status' })} />
         </Popover>
       )}
 
@@ -123,6 +126,11 @@ export default function TasksSlimRail({
       <RailBtn icon={<History className={IC} />} label="History" active={view === 'history'} onClick={() => { setView('history'); setPop(null); }} />
 
       <div className="w-6 h-px bg-slate-200 my-1.5" />
+      <Tooltip label="Export to Excel" side="right">
+        <button onClick={onExport} aria-label="Export to Excel" className="w-10 h-10 rounded-lg grid place-items-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors">
+          <Download className="h-4 w-4" />
+        </button>
+      </Tooltip>
       <Tooltip label="Refresh" side="right">
         <button onClick={onRefresh} aria-label="Refresh" className="w-10 h-10 rounded-lg grid place-items-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
           <RefreshCw className="h-4 w-4" />

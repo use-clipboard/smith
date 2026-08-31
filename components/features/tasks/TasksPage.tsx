@@ -18,9 +18,9 @@ import BoardView from './views/BoardView';
 import CalendarView from './views/CalendarView';
 import TimelineView from './views/TimelineView';
 import TaskFilters from './TaskFilters';
-import ExportTasksButton from './ExportTasksButton';
+import { exportTasksXlsx } from '@/utils/taskExport';
 import { classifyTasks, applyDueFilter, type DueWindow } from './dueWindow';
-import { List, Kanban, CalendarDays, GanttChartSquare, Layers, ChevronDown, PanelRight } from 'lucide-react';
+import { List, Kanban, CalendarDays, GanttChartSquare, PanelRight } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import TemplateLibrary from './TemplateLibrary';
 import DueDatePill from './DueDatePill';
@@ -540,6 +540,7 @@ export default function TasksPage() {
         templatesCount={templates.length}
         isAdmin={isAdmin}
         onRefresh={loadAll}
+        onExport={() => exportTasksXlsx(visibleTasks, 'tasks')}
       />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -552,9 +553,25 @@ export default function TasksPage() {
               <p className="text-xs text-gray-500">Stay on top of work across your firm.</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+            {view === 'list' && (
+              <div className="inline-flex bg-gray-100 border border-gray-200 rounded-lg p-0.5">
+                {([
+                  { id: 'list', label: 'List', Icon: List },
+                  { id: 'board', label: 'Kanban', Icon: Kanban },
+                  { id: 'calendar', label: 'Calendar', Icon: CalendarDays },
+                  { id: 'timeline', label: 'Timeline', Icon: GanttChartSquare },
+                ] as const).map(({ id, label, Icon }) => (
+                  <button key={id} onClick={() => setLayout(id)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12.5px] font-semibold transition-colors ${layout === id ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                    <Icon className="h-3.5 w-3.5" /> <span className="hidden lg:inline">{label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             {(view === 'list' || view === 'department') && (
               <>
+                {view === 'list' && layout === 'list' && <ViewModeToggle />}
                 <Tooltip label={kpiOpen ? 'Hide stats' : 'Show stats'}>
                   <button onClick={toggleKpi} aria-label="Toggle stats panel" aria-pressed={kpiOpen}
                     className={`w-9 h-9 rounded-lg grid place-items-center border transition-colors ${kpiOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-700'}`}>
@@ -612,36 +629,10 @@ export default function TasksPage() {
           </div>
         )}
 
-        {/* Unified toolbar — Scope · View tabs · Group by · filters · due chips */}
+        {/* Filters row (Scope · view tabs · group · viewmode · export now live in
+            the header + rail to keep the list area tall) */}
         {isTaskListView && (
-          <div className="px-6 pt-3 flex-shrink-0 space-y-2.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="inline-flex bg-gray-100 border border-gray-200 rounded-lg p-0.5">
-                {(['me', 'firm'] as const).map(s => (
-                  <button key={s} onClick={() => setScope(s)}
-                    className={`px-3 py-1.5 rounded-md text-[12.5px] font-semibold transition-colors ${scope === s ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                    {s === 'me' ? 'My Work' : 'Firm'}
-                  </button>
-                ))}
-              </div>
-              <div className="inline-flex bg-gray-100 border border-gray-200 rounded-lg p-0.5">
-                {([
-                  { id: 'list', label: 'List', Icon: List },
-                  { id: 'board', label: 'Kanban', Icon: Kanban },
-                  { id: 'calendar', label: 'Calendar', Icon: CalendarDays },
-                  { id: 'timeline', label: 'Timeline', Icon: GanttChartSquare },
-                ] as const).map(({ id, label, Icon }) => (
-                  <button key={id} onClick={() => setLayout(id)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12.5px] font-semibold transition-colors ${layout === id ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                    <Icon className="h-3.5 w-3.5" /> {label}
-                  </button>
-                ))}
-              </div>
-              <div className="flex-1" />
-              {layout === 'list' && <GroupByControl value={groupBy} onChange={setGroupBy} />}
-              {layout === 'list' && <ViewModeToggle />}
-              <ExportTasksButton tasks={visibleTasks} filename="tasks" />
-            </div>
+          <div className="px-6 pt-3 flex-shrink-0">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2 flex-wrap">
                 <TaskFilters
@@ -781,6 +772,7 @@ export default function TasksPage() {
           tasks={tasks}
           currentUserId={currentUserId}
           onOpenTask={setSelectedTask}
+          onMarkDone={(id) => { void handleUpdate(id, { status: 'complete' }); }}
           onClose={() => setShowMyDay(false)}
         />
       )}
@@ -896,48 +888,6 @@ export default function TasksPage() {
     </ViewModeProvider>
     </TaskClientStatusPolicyProvider>
     </TaskDeadlineLinksProvider>
-  );
-}
-
-// ── Group-by control ──────────────────────────────────────────────────────────
-
-const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
-  { value: 'none',       label: 'No grouping' },
-  { value: 'due',        label: 'Due date' },
-  { value: 'department', label: 'Department' },
-  { value: 'client',     label: 'Client' },
-  { value: 'type',       label: 'Type' },
-  { value: 'team',       label: 'Team' },
-  { value: 'status',     label: 'Status' },
-];
-
-function GroupByControl({ value, onChange }: { value: GroupBy; onChange: (g: GroupBy) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    function h(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, []);
-  const label = GROUP_OPTIONS.find(o => o.value === value)?.label ?? 'No grouping';
-  return (
-    <div ref={ref} className="relative">
-      <button onClick={() => setOpen(o => !o)}
-        className="inline-flex items-center gap-1.5 text-[12.5px] font-medium border border-gray-200 rounded-lg px-3 py-2 bg-white hover:border-indigo-300 text-gray-700 transition-colors">
-        <Layers className="h-3.5 w-3.5 text-gray-400" /> Group: <span className="font-semibold text-gray-900">{label}</span>
-        <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-40 w-44 bg-white border border-gray-200 rounded-xl shadow-xl p-1.5">
-          {GROUP_OPTIONS.map(o => (
-            <button key={o.value} onClick={() => { onChange(o.value); setOpen(false); }}
-              className={`w-full text-left px-3 py-1.5 rounded-lg text-sm ${value === o.value ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}>
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
