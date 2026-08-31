@@ -17,7 +17,6 @@ import BoardView from './views/BoardView';
 import CalendarView from './views/CalendarView';
 import TimelineView from './views/TimelineView';
 import TaskFilters from './TaskFilters';
-import DueWindowChips from './DueWindowChips';
 import ExportTasksButton from './ExportTasksButton';
 import { classifyTasks, applyDueFilter, type DueWindow } from './dueWindow';
 import { List, Kanban, CalendarDays, GanttChartSquare, Layers, ChevronDown, PanelRight } from 'lucide-react';
@@ -478,7 +477,7 @@ export default function TasksPage() {
     return true;
   }), [scopeTasks, search, statusFilter, clientFilter, assigneeFilter]);
 
-  const { classMap: dueClassMap, counts: dueCounts } = useMemo(() => classifyTasks(scopedFiltered), [scopedFiltered]);
+  const { classMap: dueClassMap } = useMemo(() => classifyTasks(scopedFiltered), [scopedFiltered]);
   const visibleTasks = useMemo(() => applyDueFilter(scopedFiltered, dueClassMap, dueFilter), [scopedFiltered, dueClassMap, dueFilter]);
 
   // Tasks in the active department (template category match) — feeds the KPI
@@ -633,7 +632,6 @@ export default function TasksPage() {
               />
               <span className="text-xs font-bold text-[var(--text-primary)] tabular-nums">{visibleTasks.length} task{visibleTasks.length !== 1 ? 's' : ''}</span>
             </div>
-            <DueWindowChips value={dueFilter} onChange={setDueFilter} totalCount={scopedFiltered.length} counts={dueCounts} />
           </div>
         )}
 

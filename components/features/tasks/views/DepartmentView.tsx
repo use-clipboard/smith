@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Lock, Unlock, RefreshCw, Search, CalendarDays, ChevronDown, ChevronRight, Download } from 'lucide-react';
+import { Loader2, Lock, Unlock, RefreshCw, Search, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import TaskListRow from '../TaskListRow';
 import TaskTable, { type TaskColumn } from '../TaskTable';
 import { type SortDir } from '../SortHeader';
@@ -319,27 +319,6 @@ export default function DepartmentView({
           <div>
             <h2 className="text-lg font-bold text-[var(--text-primary)]">{label}</h2>
             <p className="text-xs font-medium text-[var(--text-secondary)]">Department overview · {stats.total} task{stats.total !== 1 ? 's' : ''} in view</p>
-          </div>
-          {/* Summary chips */}
-          <div className="flex items-center gap-2 flex-wrap text-xs font-semibold">
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)]">
-              Total <span className="font-bold">{stats.total}</span>
-            </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)]">
-              Done <span className="font-bold text-emerald-300">{stats.completed}</span>
-            </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)]">
-              Overdue <span className="font-bold text-red-300">{stats.overdue}</span>
-            </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)]">
-              Due in 7d <span className="font-bold text-amber-300">{stats.dueThisWeek}</span>
-            </span>
-            {stats.nextDue && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)]">
-                <CalendarDays size={11} />
-                Next due in <span className="font-bold">{daysBetween(todayUTC(), stats.nextDue)}d</span>
-              </span>
-            )}
           </div>
         </div>
 
