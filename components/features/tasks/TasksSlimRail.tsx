@@ -69,7 +69,7 @@ export default function TasksSlimRail({
   }
 
   return (
-    <div ref={railRef} className="relative w-14 shrink-0 my-3 ml-3 rounded-2xl border border-slate-200 bg-slate-50 shadow flex flex-col items-center py-2.5 gap-1 self-start" style={{ minHeight: 'calc(100% - 1.5rem)' }}>
+    <div ref={railRef} className="relative w-14 shrink-0 my-3 ml-3 rounded-2xl border border-slate-200 bg-slate-50 shadow flex flex-col items-center py-2.5 gap-1 self-start">
       <RailBtn icon={<ListTodo className={IC} />} label="My Work" active={isMyWork} badge={myCount} onClick={() => goList({ scope: 'me' })} />
       <RailBtn icon={<LayoutGrid className={IC} />} label="All Tasks" active={isAllWork} onClick={() => goList({ scope: 'firm' })} />
 
@@ -122,7 +122,7 @@ export default function TasksSlimRail({
       {isAdmin && <RailBtn icon={<FileStack className={IC} />} label="Drafts" active={view === 'drafts'} badge={draftCount} badgeTone="amber" onClick={() => { setView('drafts'); setPop(null); }} />}
       <RailBtn icon={<History className={IC} />} label="History" active={view === 'history'} onClick={() => { setView('history'); setPop(null); }} />
 
-      <div className="flex-1" />
+      <div className="w-6 h-px bg-slate-200 my-1.5" />
       <Tooltip label="Refresh" side="right">
         <button onClick={onRefresh} aria-label="Refresh" className="w-10 h-10 rounded-lg grid place-items-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
           <RefreshCw className="h-4 w-4" />

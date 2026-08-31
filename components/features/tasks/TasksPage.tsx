@@ -10,6 +10,7 @@ import ViewModeToggle, { ViewModeProvider } from './ViewModeToggle';
 import TasksSlimRail from './TasksSlimRail';
 import TasksKpiStrip from './TasksKpiStrip';
 import TasksRightRail from './TasksRightRail';
+import MyDayPanel from './MyDayPanel';
 import HistoryView from './views/HistoryView';
 import DepartmentView from './views/DepartmentView';
 import GroupedTasksView, { type GroupBy } from './views/GroupedTasksView';
@@ -69,6 +70,8 @@ export default function TasksPage() {
   const [showBulkTask, setShowBulkTask] = useState(false);
   // Right insight rail — overlay drawer on narrow screens (auto-collapsed by CSS).
   const [railOpen, setRailOpen] = useState(false);
+  // "Organise my day" floating plan.
+  const [showMyDay, setShowMyDay] = useState(false);
   // Collapse the top KPI panels / the wide right rail to maximise the task list.
   const [kpiOpen, setKpiOpen] = useState(true);
   const [railWideOpen, setRailWideOpen] = useState(true);
@@ -477,7 +480,7 @@ export default function TasksPage() {
     return true;
   }), [scopeTasks, search, statusFilter, clientFilter, assigneeFilter]);
 
-  const { classMap: dueClassMap } = useMemo(() => classifyTasks(scopedFiltered), [scopedFiltered]);
+  const { classMap: dueClassMap, counts: dueCounts } = useMemo(() => classifyTasks(scopedFiltered), [scopedFiltered]);
   const visibleTasks = useMemo(() => applyDueFilter(scopedFiltered, dueClassMap, dueFilter), [scopedFiltered, dueClassMap, dueFilter]);
 
   // Tasks in the active department (template category match) — feeds the KPI
@@ -487,6 +490,7 @@ export default function TasksPage() {
     const catById = new Map(templates.map(t => [t.id, t.category]));
     return tasks.filter(t => t.template_id != null && catById.get(t.template_id) === activeDepartment);
   }, [tasks, templates, activeDepartment]);
+  const deptDueCounts = useMemo(() => classifyTasks(departmentTasks).counts, [departmentTasks]);
 
   function handleSetViewMode(mode: 'grid' | 'list') {
     setViewMode(mode);
@@ -601,10 +605,10 @@ export default function TasksPage() {
           </div>
         )}
 
-        {/* Later / No-due-date quick filters + active-filter clear (both views) */}
-        {(view === 'list' || view === 'department') && (
+        {/* Department view: Later / No-due pills sit under the KPI (no toolbar) */}
+        {view === 'department' && (
           <div className="px-6 pt-2.5 flex-shrink-0">
-            <DueFilterPills value={dueFilter} onChange={setDueFilter} />
+            <DueFilterPills value={dueFilter} onChange={setDueFilter} laterCount={deptDueCounts.later} noDueCount={deptDueCounts.no_due} />
           </div>
         )}
 
@@ -639,13 +643,16 @@ export default function TasksPage() {
               <ExportTasksButton tasks={visibleTasks} filename="tasks" />
             </div>
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <TaskFilters
-                search={search} onSearchChange={setSearch}
-                statusFilter={statusFilter} onStatusChange={setStatusFilter}
-                clientFilter={clientFilter} onClientChange={setClientFilter}
-                assigneeFilter={assigneeFilter} onAssigneeChange={setAssigneeFilter}
-                clients={clients} teamMembers={teamMembers} onClear={clearFilters}
-              />
+              <div className="flex items-center gap-2 flex-wrap">
+                <TaskFilters
+                  search={search} onSearchChange={setSearch}
+                  statusFilter={statusFilter} onStatusChange={setStatusFilter}
+                  clientFilter={clientFilter} onClientChange={setClientFilter}
+                  assigneeFilter={assigneeFilter} onAssigneeChange={setAssigneeFilter}
+                  clients={clients} teamMembers={teamMembers} onClear={clearFilters}
+                />
+                <DueFilterPills value={dueFilter} onChange={setDueFilter} laterCount={dueCounts.later} noDueCount={dueCounts.no_due} />
+              </div>
               <span className="text-xs font-bold text-[var(--text-primary)] tabular-nums">{visibleTasks.length} task{visibleTasks.length !== 1 ? 's' : ''}</span>
             </div>
           </div>
@@ -730,6 +737,7 @@ export default function TasksPage() {
                 onViewMine={() => { setView('list'); setScope('me'); setLayout('list'); }}
                 onExploreTemplates={() => setView('templates')}
                 onOpenTask={setSelectedTask}
+                onOrganiseDay={() => setShowMyDay(true)}
               />
             </aside>
           )}
@@ -759,11 +767,22 @@ export default function TasksPage() {
                   onViewMine={() => { setView('list'); setScope('me'); setLayout('list'); setRailOpen(false); }}
                   onExploreTemplates={() => { setView('templates'); setRailOpen(false); }}
                   onOpenTask={(t) => { setSelectedTask(t); setRailOpen(false); }}
+                  onOrganiseDay={() => { setShowMyDay(true); setRailOpen(false); }}
                 />
               </div>
             </div>
           )}
         </>
+      )}
+
+      {/* Organise my day — floating, draggable plan */}
+      {showMyDay && (
+        <MyDayPanel
+          tasks={tasks}
+          currentUserId={currentUserId}
+          onOpenTask={setSelectedTask}
+          onClose={() => setShowMyDay(false)}
+        />
       )}
 
       {/* Task detail panel */}
@@ -928,24 +947,30 @@ const DUE_LABEL: Record<string, string> = {
   overdue: 'Overdue', today: 'Due today', this_week: 'This week', later: 'Later', no_due: 'No due date',
 };
 
-function DueFilterPills({ value, onChange }: { value: DueWindow; onChange: (v: DueWindow) => void }) {
-  const pill = (v: DueWindow, label: string) => (
-    <button
-      onClick={() => onChange(value === v ? 'all' : v)}
-      className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
-        value === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300 hover:text-indigo-700'
-      }`}
-    >
-      {label}
-    </button>
-  );
+function DueFilterPills({ value, onChange, laterCount, noDueCount }: {
+  value: DueWindow; onChange: (v: DueWindow) => void; laterCount: number; noDueCount: number;
+}) {
+  const pill = (v: DueWindow, label: string, count: number) => {
+    const active = value === v;
+    return (
+      <button
+        onClick={() => onChange(active ? 'all' : v)}
+        className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border transition-colors ${
+          active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300 hover:text-indigo-700'
+        }`}
+      >
+        {label}
+        <span className={`text-[10px] font-bold rounded-full px-1.5 min-w-[1.1rem] text-center tabular-nums ${active ? 'bg-white/25 text-white' : 'bg-gray-100 text-gray-500'}`}>{count}</span>
+      </button>
+    );
+  };
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      {pill('later', 'Later')}
-      {pill('no_due', 'No due date')}
-      {value !== 'all' && (
+      {pill('later', 'Later', laterCount)}
+      {pill('no_due', 'No due date', noDueCount)}
+      {value !== 'all' && value !== 'later' && value !== 'no_due' && (
         <button onClick={() => onChange('all')} className="text-xs font-medium text-gray-500 hover:text-red-500 inline-flex items-center gap-1">
-          <X className="h-3 w-3" /> Clear filter{value !== 'later' && value !== 'no_due' ? ` · ${DUE_LABEL[value] ?? value}` : ''}
+          <X className="h-3 w-3" /> Clear · {DUE_LABEL[value] ?? value}
         </button>
       )}
     </div>

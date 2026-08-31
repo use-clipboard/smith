@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Users, Repeat, LayoutTemplate, Clock3, Sparkles } from 'lucide-react';
+import { Users, Repeat, LayoutTemplate, Clock3, Sparkles, Wand2 } from 'lucide-react';
 import type { Task } from '@/types';
 
 // Right insight rail — My Tasks donut, a spotlight on the most urgent task, a
@@ -14,11 +14,12 @@ interface Props {
   onViewMine: () => void;
   onExploreTemplates: () => void;
   onOpenTask: (t: Task) => void;
+  onOrganiseDay: () => void;
 }
 
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
 
-export default function TasksRightRail({ tasks, currentUserId, onViewMine, onExploreTemplates, onOpenTask }: Props) {
+export default function TasksRightRail({ tasks, currentUserId, onViewMine, onExploreTemplates, onOpenTask, onOrganiseDay }: Props) {
   const data = useMemo(() => {
     const today = startOfToday();
     const day = today.getDay();
@@ -68,6 +69,17 @@ export default function TasksRightRail({ tasks, currentUserId, onViewMine, onExp
 
   return (
     <div className="w-full flex flex-col gap-3.5">
+      {/* Organise my day */}
+      <button onClick={onOrganiseDay}
+        className="w-full flex items-center gap-2.5 rounded-2xl px-4 py-3 text-white shadow-sm transition-transform hover:-translate-y-0.5"
+        style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}>
+        <span className="w-8 h-8 rounded-xl bg-white/20 grid place-items-center flex-shrink-0"><Wand2 className="h-4 w-4" /></span>
+        <span className="text-left">
+          <span className="block text-[13px] font-bold leading-tight">Organise my day</span>
+          <span className="block text-[11px] opacity-85 leading-tight">A focus plan for today</span>
+        </span>
+      </button>
+
       {/* My Tasks donut */}
       <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
         <div className="flex items-center justify-between mb-3">
