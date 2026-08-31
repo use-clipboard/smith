@@ -58,29 +58,30 @@ export default function TasksKpiStrip({ tasks, onSelect }: Props) {
     { label: 'Avg Days to Complete', val: k.avg == null ? '—' : k.avg.toFixed(1), tone: 'indigo', icon: <Clock className="h-4 w-4" /> },
   ];
 
-  const TONES: Record<string, string> = {
-    indigo: 'bg-indigo-50 text-indigo-600',
-    amber: 'bg-amber-50 text-amber-600',
-    blue: 'bg-sky-50 text-sky-600',
-    red: 'bg-red-50 text-red-600',
-    green: 'bg-emerald-50 text-emerald-600',
+  const TONES: Record<string, { card: string; icon: string; val: string; hover: string }> = {
+    indigo: { card: 'bg-indigo-50 border-indigo-100', icon: 'text-indigo-600', val: 'text-indigo-700', hover: 'hover:border-indigo-300' },
+    amber:  { card: 'bg-amber-50 border-amber-100',   icon: 'text-amber-600',  val: 'text-amber-700',  hover: 'hover:border-amber-300' },
+    blue:   { card: 'bg-sky-50 border-sky-100',       icon: 'text-sky-600',    val: 'text-sky-700',    hover: 'hover:border-sky-300' },
+    red:    { card: 'bg-red-50 border-red-100',       icon: 'text-red-600',    val: 'text-red-700',    hover: 'hover:border-red-300' },
+    green:  { card: 'bg-emerald-50 border-emerald-100', icon: 'text-emerald-600', val: 'text-emerald-700', hover: 'hover:border-emerald-300' },
   };
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
       {cards.map(c => {
         const Tag = c.click ? 'button' : 'div';
+        const tone = TONES[c.tone];
         return (
           <Tag
             key={c.label}
             {...(c.click ? { onClick: c.click, type: 'button' as const } : {})}
-            className={`text-left bg-white border border-gray-200 rounded-2xl px-4 py-3.5 shadow-sm transition-all ${c.click ? 'hover:border-indigo-300 hover:-translate-y-0.5 cursor-pointer' : ''}`}
+            className={`text-left border rounded-2xl px-4 py-3.5 shadow-sm transition-all ${tone.card} ${c.click ? `${tone.hover} hover:-translate-y-0.5 cursor-pointer` : ''}`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-[11.5px] font-semibold text-gray-500">{c.label}</span>
-              <span className={`w-7 h-7 rounded-lg grid place-items-center ${TONES[c.tone]}`}>{c.icon}</span>
+              <span className="text-[11.5px] font-semibold text-gray-600">{c.label}</span>
+              <span className={`w-7 h-7 rounded-lg grid place-items-center bg-white/70 ${tone.icon}`}>{c.icon}</span>
             </div>
-            <div className="text-2xl font-extrabold tracking-tight mt-2 tabular-nums text-gray-900">{c.val}</div>
+            <div className={`text-2xl font-extrabold tracking-tight mt-2 tabular-nums ${tone.val}`}>{c.val}</div>
           </Tag>
         );
       })}

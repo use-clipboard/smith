@@ -69,7 +69,7 @@ export default function TasksSlimRail({
   }
 
   return (
-    <div ref={railRef} className="relative w-14 flex-shrink-0 border-r border-gray-200 bg-white flex flex-col items-center py-3 gap-1">
+    <div ref={railRef} className="relative w-14 shrink-0 my-3 ml-3 rounded-2xl border border-slate-200 bg-slate-50 shadow flex flex-col items-center py-2.5 gap-1 self-start" style={{ minHeight: 'calc(100% - 1.5rem)' }}>
       <RailBtn icon={<ListTodo className={IC} />} label="My Work" active={isMyWork} badge={myCount} onClick={() => goList({ scope: 'me' })} />
       <RailBtn icon={<LayoutGrid className={IC} />} label="All Tasks" active={isAllWork} onClick={() => goList({ scope: 'firm' })} />
 
@@ -116,15 +116,15 @@ export default function TasksSlimRail({
       {/* Calendar layout (Week / Month toggle lives inside it) */}
       <RailBtn icon={<CalendarDays className={IC} />} label="Calendar" active={isCalActive} onClick={() => goList({ layout: 'calendar' })} />
 
-      <div className="w-7 h-px bg-gray-200 my-1.5" />
+      <div className="w-6 h-px bg-slate-200 my-1.5" />
 
       <RailBtn icon={<BookTemplate className={IC} />} label="Templates" active={view === 'templates'} badge={templatesCount} badgeTone="gray" onClick={() => { setView('templates'); setPop(null); }} />
       {isAdmin && <RailBtn icon={<FileStack className={IC} />} label="Drafts" active={view === 'drafts'} badge={draftCount} badgeTone="amber" onClick={() => { setView('drafts'); setPop(null); }} />}
       <RailBtn icon={<History className={IC} />} label="History" active={view === 'history'} onClick={() => { setView('history'); setPop(null); }} />
 
       <div className="flex-1" />
-      <Tooltip label="Refresh">
-        <button onClick={onRefresh} aria-label="Refresh" className="w-10 h-10 rounded-xl grid place-items-center text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+      <Tooltip label="Refresh" side="right">
+        <button onClick={onRefresh} aria-label="Refresh" className="w-10 h-10 rounded-lg grid place-items-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
           <RefreshCw className="h-4 w-4" />
         </button>
       </Tooltip>
@@ -137,19 +137,20 @@ function RailBtn({ icon, label, active, badge, badgeTone = 'indigo', open, onCli
   badgeTone?: 'indigo' | 'amber' | 'gray'; open?: boolean; onClick: () => void;
 }) {
   const toneCls = badgeTone === 'amber' ? 'bg-amber-500 text-white'
-    : badgeTone === 'gray' ? 'bg-gray-200 text-gray-600' : 'bg-indigo-500 text-white';
+    : badgeTone === 'gray' ? 'bg-slate-200 text-slate-600' : 'bg-indigo-500 text-white';
   return (
-    <Tooltip label={label}>
+    <Tooltip label={label} side="right">
       <button
         onClick={onClick}
         aria-label={label}
-        className={`relative w-10 h-10 rounded-xl grid place-items-center transition-colors ${
-          active || open ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+        aria-pressed={active}
+        className={`relative w-10 h-10 rounded-lg grid place-items-center transition-colors ${
+          active || open ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
         }`}
       >
         {icon}
         {badge != null && badge > 0 && (
-          <span className={`absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold grid place-items-center tabular-nums ${active || open ? 'bg-white text-indigo-600' : toneCls}`}>
+          <span className={`absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold grid place-items-center tabular-nums ${toneCls}`}>
             {badge > 999 ? '999+' : badge}
           </span>
         )}

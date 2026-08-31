@@ -20,7 +20,8 @@ import TaskFilters from './TaskFilters';
 import DueWindowChips from './DueWindowChips';
 import ExportTasksButton from './ExportTasksButton';
 import { classifyTasks, applyDueFilter, type DueWindow } from './dueWindow';
-import { List, Kanban, CalendarDays, GanttChartSquare, Layers, ChevronDown } from 'lucide-react';
+import { List, Kanban, CalendarDays, GanttChartSquare, Layers, ChevronDown, PanelRight } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import TemplateLibrary from './TemplateLibrary';
 import DueDatePill from './DueDatePill';
 import TaskDetailPanel from './TaskDetailPanel';
@@ -69,6 +70,17 @@ export default function TasksPage() {
   const [showBulkTask, setShowBulkTask] = useState(false);
   // Right insight rail — overlay drawer on narrow screens (auto-collapsed by CSS).
   const [railOpen, setRailOpen] = useState(false);
+  // Collapse the top KPI panels / the wide right rail to maximise the task list.
+  const [kpiOpen, setKpiOpen] = useState(true);
+  const [railWideOpen, setRailWideOpen] = useState(true);
+  useEffect(() => {
+    try {
+      const k = localStorage.getItem('smith:tasks_kpi_open'); if (k !== null) setKpiOpen(k === '1');
+      const r = localStorage.getItem('smith:tasks_rail_open'); if (r !== null) setRailWideOpen(r === '1');
+    } catch { /* ignore */ }
+  }, []);
+  function toggleKpi() { setKpiOpen(v => { const n = !v; try { localStorage.setItem('smith:tasks_kpi_open', n ? '1' : '0'); } catch { /* */ } return n; }); }
+  function toggleRailWide() { setRailWideOpen(v => { const n = !v; try { localStorage.setItem('smith:tasks_rail_open', n ? '1' : '0'); } catch { /* */ } return n; }); }
 
   // Grid vs list view mode.
   // Priority: sessionStorage (session override) → localStorage default preference → 'list'
@@ -451,19 +463,20 @@ export default function TasksPage() {
   // Layout tabs (List / Board / Calendar / Timeline).
   const [layout, setLayout] = useState<'list' | 'board' | 'calendar' | 'timeline'>('list');
 
-  // Scope (me/firm) + text/status/client/assignee filters. Feeds the due-window
-  // chips (counts), the due filter, and every layout.
-  const scopedFiltered = useMemo(() => {
-    const base = scope === 'me' ? tasks.filter(t => t.steps?.some(s => s.assignee_id === currentUserId)) : tasks;
-    return base.filter(t => {
-      if (search) { const n = search.toLowerCase(); if (!`${t.title} ${t.client?.name ?? ''} ${t.client?.client_ref ?? ''}`.toLowerCase().includes(n)) return false; }
-      if (statusFilter === 'open' ? t.status === 'complete' : (statusFilter !== 'all' && t.status !== statusFilter)) return false;
-      if (clientFilter === 'internal' && !t.is_internal) return false;
-      if (clientFilter && clientFilter !== 'internal' && t.client_id !== clientFilter) return false;
-      if (assigneeFilter && !t.steps?.some(s => s.assignee_id === assigneeFilter)) return false;
-      return true;
-    });
-  }, [tasks, scope, currentUserId, search, statusFilter, clientFilter, assigneeFilter]);
+  // Scope-only set (drives the KPI panels — "my tasks" vs "all firm tasks").
+  const scopeTasks = useMemo(
+    () => (scope === 'me' ? tasks.filter(t => t.steps?.some(s => s.assignee_id === currentUserId)) : tasks),
+    [tasks, scope, currentUserId],
+  );
+  // …plus text/status/client/assignee filters. Feeds the due chips + the list.
+  const scopedFiltered = useMemo(() => scopeTasks.filter(t => {
+    if (search) { const n = search.toLowerCase(); if (!`${t.title} ${t.client?.name ?? ''} ${t.client?.client_ref ?? ''}`.toLowerCase().includes(n)) return false; }
+    if (statusFilter === 'open' ? t.status === 'complete' : (statusFilter !== 'all' && t.status !== statusFilter)) return false;
+    if (clientFilter === 'internal' && !t.is_internal) return false;
+    if (clientFilter && clientFilter !== 'internal' && t.client_id !== clientFilter) return false;
+    if (assigneeFilter && !t.steps?.some(s => s.assignee_id === assigneeFilter)) return false;
+    return true;
+  }), [scopeTasks, search, statusFilter, clientFilter, assigneeFilter]);
 
   const { classMap: dueClassMap, counts: dueCounts } = useMemo(() => classifyTasks(scopedFiltered), [scopedFiltered]);
   const visibleTasks = useMemo(() => applyDueFilter(scopedFiltered, dueClassMap, dueFilter), [scopedFiltered, dueClassMap, dueFilter]);
@@ -546,15 +559,15 @@ export default function TasksPage() {
           </div>
         </div>
 
-        {/* KPI strip — click a card to filter the list */}
-        {isTaskListView && (
+        {/* KPI strip — reflects the current Scope; click a card to filter */}
+        {isTaskListView && kpiOpen && (
           <div className="px-6 pt-4 flex-shrink-0">
             <TasksKpiStrip
-              tasks={tasks}
+              tasks={scopeTasks}
               onSelect={(f) => {
                 setLayout('list');
-                if (f === 'open') { setScope('firm'); setDueFilter('all'); setStatusFilter('open'); }
-                else { setScope('firm'); setDueFilter(f); }
+                if (f === 'open') { setDueFilter('all'); setStatusFilter('open'); }
+                else setDueFilter(f);
               }}
             />
           </div>
@@ -589,6 +602,18 @@ export default function TasksPage() {
               {layout === 'list' && <GroupByControl value={groupBy} onChange={setGroupBy} />}
               {layout === 'list' && <ViewModeToggle />}
               <ExportTasksButton tasks={visibleTasks} filename="tasks" />
+              <Tooltip label={kpiOpen ? 'Hide stats' : 'Show stats'}>
+                <button onClick={toggleKpi} aria-label="Toggle stats panel" aria-pressed={kpiOpen}
+                  className={`w-9 h-9 rounded-lg grid place-items-center border transition-colors ${kpiOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-700'}`}>
+                  <BarChart3 className="h-4 w-4" />
+                </button>
+              </Tooltip>
+              <Tooltip label={railWideOpen ? 'Hide side panel' : 'Show side panel'}>
+                <button onClick={toggleRailWide} aria-label="Toggle side panel" aria-pressed={railWideOpen}
+                  className={`hidden min-[1180px]:grid w-9 h-9 rounded-lg place-items-center border transition-colors ${railWideOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-700'}`}>
+                  <PanelRight className="h-4 w-4" />
+                </button>
+              </Tooltip>
             </div>
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <TaskFilters
@@ -673,8 +698,8 @@ export default function TasksPage() {
         </div>
           </main>
 
-          {/* Right insight rail — auto-collapses below 1180px (see drawer below) */}
-          {isTaskListView && (
+          {/* Right insight rail — auto-collapses below 1180px + manual toggle */}
+          {isTaskListView && railWideOpen && (
             <aside className="hidden min-[1180px]:flex flex-col w-[316px] flex-shrink-0 border-l border-gray-200 bg-gray-50/40 px-4 pt-4 pb-6 overflow-hidden">
               <TasksRightRail
                 tasks={tasks}
