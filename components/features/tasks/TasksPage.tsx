@@ -549,6 +549,23 @@ export default function TasksPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {(view === 'list' || view === 'department') && (
+              <>
+                <Tooltip label={kpiOpen ? 'Hide stats' : 'Show stats'}>
+                  <button onClick={toggleKpi} aria-label="Toggle stats panel" aria-pressed={kpiOpen}
+                    className={`w-9 h-9 rounded-lg grid place-items-center border transition-colors ${kpiOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-700'}`}>
+                    <BarChart3 className="h-4 w-4" />
+                  </button>
+                </Tooltip>
+                <Tooltip label={railWideOpen ? 'Hide side panel' : 'Show side panel'}>
+                  <button onClick={toggleRailWide} aria-label="Toggle side panel" aria-pressed={railWideOpen}
+                    className={`hidden min-[1180px]:grid w-9 h-9 rounded-lg place-items-center border transition-colors ${railWideOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-700'}`}>
+                    <PanelRight className="h-4 w-4" />
+                  </button>
+                </Tooltip>
+                <span className="w-px h-6 bg-gray-200 mx-0.5" />
+              </>
+            )}
             <button
               onClick={() => setShowTaskTypeSelector(true)}
               className="inline-flex items-center gap-1.5 bg-indigo-600 text-white text-sm px-3.5 py-2 rounded-lg hover:bg-indigo-700 font-semibold transition-colors"
@@ -571,12 +588,23 @@ export default function TasksPage() {
           <div className="px-6 pt-4 flex-shrink-0">
             <TasksKpiStrip
               tasks={view === 'list' ? scopeTasks : departmentTasks}
-              onSelect={view === 'list' ? ((f) => {
-                setLayout('list');
-                if (f === 'open') { setDueFilter('all'); setStatusFilter('open'); }
-                else setDueFilter(f);
-              }) : undefined}
+              onSelect={(f) => {
+                if (view === 'list') {
+                  setLayout('list');
+                  if (f === 'open') { setDueFilter('all'); setStatusFilter('open'); }
+                  else setDueFilter(f);
+                } else {
+                  setDueFilter(f === 'open' ? 'all' : f);
+                }
+              }}
             />
+          </div>
+        )}
+
+        {/* Later / No-due-date quick filters + active-filter clear (both views) */}
+        {(view === 'list' || view === 'department') && (
+          <div className="px-6 pt-2.5 flex-shrink-0">
+            <DueFilterPills value={dueFilter} onChange={setDueFilter} />
           </div>
         )}
 
@@ -595,7 +623,7 @@ export default function TasksPage() {
               <div className="inline-flex bg-gray-100 border border-gray-200 rounded-lg p-0.5">
                 {([
                   { id: 'list', label: 'List', Icon: List },
-                  { id: 'board', label: 'Board', Icon: Kanban },
+                  { id: 'board', label: 'Kanban', Icon: Kanban },
                   { id: 'calendar', label: 'Calendar', Icon: CalendarDays },
                   { id: 'timeline', label: 'Timeline', Icon: GanttChartSquare },
                 ] as const).map(({ id, label, Icon }) => (
@@ -609,18 +637,6 @@ export default function TasksPage() {
               {layout === 'list' && <GroupByControl value={groupBy} onChange={setGroupBy} />}
               {layout === 'list' && <ViewModeToggle />}
               <ExportTasksButton tasks={visibleTasks} filename="tasks" />
-              <Tooltip label={kpiOpen ? 'Hide stats' : 'Show stats'}>
-                <button onClick={toggleKpi} aria-label="Toggle stats panel" aria-pressed={kpiOpen}
-                  className={`w-9 h-9 rounded-lg grid place-items-center border transition-colors ${kpiOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-700'}`}>
-                  <BarChart3 className="h-4 w-4" />
-                </button>
-              </Tooltip>
-              <Tooltip label={railWideOpen ? 'Hide side panel' : 'Show side panel'}>
-                <button onClick={toggleRailWide} aria-label="Toggle side panel" aria-pressed={railWideOpen}
-                  className={`hidden min-[1180px]:grid w-9 h-9 rounded-lg place-items-center border transition-colors ${railWideOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-700'}`}>
-                  <PanelRight className="h-4 w-4" />
-                </button>
-              </Tooltip>
             </div>
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <TaskFilters
@@ -653,7 +669,7 @@ export default function TasksPage() {
               onDelete={handleDelete} onStopRecurrence={handleStopRecurrence}
             />
           ) : layout === 'board' ? (
-            <BoardView tasks={visibleTasks} currentUserId={currentUserId} onTaskClick={setSelectedTask} isAdmin={isAdmin} onDelete={handleDelete} onStopRecurrence={handleStopRecurrence} />
+            <BoardView tasks={visibleTasks} currentUserId={currentUserId} onTaskClick={setSelectedTask} onTaskUpdate={handleUpdate} isAdmin={isAdmin} onDelete={handleDelete} onStopRecurrence={handleStopRecurrence} />
           ) : layout === 'calendar' ? (
             <CalendarView tasks={visibleTasks} currentUserId={currentUserId} onTaskClick={setSelectedTask} onStepUpdate={handleStepUpdate} onTaskUpdate={handleUpdate} viewMode={viewMode} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={handleDelete} onStopRecurrence={handleStopRecurrence} />
           ) : (
@@ -668,6 +684,7 @@ export default function TasksPage() {
             teamMembers={teamMembers}
             currentUserId={currentUserId}
             isAdmin={isAdmin}
+            dueFilter={dueFilter}
             onTaskClick={setSelectedTask}
             onStepUpdate={handleStepUpdate}
             onTaskUpdate={handleUpdate}
@@ -705,10 +722,10 @@ export default function TasksPage() {
           </main>
 
           {/* Right insight rail — auto-collapses below 1180px + manual toggle */}
-          {isTaskListView && railWideOpen && (
+          {(view === 'list' || view === 'department') && railWideOpen && (
             <aside className="hidden min-[1180px]:flex flex-col w-[316px] flex-shrink-0 border-l border-gray-200 bg-gray-50/40 px-4 pt-4 pb-6 overflow-y-auto scrollbar-thin">
               <TasksRightRail
-                tasks={tasks}
+                tasks={view === 'list' ? tasks : departmentTasks}
                 currentUserId={currentUserId}
                 onViewMine={() => { setView('list'); setScope('me'); setLayout('list'); }}
                 onExploreTemplates={() => setView('templates')}
@@ -720,7 +737,7 @@ export default function TasksPage() {
       </div>
 
       {/* Narrow screens: the right rail collapses to a floating button + drawer */}
-      {isTaskListView && (
+      {(view === 'list' || view === 'department') && railWideOpen && (
         <>
           <button
             onClick={() => setRailOpen(true)}
@@ -737,7 +754,7 @@ export default function TasksPage() {
                   <button onClick={() => setRailOpen(false)} aria-label="Close" className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-500"><X className="h-4 w-4" /></button>
                 </div>
                 <TasksRightRail
-                  tasks={tasks}
+                  tasks={view === 'list' ? tasks : departmentTasks}
                   currentUserId={currentUserId}
                   onViewMine={() => { setView('list'); setScope('me'); setLayout('list'); setRailOpen(false); }}
                   onExploreTemplates={() => { setView('templates'); setRailOpen(false); }}
@@ -900,6 +917,36 @@ function GroupByControl({ value, onChange }: { value: GroupBy; onChange: (g: Gro
             </button>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Due-window quick filters (Later / No due date) + active-filter clear ──────
+
+const DUE_LABEL: Record<string, string> = {
+  overdue: 'Overdue', today: 'Due today', this_week: 'This week', later: 'Later', no_due: 'No due date',
+};
+
+function DueFilterPills({ value, onChange }: { value: DueWindow; onChange: (v: DueWindow) => void }) {
+  const pill = (v: DueWindow, label: string) => (
+    <button
+      onClick={() => onChange(value === v ? 'all' : v)}
+      className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+        value === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300 hover:text-indigo-700'
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      {pill('later', 'Later')}
+      {pill('no_due', 'No due date')}
+      {value !== 'all' && (
+        <button onClick={() => onChange('all')} className="text-xs font-medium text-gray-500 hover:text-red-500 inline-flex items-center gap-1">
+          <X className="h-3 w-3" /> Clear filter{value !== 'later' && value !== 'no_due' ? ` · ${DUE_LABEL[value] ?? value}` : ''}
+        </button>
       )}
     </div>
   );

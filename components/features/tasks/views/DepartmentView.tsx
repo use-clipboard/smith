@@ -11,6 +11,7 @@ import Tooltip from '@/components/ui/Tooltip';
 import GlassSelect from '@/components/ui/GlassSelect';
 import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import { exportTaskGroupsXlsx } from '@/utils/taskExport';
+import { classifyDue, startOfDay, type DueWindow } from '../dueWindow';
 import type { Task, TaskStatus, TaskStep, TaskTemplate } from '@/types';
 
 interface TeamMember { id: string; full_name: string | null; email: string }
@@ -33,6 +34,8 @@ interface Props {
   teamMembers: TeamMember[];
   currentUserId: string;
   isAdmin: boolean;
+  /** External due-window filter (driven by the KPI cards / Later·No-due pills). */
+  dueFilter?: DueWindow;
   onTaskClick: (task: Task) => void;
   onStepUpdate: (taskId: string, stepId: string, updates: Partial<TaskStep>) => Promise<void>;
   onTaskUpdate: (taskId: string, updates: Partial<Task>) => Promise<void>;
@@ -74,7 +77,7 @@ function daysBetween(a: Date, b: Date): number {
 }
 
 export default function DepartmentView({
-  category, tasks, templates, clients, teamMembers, currentUserId, isAdmin,
+  category, tasks, templates, clients, teamMembers, currentUserId, isAdmin, dueFilter = 'all',
   onTaskClick, onStepUpdate, onTaskUpdate, onDelete, onStopRecurrence,
 }: Props) {
   const label = TEMPLATE_CATEGORY_LABELS[category] ?? category;
@@ -207,11 +210,16 @@ export default function DepartmentView({
     return m;
   }, [tasksMatchingFilters]);
 
-  // ── Effective task list (active tab applied on top) ─────────────────────────
+  // ── Effective task list (active tab + external due-window filter applied) ───
   const filteredTasks = useMemo(() => {
-    if (activeTemplateId === 'all') return tasksMatchingFilters;
-    return tasksMatchingFilters.filter(t => t.template_id === activeTemplateId);
-  }, [tasksMatchingFilters, activeTemplateId]);
+    let arr = activeTemplateId === 'all' ? tasksMatchingFilters : tasksMatchingFilters.filter(t => t.template_id === activeTemplateId);
+    if (dueFilter !== 'all') {
+      const today = startOfDay(new Date());
+      const weekEnd = new Date(today.getTime() + 7 * 86_400_000);
+      arr = arr.filter(t => classifyDue(t, today, weekEnd) === dueFilter);
+    }
+    return arr;
+  }, [tasksMatchingFilters, activeTemplateId, dueFilter]);
 
   // ── Aggregate stats for the summary chips ───────────────────────────────────
   const stats = useMemo(() => {
