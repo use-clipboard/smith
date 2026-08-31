@@ -1,23 +1,29 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { OPEN_TASK_EVENT, OPEN_TASK_KEY } from '@/lib/notificationTarget';
 import {
-  CheckSquare, Plus, ListTodo, Users, Building2, LayoutGrid, Layers,
-  BookTemplate, Loader2, RefreshCw, FileStack, PlayCircle, List,
-  CalendarDays, CalendarRange, History, ChevronDown, ChevronRight,
+  CheckSquare, Plus, Loader2, FileStack, PlayCircle,
+  BarChart3, X,
 } from 'lucide-react';
 import { ViewModeProvider } from './ViewModeToggle';
+import TasksSlimRail from './TasksSlimRail';
+import TasksKpiStrip from './TasksKpiStrip';
+import TasksRightRail from './TasksRightRail';
 import MyTasksView from './views/MyTasksView';
 import HistoryView from './views/HistoryView';
 import DepartmentView from './views/DepartmentView';
-import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import MyWeekView from './views/MyWeekView';
 import MyMonthView from './views/MyMonthView';
 import AllTasksView from './views/AllTasksView';
 import ByClientView from './views/ByClientView';
 import ByTeamView from './views/ByTeamView';
 import ByTypeView from './views/ByTypeView';
+import BoardView from './views/BoardView';
+import CalendarView from './views/CalendarView';
+import TimelineView from './views/TimelineView';
+import TaskFilters from './TaskFilters';
+import { List, Kanban, CalendarDays, GanttChartSquare } from 'lucide-react';
 import TemplateLibrary from './TemplateLibrary';
 import DueDatePill from './DueDatePill';
 import TaskDetailPanel from './TaskDetailPanel';
@@ -29,7 +35,6 @@ import TaskDeadlineLinksProvider, { triggerDeadlineLinksRefetch } from './TaskDe
 import TaskClientStatusPolicyProvider from './TaskClientStatusPolicyProvider';
 import TaskTypeSelector from './TaskTypeSelector';
 import QuickTaskModal from './QuickTaskModal';
-import Tooltip from '@/components/ui/Tooltip';
 import { useTaskCountsOrZero } from '@/components/ui/TasksCountProvider';
 import type {
   Task, TaskStatus, TaskStep, TaskTemplate, DefaultTemplate,
@@ -40,42 +45,12 @@ type ViewId = 'my' | 'my-week' | 'my-month' | 'all' | 'by-client' | 'by-team' | 
 interface TeamMember { id: string; full_name: string | null; email: string }
 interface ClientRef  { id: string; name: string; client_ref: string; business_type?: string | null; status?: string | null; }
 
-const MY_NAV_ITEMS: { id: ViewId; label: string; icon: React.ElementType }[] = [
-  { id: 'my',       label: 'My Tasks',  icon: ListTodo },
-  { id: 'my-week',  label: 'My Week',   icon: CalendarDays },
-  { id: 'my-month', label: 'My Month',  icon: CalendarRange },
-];
-
-const FIRM_NAV_ITEMS: { id: ViewId; label: string; icon: React.ElementType }[] = [
-  { id: 'all',       label: 'All Tasks',  icon: LayoutGrid },
-  { id: 'by-client', label: 'By Client',  icon: Building2 },
-  { id: 'by-team',   label: 'By Team',    icon: Users },
-  { id: 'by-type',   label: 'By Type',    icon: Layers },
-  { id: 'history',   label: 'History',    icon: History },
-];
-
 export default function TasksPage() {
   const [view, setView] = useState<ViewId>('my');
   const [activeDepartment, setActiveDepartment] = useState<string | null>(null);
   const [departments, setDepartments] = useState<{ category: string; count: number }[]>([]);
 
   // Collapsible sidebar sections — persisted per browser.
-  // Start empty so SSR + first client render match, then hydrate from localStorage
-  // in an effect to avoid a Next.js hydration mismatch.
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('smith:tasks_sidebar_collapsed');
-      if (raw) setCollapsedSections(JSON.parse(raw));
-    } catch { /* ignore corrupt JSON */ }
-  }, []);
-  function toggleSection(key: string) {
-    setCollapsedSections(prev => {
-      const next = { ...prev, [key]: !prev[key] };
-      if (typeof window !== 'undefined') localStorage.setItem('smith:tasks_sidebar_collapsed', JSON.stringify(next));
-      return next;
-    });
-  }
   const [tasks, setTasks] = useState<Task[]>([]);
   // Set after deleting a task linked to a client Service — prompts to end it too.
   const [endServicePrompt, setEndServicePrompt] = useState<{ id: string; name: string; clientId: string } | null>(null);
@@ -84,12 +59,12 @@ export default function TasksPage() {
   const [clients, setClients] = useState<ClientRef[]>([]);
   const [currentUserId, setCurrentUserId] = useState('');
   const [currentUserRole, setCurrentUserRole] = useState<'admin' | 'staff'>('staff');
-  const [currentUserName, setCurrentUserName] = useState('');
-  const [firmName, setFirmName] = useState('');
   const [loading, setLoading] = useState(true);
 
   // Bulk tasks modal
   const [showBulkTask, setShowBulkTask] = useState(false);
+  // Right insight rail — overlay drawer on narrow screens (auto-collapsed by CSS).
+  const [railOpen, setRailOpen] = useState(false);
 
   // Grid vs list view mode.
   // Priority: sessionStorage (session override) → localStorage default preference → 'list'
@@ -191,8 +166,6 @@ export default function TasksPage() {
         const d = await profileRes.value.json();
         setCurrentUserId(d.userId ?? '');
         setCurrentUserRole(d.userRole === 'admin' ? 'admin' : 'staff');
-        setCurrentUserName(d.full_name ?? '');
-        setFirmName(d.firm_name ?? '');
       }
     } finally {
       setLoading(false);
@@ -475,6 +448,25 @@ export default function TasksPage() {
   const draftTasks = tasks.filter(t => t.status === 'draft');
   const draftCount = draftTasks.length;
 
+  // The KPI strip + right rail show on the task-list views, not the standalone
+  // modes (templates / drafts / history) which manage their own full-width UI.
+  const isTaskListView = !['templates', 'drafts', 'history'].includes(view);
+
+  // Layout tabs (List / Board / Calendar / Timeline). List keeps the existing
+  // per-nav views; the others render over the shared filter set below.
+  const [layout, setLayout] = useState<'list' | 'board' | 'calendar' | 'timeline'>('list');
+  const layoutFilteredTasks = useMemo(() => tasks.filter(t => {
+    if (search) {
+      const needle = search.toLowerCase();
+      if (!`${t.title} ${t.client?.name ?? ''} ${t.client?.client_ref ?? ''}`.toLowerCase().includes(needle)) return false;
+    }
+    if (statusFilter === 'open' ? t.status === 'complete' : (statusFilter !== 'all' && t.status !== statusFilter)) return false;
+    if (clientFilter === 'internal' && !t.is_internal) return false;
+    if (clientFilter && clientFilter !== 'internal' && t.client_id !== clientFilter) return false;
+    if (assigneeFilter && !t.steps?.some(s => s.assignee_id === assigneeFilter)) return false;
+    return true;
+  }), [tasks, search, statusFilter, clientFilter, assigneeFilter]);
+
   function handleSetViewMode(mode: 'grid' | 'list') {
     setViewMode(mode);
     sessionStorage.setItem('tasks_view_mode', mode);
@@ -519,173 +511,109 @@ export default function TasksPage() {
       </div>
     )}
     <div className="flex h-full">
-      {/* Sidebar nav */}
-      <aside className="w-52 border-r border-[var(--border)] bg-white/[0.78] backdrop-blur-md flex flex-col flex-shrink-0">
-        <div className="px-4 py-4 border-b border-gray-100">
-          <div className="flex items-center gap-2 mb-3">
-            <CheckSquare className="h-5 w-5 text-indigo-600" />
-            <h1 className="text-base font-bold text-gray-900">Tasks</h1>
+      {/* Slim hybrid icon rail — replaces the fat Tasks sub-sidebar. Every
+          destination stays one click / popover away. */}
+      <TasksSlimRail
+        view={view}
+        setView={(v) => setView(v as ViewId)}
+        activeDepartment={activeDepartment}
+        onSelectDepartment={(c) => { setActiveDepartment(c); setView('department'); }}
+        departments={departments}
+        myCount={myTaskCount}
+        draftCount={draftCount}
+        templatesCount={templates.length}
+        isAdmin={isAdmin}
+        onRefresh={loadAll}
+      />
+
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Page header — title + New Task (New Task / Bulk relocated here) */}
+        <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            <span className="w-9 h-9 rounded-xl bg-indigo-600 grid place-items-center text-white flex-shrink-0"><CheckSquare className="h-5 w-5" /></span>
+            <div>
+              <h1 className="text-lg font-bold text-gray-900 leading-tight">Tasks</h1>
+              <p className="text-xs text-gray-500">Stay on top of work across your firm.</p>
+            </div>
           </div>
-          <button
-            onClick={() => setShowTaskTypeSelector(true)}
-            className="w-full flex items-center justify-center gap-1.5 bg-indigo-600 text-white text-sm py-2 rounded-lg hover:bg-indigo-700 font-medium transition-colors"
-          >
-            <Plus className="h-4 w-4" /> New Task
-          </button>
-          {currentUserRole === 'admin' && (
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
-              onClick={() => setShowBulkTask(true)}
-              className="mt-2 w-full flex items-center justify-center gap-1.5 bg-white border border-gray-200 text-gray-700 text-sm py-2 rounded-lg hover:bg-gray-50 font-medium transition-colors"
+              onClick={() => setShowTaskTypeSelector(true)}
+              className="inline-flex items-center gap-1.5 bg-indigo-600 text-white text-sm px-3.5 py-2 rounded-lg hover:bg-indigo-700 font-semibold transition-colors"
             >
-              <FileStack className="h-4 w-4 text-indigo-500" /> Bulk Tasks
+              <Plus className="h-4 w-4" /> New Task
             </button>
-          )}
+            {currentUserRole === 'admin' && (
+              <button
+                onClick={() => setShowBulkTask(true)}
+                className="inline-flex items-center gap-1.5 bg-white border border-gray-200 text-gray-700 text-sm px-3 py-2 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
+              >
+                <FileStack className="h-4 w-4 text-indigo-500" /> Bulk
+              </button>
+            )}
+          </div>
         </div>
 
-        <nav className="flex-1 py-2 overflow-y-auto">
-          {/* Personal group */}
-          <button
-            onClick={() => toggleSection('personal')}
-            className="w-full px-4 pt-3 pb-1 flex items-center gap-1 text-left group"
-            aria-expanded={!collapsedSections.personal}
-          >
-            {collapsedSections.personal
-              ? <ChevronRight size={10} className="text-gray-400" />
-              : <ChevronDown  size={10} className="text-gray-400" />}
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 truncate group-hover:text-gray-600 transition-colors">
-              {currentUserName || 'My Work'}
-            </p>
-          </button>
-          {!collapsedSections.personal && MY_NAV_ITEMS.map(item => {
-            const Icon = item.icon;
-            const isActive = view === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setView(item.id)}
-                className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
-                  isActive ? 'bg-indigo-50 text-indigo-700 font-semibold border-r-2 border-indigo-500' : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <Icon className={`h-4 w-4 flex-shrink-0 ${isActive ? 'text-indigo-600' : 'text-gray-400'}`} />
-                <span className="truncate">{item.label}</span>
-                {item.id === 'my' && myTaskCount > 0 && (
-                  <span className="ml-auto text-xs bg-indigo-500 text-white rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
-                    {myTaskCount}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+        {/* KPI strip — task-list views only */}
+        {isTaskListView && (
+          <div className="px-6 pt-4 flex-shrink-0">
+            <TasksKpiStrip tasks={tasks} onOpenAll={() => setView('all')} />
+          </div>
+        )}
 
-          {/* Firm group */}
-          <button
-            onClick={() => toggleSection('firm')}
-            className="w-full px-4 pt-4 pb-1 flex items-center gap-1 text-left group"
-            aria-expanded={!collapsedSections.firm}
-          >
-            {collapsedSections.firm
-              ? <ChevronRight size={10} className="text-gray-400" />
-              : <ChevronDown  size={10} className="text-gray-400" />}
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 truncate group-hover:text-gray-600 transition-colors">
-              {firmName || 'My Firm'}
-            </p>
-          </button>
-          {!collapsedSections.firm && FIRM_NAV_ITEMS.map(item => {
-            const Icon = item.icon;
-            const isActive = view === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setView(item.id)}
-                className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
-                  isActive ? 'bg-indigo-50 text-indigo-700 font-semibold border-r-2 border-indigo-500' : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <Icon className={`h-4 w-4 flex-shrink-0 ${isActive ? 'text-indigo-600' : 'text-gray-400'}`} />
-                <span className="truncate">{item.label}</span>
-              </button>
-            );
-          })}
+        {/* View tabs — List / Board / Calendar / Timeline */}
+        {isTaskListView && (
+          <div className="px-6 pt-3 flex-shrink-0">
+            <div className="inline-flex bg-gray-100 border border-gray-200 rounded-lg p-0.5">
+              {([
+                { id: 'list', label: 'List', Icon: List },
+                { id: 'board', label: 'Board', Icon: Kanban },
+                { id: 'calendar', label: 'Calendar', Icon: CalendarDays },
+                { id: 'timeline', label: 'Timeline', Icon: GanttChartSquare },
+              ] as const).map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setLayout(id)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12.5px] font-semibold transition-colors ${
+                    layout === id ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" /> {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
-          {/* Departments — listed only if they have active tasks */}
-          {departments.length > 0 && (
-            <>
-              <button
-                onClick={() => toggleSection('departments')}
-                className="w-full px-4 pt-4 pb-1 flex items-center gap-1 text-left group"
-                aria-expanded={!collapsedSections.departments}
-              >
-                {collapsedSections.departments
-                  ? <ChevronRight size={10} className="text-gray-400" />
-                  : <ChevronDown  size={10} className="text-gray-400" />}
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 truncate group-hover:text-gray-600 transition-colors">Departments</p>
-              </button>
-              {!collapsedSections.departments && departments.map(dept => {
-                const isActive = view === 'department' && activeDepartment === dept.category;
-                const label = TEMPLATE_CATEGORY_LABELS[dept.category] ?? dept.category;
-                return (
-                  <button
-                    key={dept.category}
-                    onClick={() => { setActiveDepartment(dept.category); setView('department'); }}
-                    className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
-                      isActive ? 'bg-indigo-50 text-indigo-700 font-semibold border-r-2 border-indigo-500' : 'text-gray-600 hover:bg-gray-50'
-                    }`}
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${isActive ? 'bg-indigo-500' : 'bg-gray-300'}`} />
-                    <span className="truncate">{label}</span>
-                    <span className="ml-auto text-[10px] text-gray-400">{dept.count}</span>
-                  </button>
-                );
-              })}
-            </>
-          )}
-        </nav>
-
-        <div className="border-t border-gray-100 py-2">
-          {currentUserRole === 'admin' && (
-            <button
-              onClick={() => setView('drafts')}
-              className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
-                view === 'drafts' ? 'bg-indigo-50 text-indigo-700 font-semibold border-r-2 border-indigo-500' : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              <FileStack className={`h-4 w-4 flex-shrink-0 ${view === 'drafts' ? 'text-indigo-600' : 'text-gray-400'}`} />
-              <span>Drafts</span>
-              {draftCount > 0 && (
-                <span className="ml-auto text-xs bg-amber-500 text-white rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
-                  {draftCount}
-                </span>
-              )}
-            </button>
-          )}
-          <button
-            onClick={() => setView('templates')}
-            className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
-              view === 'templates' ? 'bg-indigo-50 text-indigo-700 font-semibold border-r-2 border-indigo-500' : 'text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            <BookTemplate className={`h-4 w-4 flex-shrink-0 ${view === 'templates' ? 'text-indigo-600' : 'text-gray-400'}`} />
-            <span>Templates</span>
-            <span className="ml-auto text-xs text-gray-400">{templates.length}</span>
-          </button>
-        </div>
-
-        <div className="px-4 py-3 border-t border-gray-100">
-          <button onClick={loadAll} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600">
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
-          </button>
-        </div>
-      </aside>
-
-      {/* Main content — the card/list toggle now lives inside each view's
-          toolbar (next to Export) via <ViewModeToggle/>, so no separate row. */}
-      <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <div className="flex-1 flex min-h-0 overflow-hidden">
+          <main className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-6 pt-5 pb-6">
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <Loader2 className="h-6 w-6 animate-spin text-[#5b21b6]" />
+          </div>
+        ) : isTaskListView && layout !== 'list' ? (
+          <div className="pt-1">
+            <div className="sticky top-0 z-30 backdrop-blur-md pb-3 flex items-center justify-between flex-wrap gap-2">
+              <TaskFilters
+                search={search} onSearchChange={setSearch}
+                statusFilter={statusFilter} onStatusChange={setStatusFilter}
+                clientFilter={clientFilter} onClientChange={setClientFilter}
+                assigneeFilter={assigneeFilter} onAssigneeChange={setAssigneeFilter}
+                clients={clients} teamMembers={teamMembers} onClear={clearFilters}
+              />
+              <p className="text-xs font-bold text-[var(--text-primary)]">{layoutFilteredTasks.length} task{layoutFilteredTasks.length !== 1 ? 's' : ''}</p>
+            </div>
+            {layout === 'board' && (
+              <BoardView tasks={layoutFilteredTasks} currentUserId={currentUserId} onTaskClick={setSelectedTask} isAdmin={isAdmin} onDelete={handleDelete} onStopRecurrence={handleStopRecurrence} />
+            )}
+            {layout === 'calendar' && (
+              <CalendarView tasks={layoutFilteredTasks} currentUserId={currentUserId} onTaskClick={setSelectedTask} onStepUpdate={handleStepUpdate} onTaskUpdate={handleUpdate} viewMode={viewMode} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={handleDelete} onStopRecurrence={handleStopRecurrence} />
+            )}
+            {layout === 'timeline' && (
+              <TimelineView tasks={layoutFilteredTasks} onTaskClick={setSelectedTask} />
+            )}
           </div>
         ) : (
           <>
@@ -747,7 +675,52 @@ export default function TasksPage() {
           </>
         )}
         </div>
-      </main>
+          </main>
+
+          {/* Right insight rail — auto-collapses below 1180px (see drawer below) */}
+          {isTaskListView && (
+            <aside className="hidden min-[1180px]:flex flex-col w-[316px] flex-shrink-0 border-l border-gray-200 bg-gray-50/40 px-4 pt-4 pb-6 overflow-hidden">
+              <TasksRightRail
+                tasks={tasks}
+                currentUserId={currentUserId}
+                onViewMine={() => setView('my')}
+                onExploreTemplates={() => setView('templates')}
+                onOpenTask={setSelectedTask}
+              />
+            </aside>
+          )}
+        </div>
+      </div>
+
+      {/* Narrow screens: the right rail collapses to a floating button + drawer */}
+      {isTaskListView && (
+        <>
+          <button
+            onClick={() => setRailOpen(true)}
+            aria-label="Show insights"
+            className="min-[1180px]:hidden fixed right-4 bottom-4 z-30 w-12 h-12 rounded-full bg-indigo-600 text-white grid place-items-center shadow-lg hover:bg-indigo-700 transition-colors"
+          >
+            <BarChart3 className="h-5 w-5" />
+          </button>
+          {railOpen && (
+            <div className="min-[1180px]:hidden fixed inset-0 z-[70] flex justify-end" onClick={() => setRailOpen(false)}>
+              <div className="absolute inset-0 bg-black/30" />
+              <div className="relative w-[340px] max-w-[88vw] h-full bg-gray-50 border-l border-gray-200 p-4 overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-end mb-2">
+                  <button onClick={() => setRailOpen(false)} aria-label="Close" className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-500"><X className="h-4 w-4" /></button>
+                </div>
+                <TasksRightRail
+                  tasks={tasks}
+                  currentUserId={currentUserId}
+                  onViewMine={() => { setView('my'); setRailOpen(false); }}
+                  onExploreTemplates={() => { setView('templates'); setRailOpen(false); }}
+                  onOpenTask={(t) => { setSelectedTask(t); setRailOpen(false); }}
+                />
+              </div>
+            </div>
+          )}
+        </>
+      )}
 
       {/* Task detail panel */}
       {selectedTask && (
