@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   Search, Bell, MessageSquare, X, FileSearch, ArrowLeftRight, Building2, House,
   ClipboardCheck, Gauge, Receipt, ShieldAlert, FileText, Users, CalendarDays, MicVocal, UserPlus,
-  Maximize2, Clock, Megaphone,
+  Maximize2, Clock, Megaphone, Wand2,
 } from 'lucide-react';
 import Avatar from './Avatar';
 import Tooltip from './Tooltip';
@@ -17,6 +17,8 @@ import { useFocusMode } from './FocusModeProvider';
 import { useNotifications } from './NotificationsProvider';
 import { notificationTarget, goToNotification, NAVIGATE_TAB_EVENT } from '@/lib/notificationTarget';
 import { useModules } from './ModulesProvider';
+import { useTaskCountsOrZero } from './TasksCountProvider';
+import { useOrganiseMyDay } from '@/components/features/organise/OrganiseMyDayProvider';
 import { useTimesheets } from '@/components/features/timesheets/TimesheetsProvider';
 import { fmtStopwatch, timerElapsedMs } from '@/lib/timesheets/format';
 import { useOpenProfile } from '@/components/features/team/useOpenProfile';
@@ -167,6 +169,15 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
   const timesheetsActive = isModuleActive('timesheets');
   const { timers, nowMs, openStartModal } = useTimesheets();
   const activeTimer = timers.find(t => !t.paused) ?? null; // the one counting, if any
+
+  // "Organise my day" launcher — opens the app-wide plan lightbox. The dot shows
+  // when there's something to plan (overdue / due-soon), so the user knows a plan
+  // is ready without opening it.
+  const tasksActive = isModuleActive('tasks');
+  const { open: openMyDay, mounted: myDayMounted, minimised: myDayMinimised } = useOrganiseMyDay();
+  const dayCounts = useTaskCountsOrZero();
+  const myDayReady = (dayCounts.overdue + dayCounts.dueWithin7) > 0;
+  const myDayShowing = myDayMounted && !myDayMinimised;
 
   // Notification toasts now live in NotificationToastNotifier (rendered at the
   // app-shell level so they anchor bottom-right of the viewport, not inside the
@@ -381,6 +392,31 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
 
       {/* Right actions */}
       <div className="flex items-center gap-2 shrink-0">
+
+        {/* Organise my day — opens the app-wide plan lightbox (sparkle-pencil) */}
+        {tasksActive && (
+          <Tooltip label={myDayReady ? 'Organise my day — a plan is ready' : 'Organise my day'}>
+            <button
+              onClick={openMyDay}
+              aria-label="Organise my day"
+              className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
+                myDayShowing
+                  ? 'bg-[var(--accent)] text-white'
+                  : myDayReady
+                    ? 'bg-[var(--accent-light)] text-[var(--accent)] hover:brightness-95'
+                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <Wand2 size={16} />
+              {myDayReady && !myDayShowing && (
+                <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-60" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 ring-2 ring-white" />
+                </span>
+              )}
+            </button>
+          </Tooltip>
+        )}
 
         {/* Timesheets quick-timer — start/see timers from anywhere (Practice Suite) */}
         {timesheetsActive && (

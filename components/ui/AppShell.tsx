@@ -33,6 +33,7 @@ import { ChatProvider, useChatContext } from '@/components/chat/ChatProvider';
 import ConversationWindow from '@/components/chat/ConversationWindow';
 import Avatar from '@/components/ui/Avatar';
 import TimesheetsProvider from '@/components/features/timesheets/TimesheetsProvider';
+import OrganiseMyDayProvider from '@/components/features/organise/OrganiseMyDayProvider';
 import FloatingTimer from '@/components/features/timesheets/timer/FloatingTimer';
 import GlobalTimerStartModal from '@/components/features/timesheets/timer/GlobalTimerStartModal';
 import TimerUndoToast from '@/components/features/timesheets/timer/TimerUndoToast';
@@ -236,6 +237,7 @@ export default function AppShell({
             <StickyNotesProvider userId={userId}>
               <ComposeWindowProvider userName={userName}>
                 <FocusModeProvider>
+                <OrganiseMyDayProvider>
                 <AppShellInner
                   userName={userName}
                   userEmail={userEmail}
@@ -263,6 +265,7 @@ export default function AppShell({
                 {onboardingVisible && (
                   <OnboardingModal onDismiss={handleDismissOnboarding} />
                 )}
+                </OrganiseMyDayProvider>
                 </FocusModeProvider>
               </ComposeWindowProvider>
             </StickyNotesProvider>

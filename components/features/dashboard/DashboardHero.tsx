@@ -16,13 +16,12 @@
  * comes from the shared DashboardDataProvider (one set of calls for the page).
  */
 
-import { useState } from 'react';
 import {
   Sparkles, Mail, CircleAlert, CalendarClock, CalendarDays,
   Plane, BookOpen, ArrowUpRight, CheckSquare, HeartHandshake, Bell, Wand2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import DashboardMyDay from '@/components/features/dashboard/DashboardMyDay';
+import { useOrganiseMyDay } from '@/components/features/organise/OrganiseMyDayProvider';
 import { useModules } from '@/components/ui/ModulesProvider';
 import { useEmailCount } from '@/components/ui/EmailCountProvider';
 import { useTasksCount } from '@/components/ui/TasksCountProvider';
@@ -40,7 +39,7 @@ const C_NOTIF = '#ec4899'; // pink — header notifications
 const C_CAL   = '#0ea5e9'; // sky — calendar events
 
 export default function DashboardHero() {
-  const [showMyDay, setShowMyDay] = useState(false);
+  const organiseMyDay = useOrganiseMyDay();
   const { isModuleActive } = useModules();
   const { openTab } = useTabContext();
   const data = useDashboardData();
@@ -90,12 +89,6 @@ export default function DashboardHero() {
 
   const total = metrics.reduce((s, m) => s + (m.value ?? 0), 0);
 
-  // Non-task briefing items for the "Organise my day" plan (tasks are bucketed
-  // by the plan itself, so overdue / due-this-week counts are excluded here).
-  const dayExtras = metrics
-    .filter(m => m.key !== 'overdue' && m.key !== 'week' && (m.value ?? 0) > 0)
-    .map(m => ({ key: m.key, label: m.label, count: m.value ?? 0, color: m.color, onClick: m.onClick }));
-
   return (
     <div className="glass rounded-xl p-4 lg:h-[214px]">
       <div className="flex flex-col lg:flex-row gap-4 h-full">
@@ -143,7 +136,7 @@ export default function DashboardHero() {
                 })}
                 {/* Organise my day — same rectangle tile, purple to stand out */}
                 <button
-                  onClick={() => setShowMyDay(true)}
+                  onClick={() => organiseMyDay.open()}
                   className="group text-left rounded-lg px-2.5 py-1.5 text-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-150"
                   style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
                 >
@@ -177,7 +170,6 @@ export default function DashboardHero() {
           )}
         </div>
       </div>
-      {showMyDay && <DashboardMyDay extras={dayExtras} onClose={() => setShowMyDay(false)} />}
     </div>
   );
 }
