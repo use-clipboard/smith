@@ -30,7 +30,8 @@ import TemplateBuilder, { type TemplateData, type TaskCreationOutput } from './T
 import AITemplateBuilder from './AITemplateBuilder';
 import BulkTaskModal from './BulkTaskModal';
 import TaskDeadlineLinksProvider, { triggerDeadlineLinksRefetch } from './TaskDeadlineLinksProvider';
-import TaskClientStatusPolicyProvider from './TaskClientStatusPolicyProvider';
+import TaskClientStatusPolicyProvider, { useTaskClientStatusPolicy } from './TaskClientStatusPolicyProvider';
+import { isHiddenByClientStatus, countsHiddenByClientStatus } from './applyClientStatusVisibility';
 import TaskTypeSelector from './TaskTypeSelector';
 import QuickTaskModal from './QuickTaskModal';
 import { useTaskCountsOrZero } from '@/components/ui/TasksCountProvider';
@@ -47,6 +48,22 @@ interface TeamMember { id: string; full_name: string | null; email: string }
 interface ClientRef  { id: string; name: string; client_ref: string; business_type?: string | null; status?: string | null; }
 
 export default function TasksPage() {
+  // The two firm-scoped providers wrap the whole page so the body (and the
+  // Departments view) can share one client-status policy + Show on-hold /
+  // Show inactive toggle state via useTaskClientStatusPolicy().
+  return (
+    <TaskDeadlineLinksProvider>
+    <TaskClientStatusPolicyProvider>
+      <TasksPageInner />
+    </TaskClientStatusPolicyProvider>
+    </TaskDeadlineLinksProvider>
+  );
+}
+
+function TasksPageInner() {
+  // Firm client-status policy + per-session Show on-hold / Show inactive toggles.
+  // Shared with the Departments view so a toggle set in one place holds in both.
+  const { policy: clientStatusPolicy, showOnHold, setShowOnHold, showInactive, setShowInactive } = useTaskClientStatusPolicy();
   const [view, setView] = useState<ViewId>('list');
   // Unified list controls: who (scope), how it's grouped, and the due-window chip.
   const [scope, setScope] = useState<'me' | 'firm'>('me');
@@ -470,15 +487,29 @@ export default function TasksPage() {
     () => (scope === 'me' ? tasks.filter(t => t.steps?.some(s => s.assignee_id === currentUserId)) : tasks),
     [tasks, scope, currentUserId],
   );
+  // Apply the firm's client-status policy: on-hold / inactive clients are
+  // hidden from the default list (and the KPI totals + due chips) unless the
+  // user flips the Show on-hold / Show inactive toggles — same behaviour as
+  // the Departments view, which shares this toggle state.
+  const scopeVisible = useMemo(
+    () => scopeTasks.filter(t => !isHiddenByClientStatus(t, { policy: clientStatusPolicy, showOnHold, showInactive })),
+    [scopeTasks, clientStatusPolicy, showOnHold, showInactive],
+  );
+  // How many on-hold / inactive tasks the toggles are currently hiding — drives
+  // the "Show inactive (15)" chips in the filter row.
+  const hiddenCounts = useMemo(
+    () => countsHiddenByClientStatus(scopeTasks, { policy: clientStatusPolicy, showOnHold, showInactive }),
+    [scopeTasks, clientStatusPolicy, showOnHold, showInactive],
+  );
   // …plus text/status/client/assignee filters. Feeds the due chips + the list.
-  const scopedFiltered = useMemo(() => scopeTasks.filter(t => {
+  const scopedFiltered = useMemo(() => scopeVisible.filter(t => {
     if (search) { const n = search.toLowerCase(); if (!`${t.title} ${t.client?.name ?? ''} ${t.client?.client_ref ?? ''}`.toLowerCase().includes(n)) return false; }
     if (statusFilter === 'open' ? t.status === 'complete' : (statusFilter !== 'all' && t.status !== statusFilter)) return false;
     if (clientFilter === 'internal' && !t.is_internal) return false;
     if (clientFilter && clientFilter !== 'internal' && t.client_id !== clientFilter) return false;
     if (assigneeFilter && !t.steps?.some(s => s.assignee_id === assigneeFilter)) return false;
     return true;
-  }), [scopeTasks, search, statusFilter, clientFilter, assigneeFilter]);
+  }), [scopeVisible, search, statusFilter, clientFilter, assigneeFilter]);
 
   const { classMap: dueClassMap, counts: dueCounts } = useMemo(() => classifyTasks(scopedFiltered), [scopedFiltered]);
   const visibleTasks = useMemo(() => applyDueFilter(scopedFiltered, dueClassMap, dueFilter), [scopedFiltered, dueClassMap, dueFilter]);
@@ -500,8 +531,6 @@ export default function TasksPage() {
   const isAdmin = currentUserRole === 'admin';
 
   return (
-    <TaskDeadlineLinksProvider>
-    <TaskClientStatusPolicyProvider>
     <ViewModeProvider viewMode={viewMode} setViewMode={handleSetViewMode}>
     {endServicePrompt && (
       <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setEndServicePrompt(null)}>
@@ -542,7 +571,18 @@ export default function TasksPage() {
         templatesCount={templates.length}
         isAdmin={isAdmin}
         onRefresh={loadAll}
-        onExport={() => exportTasksXlsx(visibleTasks, 'tasks')}
+        onExport={() => {
+          // Export the current view as a flat list — respecting all active
+          // filters — regardless of the layout (list / card / kanban / calendar
+          // / timeline all share `visibleTasks`). Department view exports that
+          // department's tasks (with the shared due-window filter) instead.
+          if (view === 'department') {
+            const { classMap } = classifyTasks(departmentTasks);
+            exportTasksXlsx(applyDueFilter(departmentTasks, classMap, dueFilter), `tasks-${activeDepartment ?? 'department'}`);
+          } else {
+            exportTasksXlsx(visibleTasks, 'tasks');
+          }
+        }}
       />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -594,7 +634,7 @@ export default function TasksPage() {
         {(view === 'list' || view === 'department') && kpiOpen && (
           <div className="px-6 pt-4 flex-shrink-0">
             <TasksKpiStrip
-              tasks={view === 'list' ? scopeTasks : departmentTasks}
+              tasks={view === 'list' ? scopeVisible : departmentTasks}
               onSelect={(f) => {
                 if (view === 'list') {
                   setLayout('list');
@@ -619,18 +659,20 @@ export default function TasksPage() {
             the header + rail to keep the list area tall) */}
         {isTaskListView && (
           <div className="px-6 pt-3 flex-shrink-0">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2 flex-wrap">
-                <TaskFilters
-                  search={search} onSearchChange={setSearch}
-                  statusFilter={statusFilter} onStatusChange={setStatusFilter}
-                  clientFilter={clientFilter} onClientChange={setClientFilter}
-                  assigneeFilter={assigneeFilter} onAssigneeChange={setAssigneeFilter}
-                  clients={clients} teamMembers={teamMembers} onClear={clearFilters}
-                />
-                <DueFilterPills value={dueFilter} onChange={setDueFilter} laterCount={dueCounts.later} noDueCount={dueCounts.no_due} />
-              </div>
-              <span className="text-xs font-bold text-[var(--text-primary)] tabular-nums">{visibleTasks.length} task{visibleTasks.length !== 1 ? 's' : ''}</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <TaskFilters
+                search={search} onSearchChange={setSearch}
+                statusFilter={statusFilter} onStatusChange={setStatusFilter}
+                clientFilter={clientFilter} onClientChange={setClientFilter}
+                assigneeFilter={assigneeFilter} onAssigneeChange={setAssigneeFilter}
+                clients={clients} teamMembers={teamMembers} onClear={clearFilters}
+              />
+              <DueFilterPills value={dueFilter} onChange={setDueFilter} laterCount={dueCounts.later} noDueCount={dueCounts.no_due} />
+              <StatusVisibilityChips
+                showOnHold={showOnHold} setShowOnHold={setShowOnHold}
+                showInactive={showInactive} setShowInactive={setShowInactive}
+                hiddenOnHold={hiddenCounts.onHold} hiddenInactive={hiddenCounts.inactive}
+              />
             </div>
           </div>
         )}
@@ -872,8 +914,6 @@ export default function TasksPage() {
 
     </div>
     </ViewModeProvider>
-    </TaskClientStatusPolicyProvider>
-    </TaskDeadlineLinksProvider>
   );
 }
 
@@ -910,6 +950,37 @@ function DueFilterPills({ value, onChange, laterCount, noDueCount }: {
         </button>
       )}
     </div>
+  );
+}
+
+// ── Show on-hold / Show inactive toggles ──────────────────────────────────────
+// On-hold and inactive clients' tasks are hidden by default (greyed & cancelled
+// clutter the live list). These chips only surface when there's actually
+// something hidden or the toggle is already on — mirrors the Departments view.
+
+function StatusVisibilityChips({
+  showOnHold, setShowOnHold, showInactive, setShowInactive, hiddenOnHold, hiddenInactive,
+}: {
+  showOnHold: boolean; setShowOnHold: (v: boolean) => void;
+  showInactive: boolean; setShowInactive: (v: boolean) => void;
+  hiddenOnHold: number; hiddenInactive: number;
+}) {
+  const chip = (on: boolean, toggle: () => void, label: string, count: number, activeCls: string) => (
+    <button
+      onClick={toggle}
+      className={`text-xs font-semibold px-2.5 py-2 rounded-lg border transition-colors inline-flex items-center gap-1 ${
+        on ? activeCls : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-300 hover:text-indigo-700'
+      }`}
+    >
+      {on ? 'Hide' : 'Show'} {label}
+      {!on && count > 0 && <span className="tabular-nums">({count})</span>}
+    </button>
+  );
+  return (
+    <>
+      {(hiddenOnHold > 0 || showOnHold) && chip(showOnHold, () => setShowOnHold(!showOnHold), 'on-hold', hiddenOnHold, 'bg-amber-100 border-amber-200 text-amber-800')}
+      {(hiddenInactive > 0 || showInactive) && chip(showInactive, () => setShowInactive(!showInactive), 'inactive', hiddenInactive, 'bg-slate-200 border-slate-300 text-slate-700')}
+    </>
   );
 }
 
