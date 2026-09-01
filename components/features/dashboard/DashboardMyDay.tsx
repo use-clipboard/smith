@@ -17,10 +17,13 @@ interface Props {
 export default function DashboardMyDay({ extras, onClose }: Props) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [userId, setUserId] = useState('');
+  // The tasks feed is slow to load; track it so the panel shows a loading state
+  // instead of briefly flashing the empty "You're on top of it" message.
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let live = true;
-    fetch('/api/tasks').then(r => (r.ok ? r.json() : { tasks: [] })).then((d: { tasks?: Task[] }) => { if (live) setTasks(d.tasks ?? []); }).catch(() => {});
+    fetch('/api/tasks').then(r => (r.ok ? r.json() : { tasks: [] })).then((d: { tasks?: Task[] }) => { if (live) setTasks(d.tasks ?? []); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
     fetch('/api/users/me').then(r => (r.ok ? r.json() : {})).then((d: { userId?: string }) => { if (live) setUserId(d.userId ?? ''); }).catch(() => {});
     return () => { live = false; };
   }, []);
@@ -35,6 +38,7 @@ export default function DashboardMyDay({ extras, onClose }: Props) {
       tasks={tasks}
       currentUserId={userId}
       extras={extras}
+      loading={loading}
       onOpenTask={(t) => { openTaskInTool(t.id); onClose(); }}
       onMarkDone={markDone}
       onClose={onClose}

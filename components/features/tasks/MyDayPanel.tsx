@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, X, Minus, Maximize2, GripVertical, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Sparkles, X, Minus, Maximize2, GripVertical, ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 import type { Task } from '@/types';
 
 // "Organise my day" — a floating, draggable, minimisable plan of what to focus
@@ -17,6 +17,8 @@ interface Props {
   onClose: () => void;
   /** Non-task briefing items (dashboard use) — emails, notifications, holidays… */
   extras?: { key: string; label: string; count: number; color: string; onClick: () => void }[];
+  /** Still fetching the plan's tasks — show a loading state, not the empty state. */
+  loading?: boolean;
 }
 
 type BucketKey = 'overdue' | 'records' | 'review' | 'today' | 'soon';
@@ -31,7 +33,7 @@ const BUCKETS: { key: BucketKey; label: string; hint: string; color: string; bg:
 
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
 
-export default function MyDayPanel({ tasks, currentUserId, onOpenTask, onMarkDone, onClose, extras = [] }: Props) {
+export default function MyDayPanel({ tasks, currentUserId, onOpenTask, onMarkDone, onClose, extras = [], loading = false }: Props) {
   const [min, setMin] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [pos, setPos] = useState<{ x: number; y: number }>({ x: -1, y: -1 });
@@ -105,7 +107,7 @@ export default function MyDayPanel({ tasks, currentUserId, onOpenTask, onMarkDon
         <Sparkles className="h-4 w-4 flex-shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="text-[13px] font-bold leading-tight">My Day</p>
-          <p className="text-[11px] opacity-80 leading-tight">{total === 0 ? 'Nothing urgent — nice' : `${total} thing${total === 1 ? '' : 's'} to focus on`}</p>
+          <p className="text-[11px] opacity-80 leading-tight">{loading ? 'Gathering your day…' : total === 0 ? 'Nothing urgent — nice' : `${total} thing${total === 1 ? '' : 's'} to focus on`}</p>
         </div>
         <button onClick={() => setMin(m => !m)} aria-label={min ? 'Expand' : 'Minimise'} className="p-1 rounded-lg hover:bg-white/20">
           {min ? <Maximize2 className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
@@ -115,7 +117,22 @@ export default function MyDayPanel({ tasks, currentUserId, onOpenTask, onMarkDon
 
       {!min && (
         <div className="max-h-[52vh] overflow-y-auto scrollbar-thin p-3 space-y-3">
-          {total === 0 ? (
+          {loading ? (
+            <div className="py-6">
+              <div className="flex items-center justify-center gap-2 text-indigo-600 mb-4">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-xs font-semibold">Planning your day…</span>
+              </div>
+              <div className="space-y-2 animate-pulse">
+                {[70, 90, 55].map((w, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-gray-200" />
+                    <div className="h-9 rounded-xl bg-gray-100 flex-1" style={{ maxWidth: `${w}%` }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : total === 0 ? (
             <div className="text-center py-8">
               <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
               <p className="text-sm font-semibold text-gray-800">You&rsquo;re on top of it</p>

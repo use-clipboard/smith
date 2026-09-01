@@ -19,7 +19,7 @@
 import { useState } from 'react';
 import {
   Sparkles, Mail, CircleAlert, CalendarClock, CalendarDays,
-  Plane, BookOpen, ArrowRight, ArrowUpRight, CheckSquare, HeartHandshake, Bell, Wand2,
+  Plane, BookOpen, ArrowUpRight, CheckSquare, HeartHandshake, Bell, Wand2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import DashboardMyDay from '@/components/features/dashboard/DashboardMyDay';
@@ -96,18 +96,8 @@ export default function DashboardHero() {
     .filter(m => m.key !== 'overdue' && m.key !== 'week' && (m.value ?? 0) > 0)
     .map(m => ({ key: m.key, label: m.label, count: m.value ?? 0, color: m.color, onClick: m.onClick }));
 
-  // Rule-based suggested actions — top non-zero metrics, max 3.
-  const suggestions = [
-    (emails ?? 0) > 0    && { label: emailTraditional ? `Read ${emails} unread email${emails === 1 ? '' : 's'}` : `Triage ${emails} email${emails === 1 ? '' : 's'}`, onClick: () => open('email-triage', 'Email', '/email', Mail) },
-    notifications > 0    && { label: `Check ${notifications} notification${notifications === 1 ? '' : 's'}`, onClick: openNotifications },
-    (overdue ?? 0) > 0   && { label: `Clear ${overdue} overdue task${overdue === 1 ? '' : 's'}`, onClick: () => open('tasks', 'Tasks', '/tasks', CheckSquare) },
-    (toApprove ?? 0) > 0 && { label: `Approve ${toApprove} holiday${toApprove === 1 ? '' : 's'}`, onClick: () => open('hr', 'HR', '/hr', HeartHandshake) },
-    (briefings ?? 0) > 0 && { label: `Read ${briefings} briefing${briefings === 1 ? '' : 's'}`, onClick: () => open('hr', 'HR', '/hr', HeartHandshake) },
-    (dueWeek ?? 0) > 0   && { label: `Plan ${dueWeek} due this week`, onClick: () => open('tasks', 'Tasks', '/tasks', CheckSquare) },
-  ].filter(Boolean).slice(0, 3) as { label: string; onClick: () => void }[];
-
   return (
-    <div className="glass rounded-xl p-4 lg:h-[260px]">
+    <div className="glass rounded-xl p-4 lg:h-[214px]">
       <div className="flex flex-col lg:flex-row gap-4 h-full">
         {/* ── LEFT: Your SMITH Briefing ──────────────────────────────────── */}
         <div className="flex-1 min-w-0 flex flex-col">
@@ -165,23 +155,6 @@ export default function DashboardHero() {
                   <p className="text-[10px] opacity-90 mt-0.5 leading-tight">my day</p>
                 </button>
               </div>
-
-              {suggestions.length > 0 && (
-                <div className="mt-auto pt-1 shrink-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-1.5">Suggested actions</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {suggestions.map((s, i) => (
-                      <button
-                        key={i}
-                        onClick={s.onClick}
-                        className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-white/60 border border-[var(--border-card)] text-[var(--text-primary)] hover:border-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors"
-                      >
-                        {s.label} <ArrowRight size={11} className="text-[var(--accent)] shrink-0" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
