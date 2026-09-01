@@ -23,6 +23,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useOrganiseMyDay } from '@/components/features/organise/OrganiseMyDayProvider';
 import { useModules } from '@/components/ui/ModulesProvider';
+import { hasPracticeSuite } from '@/config/modules.config';
 import { useEmailCount } from '@/components/ui/EmailCountProvider';
 import { useTasksCount } from '@/components/ui/TasksCountProvider';
 import { useNotifications } from '@/components/ui/NotificationsProvider';
@@ -40,7 +41,8 @@ const C_CAL   = '#0ea5e9'; // sky — calendar events
 
 export default function DashboardHero() {
   const organiseMyDay = useOrganiseMyDay();
-  const { isModuleActive } = useModules();
+  const { isModuleActive, activeModules } = useModules();
+  const practiceSuite = hasPracticeSuite(activeModules);
   const { openTab } = useTabContext();
   const data = useDashboardData();
   const { count: emailCount, mode: emailMode } = useEmailCount();
@@ -134,7 +136,8 @@ export default function DashboardHero() {
                     </button>
                   );
                 })}
-                {/* Organise my day — same rectangle tile, purple to stand out */}
+                {/* Organise my day — Practice Suite only; purple to stand out */}
+                {practiceSuite && (
                 <button
                   onClick={() => organiseMyDay.open()}
                   className="group text-left rounded-lg px-2.5 py-1.5 text-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-150"
@@ -147,6 +150,7 @@ export default function DashboardHero() {
                   <p className="text-[13px] font-bold leading-none mt-1">Organise</p>
                   <p className="text-[10px] opacity-90 mt-0.5 leading-tight">my day</p>
                 </button>
+                )}
               </div>
             </>
           )}

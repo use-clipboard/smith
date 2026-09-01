@@ -423,6 +423,13 @@ export const PLAN_MODULES: Record<'compliance' | 'practice', string[]> = {
   practice: [...COMPLIANCE_MODULE_IDS, ...PRACTICE_ONLY_MODULE_IDS],
 };
 
+/** True when the firm has the full Practice Suite (all Practice-only tools) —
+ *  used to gate Practice-Suite-only features like Organise my day. Internal
+ *  firms (full access) satisfy this too. */
+export function hasPracticeSuite(activeModules: string[]): boolean {
+  return PRACTICE_ONLY_MODULE_IDS.every(id => activeModules.includes(id));
+}
+
 /** The `active_modules` a firm on `plan` should have. 'internal' (and any
  *  unknown value) = full access to every optional module. */
 export function modulesForPlan(plan: PlanId | string): string[] {

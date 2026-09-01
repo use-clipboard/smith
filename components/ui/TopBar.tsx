@@ -17,6 +17,7 @@ import { useFocusMode } from './FocusModeProvider';
 import { useNotifications } from './NotificationsProvider';
 import { notificationTarget, goToNotification, NAVIGATE_TAB_EVENT } from '@/lib/notificationTarget';
 import { useModules } from './ModulesProvider';
+import { hasPracticeSuite } from '@/config/modules.config';
 import { useTaskCountsOrZero } from './TasksCountProvider';
 import { useOrganiseMyDay } from '@/components/features/organise/OrganiseMyDayProvider';
 import { useTimesheets } from '@/components/features/timesheets/TimesheetsProvider';
@@ -165,15 +166,15 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
 
   // Timesheets quick-timer — only surfaced when the firm has the module
   // (Practice Suite). Lets a user start/see a timer from anywhere in the app.
-  const { isModuleActive } = useModules();
+  const { isModuleActive, activeModules } = useModules();
   const timesheetsActive = isModuleActive('timesheets');
   const { timers, nowMs, openStartModal } = useTimesheets();
   const activeTimer = timers.find(t => !t.paused) ?? null; // the one counting, if any
 
-  // "Organise my day" launcher — opens the app-wide plan lightbox. The dot shows
-  // when there's something to plan (overdue / due-soon), so the user knows a plan
-  // is ready without opening it.
-  const tasksActive = isModuleActive('tasks');
+  // "Organise my day" launcher — opens the app-wide plan lightbox. Practice-Suite
+  // only. The dot shows when there's something to plan (overdue / due-soon), so
+  // the user knows a plan is ready without opening it.
+  const practiceSuite = hasPracticeSuite(activeModules);
   const { open: openMyDay, mounted: myDayMounted, minimised: myDayMinimised } = useOrganiseMyDay();
   const dayCounts = useTaskCountsOrZero();
   const myDayReady = (dayCounts.overdue + dayCounts.dueWithin7) > 0;
@@ -394,7 +395,7 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
       <div className="flex items-center gap-2 shrink-0">
 
         {/* Organise my day — opens the app-wide plan lightbox (sparkle-pencil) */}
-        {tasksActive && (
+        {practiceSuite && (
           <Tooltip label={myDayReady ? 'Organise my day — a plan is ready' : 'Organise my day'}>
             <button
               onClick={openMyDay}

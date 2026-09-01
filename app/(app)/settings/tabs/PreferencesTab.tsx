@@ -5,6 +5,7 @@ import { GripVertical, Star, Plus, X, Mic, Video, AlertCircle, CheckCircle2, Loc
 import Tooltip from '@/components/ui/Tooltip';
 import { useFavourites } from '@/components/ui/FavouritesProvider';
 import { useModules } from '@/components/ui/ModulesProvider';
+import { hasPracticeSuite } from '@/config/modules.config';
 import { DEFAULT_ORGANISE_SETTINGS, type OrganiseSettings } from '@/lib/tasks/organiseSettings';
 import { FAVOURITABLE_ITEMS } from '@/config/navItems';
 
@@ -20,7 +21,8 @@ function PermissionBadge({ state }: { state: PermState }) {
 
 export default function PreferencesTab() {
   const { favourites, updateFavourites } = useFavourites();
-  const { isModuleActive } = useModules();
+  const { isModuleActive, activeModules } = useModules();
+  const practiceSuite = hasPracticeSuite(activeModules);
 
   const [micPermission,    setMicPermission]    = useState<PermState>('unknown');
   const [cameraPermission, setCameraPermission] = useState<PermState>('unknown');
@@ -56,14 +58,14 @@ export default function PreferencesTab() {
   const [org, setOrg] = useState<OrganiseSettings>(DEFAULT_ORGANISE_SETTINGS);
   const [orgLoaded, setOrgLoaded] = useState(false);
   useEffect(() => {
-    if (!hasTasks) return;
+    if (!practiceSuite) return;
     let cancelled = false;
     fetch('/api/users/organise-settings')
       .then(r => (r.ok ? r.json() : null))
       .then(d => { if (!cancelled) { if (d?.settings) setOrg(d.settings as OrganiseSettings); setOrgLoaded(true); } })
       .catch(() => { if (!cancelled) setOrgLoaded(true); });
     return () => { cancelled = true; };
-  }, [hasTasks]);
+  }, [practiceSuite]);
   function patchOrg(p: Partial<OrganiseSettings>) {
     const next = { ...org, ...p };
     setOrg(next); // optimistic
@@ -242,8 +244,8 @@ export default function PreferencesTab() {
         </div>
       )}
 
-      {/* ── Organise my day (only if the Tasks tool is active) ──────────── */}
-      {hasTasks && (
+      {/* ── Organise my day (Practice Suite only) ──────────────────────── */}
+      {practiceSuite && (
         <div className="glass-solid rounded-xl p-6">
           <div className="flex items-center gap-2 mb-1">
             <CalendarClock size={15} className="text-[var(--accent)]" />

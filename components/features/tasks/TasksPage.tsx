@@ -10,7 +10,9 @@ import { ViewModeProvider } from './ViewModeToggle';
 import TasksSlimRail from './TasksSlimRail';
 import TasksKpiStrip from './TasksKpiStrip';
 import TasksRightRail from './TasksRightRail';
-import MyDayPanel from './MyDayPanel';
+import { useOrganiseMyDay } from '@/components/features/organise/OrganiseMyDayProvider';
+import { useModules } from '@/components/ui/ModulesProvider';
+import { hasPracticeSuite } from '@/config/modules.config';
 import HistoryView from './views/HistoryView';
 import DepartmentView from './views/DepartmentView';
 import GroupedTasksView, { type GroupBy } from './views/GroupedTasksView';
@@ -87,8 +89,10 @@ function TasksPageInner() {
   const [showBulkTask, setShowBulkTask] = useState(false);
   // Right insight rail — overlay drawer on narrow screens (auto-collapsed by CSS).
   const [railOpen, setRailOpen] = useState(false);
-  // "Organise my day" floating plan.
-  const [showMyDay, setShowMyDay] = useState(false);
+  // "Organise my day" now opens the app-wide planner lightbox (Practice Suite).
+  const { open: openOrganiseDay } = useOrganiseMyDay();
+  const { activeModules } = useModules();
+  const organiseDayFn = hasPracticeSuite(activeModules) ? () => openOrganiseDay() : undefined;
   // Collapse the top KPI panels / the wide right rail to maximise the task list.
   const [kpiOpen, setKpiOpen] = useState(true);
   const [railWideOpen, setRailWideOpen] = useState(true);
@@ -759,7 +763,7 @@ function TasksPageInner() {
                 onViewMine={() => { setView('list'); setScope('me'); setLayout('list'); }}
                 onExploreTemplates={() => setView('templates')}
                 onOpenTask={setSelectedTask}
-                onOrganiseDay={() => setShowMyDay(true)}
+                onOrganiseDay={organiseDayFn}
               />
             </aside>
           )}
@@ -789,23 +793,12 @@ function TasksPageInner() {
                   onViewMine={() => { setView('list'); setScope('me'); setLayout('list'); setRailOpen(false); }}
                   onExploreTemplates={() => { setView('templates'); setRailOpen(false); }}
                   onOpenTask={(t) => { setSelectedTask(t); setRailOpen(false); }}
-                  onOrganiseDay={() => { setShowMyDay(true); setRailOpen(false); }}
+                  onOrganiseDay={organiseDayFn ? () => { organiseDayFn(); setRailOpen(false); } : undefined}
                 />
               </div>
             </div>
           )}
         </>
-      )}
-
-      {/* Organise my day — floating, draggable plan */}
-      {showMyDay && (
-        <MyDayPanel
-          tasks={tasks}
-          currentUserId={currentUserId}
-          onOpenTask={setSelectedTask}
-          onMarkDone={(id) => { void handleUpdate(id, { status: 'complete' }); }}
-          onClose={() => setShowMyDay(false)}
-        />
       )}
 
       {/* Task detail panel */}
