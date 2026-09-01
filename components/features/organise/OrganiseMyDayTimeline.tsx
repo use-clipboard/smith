@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, CalendarClock, MoveRight, RotateCcw, Plus, X } from 'lucide-react';
+import { CheckCircle2, CalendarClock, MoveRight, RotateCcw, Plus, X, PlayCircle, Clock3 } from 'lucide-react';
 import { buildDayPlan, DAY_BUCKETS, type DayBucketKey } from '@/lib/tasks/dayPlan';
 import { todayIso } from '@/lib/timesheets/format';
 import type { Task } from '@/types';
@@ -66,7 +66,15 @@ export default function OrganiseMyDayTimeline({ tasks, userId, onOpenTask, onMar
   const [customs, setCustoms] = useState<CustomBlock[]>([]);
   const [drag, setDrag] = useState<DragState>(null);
   const customSeq = useRef(0);
-  const nowMin = useMemo(() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); }, []);
+  // `openMin` fixes the schedule at open-time so blocks don't reshuffle under you;
+  // `nowMin` ticks live (every 30s) so the now-marker + next-task banner track the
+  // real time as you work.
+  const openMin = useMemo(() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); }, []);
+  const [nowMin, setNowMin] = useState(openMin);
+  useEffect(() => {
+    const id = setInterval(() => { const d = new Date(); setNowMin(d.getHours() * 60 + d.getMinutes()); }, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -92,7 +100,7 @@ export default function OrganiseMyDayTimeline({ tasks, userId, onOpenTask, onMar
       .map(e => ({ ...e, start: parseMin(e.startHHmm), end: parseMin(e.startHHmm) + e.minutes }))
       .filter(e => e.end > DAY_START * 60 && e.start < DAY_END * 60);
 
-    const startFrom = Math.max(Math.ceil(nowMin / SNAP) * SNAP, DAY_START * 60);
+    const startFrom = Math.max(Math.ceil(openMin / SNAP) * SNAP, DAY_START * 60);
 
     // Fixed busy = calendar events + custom blocks + manually-placed tasks.
     const busy: Busy[] = [
@@ -125,10 +133,18 @@ export default function OrganiseMyDayTimeline({ tasks, userId, onOpenTask, onMar
     }
     return { events, blocks: [...fixed, ...auto], unscheduled, startFrom };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, userId, calEvents, nowMin, startOverride, durOverride, customs]);
+  }, [tasks, userId, calEvents, openMin, startOverride, durOverride, customs]);
 
   const plannedMins = blocks.reduce((n, b) => n + b.dur, 0);
   const nowVisible = nowMin >= DAY_START * 60 && nowMin <= DAY_END * 60;
+
+  // Live "what should I be doing now / up next" for the top banner.
+  const timelineItems = [
+    ...blocks.map(b => ({ start: b.start, end: b.start + b.dur, title: b.task.title, task: b.task as Task | null })),
+    ...customs.map(c => ({ start: c.start, end: c.start + c.dur, title: c.label, task: null as Task | null })),
+  ].sort((a, z) => a.start - z.start);
+  const currentItem = timelineItems.find(i => i.start <= nowMin && nowMin < i.end) ?? null;
+  const nextItem = timelineItems.find(i => i.start > nowMin) ?? null;
 
   // Pointer drag — move a block (change start) or resize it (change duration).
   // Snaps to 15 min; a press without movement is treated as a tap (onTap).
@@ -186,6 +202,27 @@ export default function OrganiseMyDayTimeline({ tasks, userId, onOpenTask, onMar
 
   return (
     <div className="space-y-4">
+      {/* Next-task banner — tracks the live clock */}
+      {(currentItem || nextItem) && (
+        <div
+          className={`flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 ${currentItem ? 'text-white' : 'bg-indigo-50 text-indigo-800'}`}
+          style={currentItem ? { background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' } : undefined}
+        >
+          {currentItem ? <PlayCircle size={17} className="shrink-0" /> : <Clock3 size={16} className="shrink-0 text-indigo-500" />}
+          <p className="min-w-0 flex-1 text-[12.5px] leading-snug">
+            {currentItem ? (
+              <>On now until {minToHHMM(currentItem.end)} — <span className="font-bold">{currentItem.title}</span>
+                {nextItem && <span className="opacity-80"> · next {minToHHMM(nextItem.start)}: {nextItem.title}</span>}</>
+            ) : (
+              <>Up next at {minToHHMM(nextItem!.start)} — <span className="font-bold">{nextItem!.title}</span></>
+            )}
+          </p>
+          {currentItem?.task && (
+            <button onClick={() => onOpenTask(currentItem.task!)} className="shrink-0 rounded-lg bg-white/20 px-2.5 py-1 text-[11px] font-semibold hover:bg-white/30">Open</button>
+          )}
+        </div>
+      )}
+
       {/* Summary + controls */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]">
         <span className="font-semibold text-gray-700">{fmtDur(plannedMins)} planned</span>
