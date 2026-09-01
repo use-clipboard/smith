@@ -75,7 +75,6 @@ export default function Approvals() {
   const [weekEntries, setWeekEntries] = useState<Record<string, TimeEntry[]>>({});
   const fetchedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    let cancelled = false;
     for (const r of rows) {
       const key = `${r.userId}__${r.weekStart}`;
       if (r.userId === userId) {
@@ -86,10 +85,13 @@ export default function Approvals() {
       fetchedRef.current.add(key);
       fetch(`/api/timesheets/week-entries?userId=${r.userId}&weekStart=${r.weekStart}`)
         .then(res => (res.ok ? res.json() : { entries: [] }))
-        .then(d => { if (!cancelled) setWeekEntries(prev => ({ ...prev, [key]: (d.entries ?? []) as TimeEntry[] })); })
+        // NB: no cancelled-on-re-render guard. `refreshWeeks()` on mount changes
+        // `rows`, which re-runs this effect; a cancel flag here would drop the
+        // in-flight result while `fetchedRef` blocks the retry, stranding the row
+        // on "Loading…" forever. The key is week-specific, so a late set is safe.
+        .then(d => setWeekEntries(prev => ({ ...prev, [key]: (d.entries ?? []) as TimeEntry[] })))
         .catch(() => { fetchedRef.current.delete(key); });
     }
-    return () => { cancelled = true; };
   }, [rows, entries, userId]);
 
   const reviewedRows = useMemo(() => {
@@ -115,12 +117,12 @@ export default function Approvals() {
     if (weekEntries[expandedKey] || fetchedRef.current.has(expandedKey)) return;
     if (r.userId === userId) { setWeekEntries(prev => ({ ...prev, [expandedKey]: inWeek(entries, r.weekStart, userId) })); return; }
     fetchedRef.current.add(expandedKey);
-    let cancelled = false;
     fetch(`/api/timesheets/week-entries?userId=${r.userId}&weekStart=${r.weekStart}`)
       .then(res => (res.ok ? res.json() : { entries: [] }))
-      .then(d => { if (!cancelled) setWeekEntries(prev => ({ ...prev, [expandedKey]: (d.entries ?? []) as TimeEntry[] })); })
+      // No cancel guard (see the pending-entries effect above): a re-render must
+      // not strand this on "Loading…". Late sets to a week-specific key are safe.
+      .then(d => setWeekEntries(prev => ({ ...prev, [expandedKey]: (d.entries ?? []) as TimeEntry[] })))
       .catch(() => fetchedRef.current.delete(expandedKey));
-    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedKey, reviewedRows, entries, userId]);
 
