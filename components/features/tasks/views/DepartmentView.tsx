@@ -322,9 +322,9 @@ export default function DepartmentView({
   }
 
   return (
-    <div>
-      {/* ── Sticky header ──────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-30 backdrop-blur-md pb-3 space-y-3">
+    <div className="flex-1 min-h-0 flex flex-col">
+      {/* ── Fixed header — sits above the list, which owns the only scrollbar ── */}
+      <div className="flex-shrink-0 pb-3 space-y-3">
         {/* Title row */}
         <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
           <div>
@@ -540,7 +540,7 @@ export default function DepartmentView({
           })()}
         </div>
       ) : (
-        <div className="pt-4">
+        <div className="flex-1 min-h-0 pt-4">
           <TaskTable<typeof sort.field>
             // v2: bumped so the old 360/220 stored widths are dropped and the
             // narrower defaults (matching My Tasks, total 1260px) take effect.
@@ -549,6 +549,7 @@ export default function DepartmentView({
             sortField={sort.field}
             sortDir={sort.dir}
             onToggleSort={toggleSort}
+            fill
           >
             {tasksByTemplateForList.map(group => {
               const groupKey = group.template?.id ?? 'unknown';

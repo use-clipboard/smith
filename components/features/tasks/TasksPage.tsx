@@ -679,8 +679,9 @@ function TasksPageInner() {
 
         <div className="flex-1 flex min-h-0 overflow-hidden">
           <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-6 pt-5 pb-6">
+        {/* Scrollable content. Departments manages its own single scroll (fixed
+            header + the list scrolls), so this wrapper doesn't scroll there. */}
+        <div className={`flex-1 min-w-0 px-6 pt-5 pb-6 ${view === 'department' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'}`}>
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <Loader2 className="h-6 w-6 animate-spin text-[#5b21b6]" />

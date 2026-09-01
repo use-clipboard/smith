@@ -45,9 +45,15 @@ interface Props<SortField extends string> {
   /**
    * Max height for the scroll container. Defaults to roughly the page body
    * height minus the standard sticky filter bar. Override per view if the
-   * sticky area above is taller / shorter.
+   * sticky area above is taller / shorter. Ignored when `fill` is set.
    */
   maxHeight?: string;
+  /**
+   * Fill the parent's height instead of using maxHeight, so the list's own
+   * scroll is the only scrollbar (parent must be a bounded flex column). Use
+   * when the view above owns the fixed header and shouldn't scroll itself.
+   */
+  fill?: boolean;
   /** Body content — typically a single <tbody> or several grouped sections. */
   children: ReactNode;
   /** Optional toolbar rendered above the table inside the same card. */
@@ -56,7 +62,7 @@ interface Props<SortField extends string> {
 
 export default function TaskTable<SortField extends string>({
   viewKey, columns, sortField, sortDir, onToggleSort,
-  maxHeight = 'calc(100vh - 260px)', children, toolbar,
+  maxHeight = 'calc(100vh - 260px)', fill = false, children, toolbar,
 }: Props<SortField>) {
   const colDefs: ResizableColumnDef[] = columns.map(c => ({
     id:           c.id,
@@ -69,7 +75,7 @@ export default function TaskTable<SortField extends string>({
   const tableId = useId();
 
   return (
-    <div className="bg-white/[0.78] backdrop-blur-md border border-[var(--border)] rounded-xl">
+    <div className={`bg-white/[0.78] backdrop-blur-md border border-[var(--border)] rounded-xl ${fill ? 'flex flex-col min-h-0 h-full overflow-hidden' : ''}`}>
       {(toolbar || true) && (
         <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-gray-100 bg-gray-50/50 rounded-t-xl">
           <div className="flex-1 min-w-0">{toolbar}</div>
@@ -88,7 +94,7 @@ export default function TaskTable<SortField extends string>({
           inside the view (no horizontal scroll to reach the far-right columns);
           overflow-y-auto + maxHeight keeps the header row pinned while the rows
           scroll beneath it. */}
-      <div className="overflow-x-hidden overflow-y-auto rounded-b-xl" style={{ maxHeight }}>
+      <div className={`overflow-x-hidden overflow-y-auto rounded-b-xl ${fill ? 'flex-1 min-h-0' : ''}`} style={fill ? undefined : { maxHeight }}>
         <table
           id={tableId}
           className="text-sm border-collapse"
