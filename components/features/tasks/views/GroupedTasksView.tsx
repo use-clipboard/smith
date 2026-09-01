@@ -161,8 +161,10 @@ export default function GroupedTasksView({
   }
 
   // ── List view: one table, a tbody per group with a collapsible header row ──
+  // `fill` makes the table own the only scrollbar (the page wrapper stops
+  // scrolling for this mode), so the filters/KPI above stay fixed.
   return (
-    <TaskTable<SortField> viewKey={`grouped.${groupBy}`} columns={COLUMNS} sortField={sort.field} sortDir={sort.dir} onToggleSort={toggleSort}>
+    <TaskTable<SortField> viewKey={`grouped.${groupBy}`} columns={COLUMNS} sortField={sort.field} sortDir={sort.dir} onToggleSort={toggleSort} fill>
       {groups.map(g => {
         const isCollapsed = groupBy !== 'none' && collapsed.has(g.key);
         return (
