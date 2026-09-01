@@ -324,7 +324,11 @@ export default function DepartmentView({
   return (
     <div>
       {/* ── Sticky header ──────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-30 backdrop-blur-md pb-3 space-y-3">
+      {/* Solid opaque band so rows scrolling underneath are fully hidden (no
+          translucent bleed-through). -mx-6/-mt-5 + matching padding make the band
+          span the full width and cover the scroll container's top padding, so no
+          gradient shows above or beside it when pinned. */}
+      <div className="sticky top-0 z-30 -mx-6 -mt-5 px-6 pt-5 pb-3 space-y-3 bg-[#eef0f6] border-b border-[var(--border)]">
         {/* Title row */}
         <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
           <div>
