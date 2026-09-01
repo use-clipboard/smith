@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { Wand2, X, Minus, CheckCircle2, Loader2, Mail, HeartHandshake, CheckSquare } from 'lucide-react';
 import { openTaskInTool } from '@/lib/notificationTarget';
 import { buildDayPlan, dayPlanTaskCount } from '@/lib/tasks/dayPlan';
-import { DEFAULT_ORGANISE_SETTINGS } from '@/lib/tasks/organiseSettings';
+import { DEFAULT_ORGANISE_SETTINGS, type OrganiseSettings } from '@/lib/tasks/organiseSettings';
 import { useEmailCount } from '@/components/ui/EmailCountProvider';
 import { useNotifications } from '@/components/ui/NotificationsProvider';
 import { useModules } from '@/components/ui/ModulesProvider';
@@ -30,6 +30,7 @@ export default function OrganiseMyDayLightbox({ minimised, onMinimise, onClose }
   const [userId, setUserId] = useState('');
   const [loading, setLoading] = useState(true);
   const [hr, setHr] = useState<{ pendingApprovals: number; newBriefings: number }>({ pendingApprovals: 0, newBriefings: 0 });
+  const [settings, setSettings] = useState<OrganiseSettings>(DEFAULT_ORGANISE_SETTINGS);
 
   const { isModuleActive } = useModules();
   const { openTab } = useTabContext();
@@ -42,6 +43,7 @@ export default function OrganiseMyDayLightbox({ minimised, onMinimise, onClose }
     let live = true;
     fetch('/api/tasks').then(r => (r.ok ? r.json() : { tasks: [] })).then((d: { tasks?: Task[] }) => { if (live) setTasks(d.tasks ?? []); }).catch(() => {}).finally(() => { if (live) setLoading(false); });
     fetch('/api/users/me').then(r => (r.ok ? r.json() : {})).then((d: { userId?: string }) => { if (live) setUserId(d.userId ?? ''); }).catch(() => {});
+    fetch('/api/users/organise-settings').then(r => (r.ok ? r.json() : null)).then((d: { settings?: OrganiseSettings } | null) => { if (live && d?.settings) setSettings(d.settings); }).catch(() => {});
     if (hasHr) {
       fetch('/api/hr/badge-counts').then(r => (r.ok ? r.json() : null)).then((d: { pendingApprovals?: number; newBriefings?: number } | null) => {
         if (live && d) setHr({ pendingApprovals: d.pendingApprovals ?? 0, newBriefings: d.newBriefings ?? 0 });
@@ -117,7 +119,7 @@ export default function OrganiseMyDayLightbox({ minimised, onMinimise, onClose }
             </div>
           ) : (
             <OrganiseMyDayTimeline
-              tasks={tasks} userId={userId} adminItems={adminItems} settings={DEFAULT_ORGANISE_SETTINGS}
+              tasks={tasks} userId={userId} adminItems={adminItems} settings={settings}
               onOpenTask={openTask} onMarkDone={markDone} onOpenTasks={openTasksTool}
             />
           )}

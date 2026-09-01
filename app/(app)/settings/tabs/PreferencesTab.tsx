@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { GripVertical, Star, Plus, X, Mic, Video, AlertCircle, CheckCircle2, Lock, Bell } from 'lucide-react';
+import { GripVertical, Star, Plus, X, Mic, Video, AlertCircle, CheckCircle2, Lock, Bell, CalendarClock } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { useFavourites } from '@/components/ui/FavouritesProvider';
 import { useModules } from '@/components/ui/ModulesProvider';
+import { DEFAULT_ORGANISE_SETTINGS, type OrganiseSettings } from '@/lib/tasks/organiseSettings';
 import { FAVOURITABLE_ITEMS } from '@/config/navItems';
 
 type PermState = PermissionState | 'unknown' | 'requesting';
@@ -50,6 +51,27 @@ export default function PreferencesTab() {
       body: JSON.stringify({ notify_task_changes: value }),
     }).then(r => { if (!r.ok) setTaskNotify(prev); }).catch(() => setTaskNotify(prev));
   }
+
+  // ── Organise-my-day planner preferences (per-user) ────────────────────
+  const [org, setOrg] = useState<OrganiseSettings>(DEFAULT_ORGANISE_SETTINGS);
+  const [orgLoaded, setOrgLoaded] = useState(false);
+  useEffect(() => {
+    if (!hasTasks) return;
+    let cancelled = false;
+    fetch('/api/users/organise-settings')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!cancelled) { if (d?.settings) setOrg(d.settings as OrganiseSettings); setOrgLoaded(true); } })
+      .catch(() => { if (!cancelled) setOrgLoaded(true); });
+    return () => { cancelled = true; };
+  }, [hasTasks]);
+  function patchOrg(p: Partial<OrganiseSettings>) {
+    const next = { ...org, ...p };
+    setOrg(next); // optimistic
+    fetch('/api/users/organise-settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(next) })
+      .then(r => (r.ok ? r.json() : null)).then(d => { if (d?.settings) setOrg(d.settings as OrganiseSettings); }).catch(() => {});
+  }
+  const toHHMM = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const fromHHMM = (s: string) => { const [h, m] = s.split(':').map(Number); return (h || 0) * 60 + (m || 0); };
 
   // Query current permission states on mount
   useEffect(() => {
@@ -216,6 +238,61 @@ export default function PreferencesTab() {
                 </button>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Organise my day (only if the Tasks tool is active) ──────────── */}
+      {hasTasks && (
+        <div className="glass-solid rounded-xl p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <CalendarClock size={15} className="text-[var(--accent)]" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Organise my day</h3>
+          </div>
+          <p className="text-xs text-[var(--text-muted)] mb-5">
+            Shape the working day the planner schedules your tasks into — your hours, lunch, a buffer between blocks, and time to wrap up. Just for you.
+          </p>
+          <div className="space-y-4">
+            {/* Working hours */}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div><p className="text-sm font-medium text-[var(--text-primary)]">Working hours</p><p className="text-xs text-[var(--text-muted)]">When your day starts and ends</p></div>
+              <div className="flex items-center gap-2">
+                <input type="time" value={toHHMM(org.workStartMin)} disabled={!orgLoaded} onChange={e => patchOrg({ workStartMin: fromHHMM(e.target.value) })} className="input-base !py-1.5 !w-28" />
+                <span className="text-xs text-[var(--text-muted)]">to</span>
+                <input type="time" value={toHHMM(org.workEndMin)} disabled={!orgLoaded} onChange={e => patchOrg({ workEndMin: fromHHMM(e.target.value) })} className="input-base !py-1.5 !w-28" />
+              </div>
+            </div>
+            {/* Lunch */}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div><p className="text-sm font-medium text-[var(--text-primary)]">Lunch</p><p className="text-xs text-[var(--text-muted)]">Blocked out so tasks schedule around it</p></div>
+              <div className="flex items-center gap-2">
+                <label className="inline-flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+                  <input type="checkbox" checked={org.lunchStartMin != null} disabled={!orgLoaded} onChange={e => patchOrg({ lunchStartMin: e.target.checked ? 13 * 60 : null })} /> On
+                </label>
+                {org.lunchStartMin != null && (
+                  <>
+                    <input type="time" value={toHHMM(org.lunchStartMin)} disabled={!orgLoaded} onChange={e => patchOrg({ lunchStartMin: fromHHMM(e.target.value) })} className="input-base !py-1.5 !w-28" />
+                    <select value={org.lunchMinutes} disabled={!orgLoaded} onChange={e => patchOrg({ lunchMinutes: Number(e.target.value) })} className="input-base !py-1.5">
+                      {[30, 45, 60].map(v => <option key={v} value={v}>{v} min</option>)}
+                    </select>
+                  </>
+                )}
+              </div>
+            </div>
+            {/* Buffer */}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div><p className="text-sm font-medium text-[var(--text-primary)]">Buffer between blocks</p><p className="text-xs text-[var(--text-muted)]">Breathing room between scheduled items</p></div>
+              <select value={org.bufferMinutes} disabled={!orgLoaded} onChange={e => patchOrg({ bufferMinutes: Number(e.target.value) })} className="input-base !py-1.5">
+                {[0, 5, 10, 15].map(v => <option key={v} value={v}>{v === 0 ? 'None' : `${v} min`}</option>)}
+              </select>
+            </div>
+            {/* Wrap */}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div><p className="text-sm font-medium text-[var(--text-primary)]">End-of-day wrap</p><p className="text-xs text-[var(--text-muted)]">Reserve time to wrap up &amp; plan tomorrow</p></div>
+              <select value={org.wrapMinutes} disabled={!orgLoaded} onChange={e => patchOrg({ wrapMinutes: Number(e.target.value) })} className="input-base !py-1.5">
+                {[0, 10, 15, 30].map(v => <option key={v} value={v}>{v === 0 ? 'Off' : `${v} min`}</option>)}
+              </select>
+            </div>
           </div>
         </div>
       )}
