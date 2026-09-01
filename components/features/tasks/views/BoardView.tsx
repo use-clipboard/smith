@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import TaskCard from '../TaskCard';
 import type { Task, TaskStatus } from '@/types';
 
@@ -30,16 +31,38 @@ const COLUMNS: { status: TaskStatus; label: string; dot: string }[] = [
 export default function BoardView({ tasks, currentUserId, onTaskClick, onTaskUpdate, isAdmin = false, onDelete, onStopRecurrence }: Props) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<TaskStatus | null>(null);
+  // Optimistic move: the card jumps to the new column immediately and shows a
+  // spinner while the PUT (and the parent's full refetch) completes — otherwise
+  // the card only moves once every task has been refetched, which feels laggy.
+  const [pending, setPending] = useState<Record<string, TaskStatus>>({}); // id → optimistic status
+  const [moving, setMoving] = useState<Set<string>>(new Set());           // ids currently saving
+
+  // Drop each optimistic override once the incoming props actually reflect it
+  // (or the task disappears from view), so props stay the source of truth.
+  useEffect(() => {
+    setPending(prev => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [id, st] of Object.entries(prev)) {
+        const t = tasks.find(x => x.id === id);
+        if (!t || t.status === st) { delete next[id]; changed = true; }
+      }
+      return changed ? next : prev;
+    });
+  }, [tasks]);
+
+  const effectiveStatus = (t: Task): TaskStatus => pending[t.id] ?? t.status;
 
   const byStatus = useMemo(() => {
     const m = new Map<TaskStatus, Task[]>();
     COLUMNS.forEach(c => m.set(c.status, []));
     for (const t of tasks) {
-      if (!m.has(t.status)) m.set(t.status, []);
-      m.get(t.status)!.push(t);
+      const st = pending[t.id] ?? t.status;
+      if (!m.has(st)) m.set(st, []);
+      m.get(st)!.push(t);
     }
     return m;
-  }, [tasks]);
+  }, [tasks, pending]);
 
   function handleDrop(status: TaskStatus) {
     return (e: React.DragEvent) => {
@@ -49,7 +72,13 @@ export default function BoardView({ tasks, currentUserId, onTaskClick, onTaskUpd
       setDragId(null);
       if (!id) return;
       const t = tasks.find(x => x.id === id);
-      if (t && t.status !== status) void onTaskUpdate?.(id, { status });
+      if (!t || effectiveStatus(t) === status || !onTaskUpdate) return;
+      // Move now, save in the background.
+      setPending(p => ({ ...p, [id]: status }));
+      setMoving(m => new Set(m).add(id));
+      onTaskUpdate(id, { status })
+        .catch(() => { setPending(p => { const n = { ...p }; delete n[id]; return n; }); }) // revert on failure
+        .finally(() => { setMoving(m => { const n = new Set(m); n.delete(id); return n; }); });
     };
   }
 
@@ -75,17 +104,27 @@ export default function BoardView({ tasks, currentUserId, onTaskClick, onTaskUpd
               <div className="p-2.5 flex flex-col gap-2.5 overflow-y-auto">
                 {items.length === 0
                   ? <p className="text-center text-xs text-gray-400 py-8">{isOver ? 'Drop to move here' : 'No tasks'}</p>
-                  : items.map(t => (
-                    <div
-                      key={t.id}
-                      draggable
-                      onDragStart={e => { e.dataTransfer.setData('text/task-id', t.id); e.dataTransfer.effectAllowed = 'move'; setDragId(t.id); }}
-                      onDragEnd={() => { setDragId(null); setOverCol(null); }}
-                      className={`cursor-grab active:cursor-grabbing ${dragId === t.id ? 'opacity-50' : ''}`}
-                    >
-                      <TaskCard task={t} onClick={() => onTaskClick(t)} currentUserId={currentUserId} isAdmin={isAdmin} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />
-                    </div>
-                  ))}
+                  : items.map(t => {
+                    const isMoving = moving.has(t.id);
+                    return (
+                      <div
+                        key={t.id}
+                        draggable={!isMoving}
+                        onDragStart={e => { e.dataTransfer.setData('text/task-id', t.id); e.dataTransfer.effectAllowed = 'move'; setDragId(t.id); }}
+                        onDragEnd={() => { setDragId(null); setOverCol(null); }}
+                        className={`relative transition-opacity ${isMoving ? 'cursor-wait' : 'cursor-grab active:cursor-grabbing'} ${dragId === t.id ? 'opacity-50' : ''} ${isMoving ? 'opacity-70' : ''}`}
+                      >
+                        <TaskCard task={t} onClick={() => onTaskClick(t)} currentUserId={currentUserId} isAdmin={isAdmin} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />
+                        {isMoving && (
+                          <div className="absolute inset-0 rounded-2xl bg-white/40 backdrop-blur-[1px] grid place-items-center pointer-events-none">
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-indigo-700 bg-white/90 border border-indigo-100 shadow-sm rounded-full px-2.5 py-1">
+                              <Loader2 className="h-3 w-3 animate-spin" /> Moving…
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           );
