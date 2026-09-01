@@ -104,7 +104,9 @@ export default function TaskTable<SortField extends string>({
             <tr>
               {columns.map(c => {
                 const w = widths[c.id] ?? c.defaultWidth;
-                const baseTh = 'sticky top-0 z-10 bg-gray-50/85 backdrop-blur-sm border-b border-[var(--border)] px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide select-none';
+                // Opaque fill (not translucent) so rows are fully hidden as they
+                // scroll under the pinned header instead of bleeding through.
+                const baseTh = 'sticky top-0 z-10 bg-[#f4f5fa] border-b border-[var(--border)] px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide select-none';
                 const alignCls = c.align === 'right' ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left';
                 // Percentage width (no fixed px min) so columns share the width
                 // and the table never exceeds 100% → no horizontal scroll.
