@@ -324,21 +324,7 @@ export default function DepartmentView({
   return (
     <div>
       {/* ── Sticky header ──────────────────────────────────────────────────── */}
-      {/* Carry the app's fixed background image (viewport-anchored) so the pinned
-          header lines up pixel-perfect with the backdrop behind it and fully
-          hides rows scrolling underneath — a solid colour can't match the
-          gradient, but the same fixed image does. */}
-      <div
-        className="sticky top-0 z-30 pb-3 space-y-3"
-        style={{
-          backgroundColor: '#c2c9e9',
-          backgroundImage: "linear-gradient(rgba(255,255,255,0.15), rgba(255,255,255,0.15)), url('/app-background.png')",
-          backgroundSize: 'cover, cover',
-          backgroundPosition: 'center, center',
-          backgroundRepeat: 'no-repeat, no-repeat',
-          backgroundAttachment: 'fixed, fixed',
-        }}
-      >
+      <div className="sticky top-0 z-30 backdrop-blur-md pb-3 space-y-3">
         {/* Title row */}
         <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
           <div>
