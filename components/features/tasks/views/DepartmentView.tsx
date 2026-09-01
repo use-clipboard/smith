@@ -45,9 +45,12 @@ interface Props {
 
 type DeptSortField = 'task' | 'client' | 'status' | 'due';
 
+// Widths kept in lock-step with GroupedTasksView's COLUMNS (total 1260px) so the
+// Departments table fits the same content area as the My Tasks list — otherwise
+// it overflows by ~30px and shows a horizontal scrollbar under the headings.
 const DEPARTMENT_COLUMNS: TaskColumn<DeptSortField>[] = [
-  { id: 'task',      label: 'Task',      defaultWidth: 360, minWidth: 200, sortField: 'task'   },
-  { id: 'client',    label: 'Client',    defaultWidth: 220, minWidth: 120, sortField: 'client' },
+  { id: 'task',      label: 'Task',      defaultWidth: 340, minWidth: 200, sortField: 'task'   },
+  { id: 'client',    label: 'Client',    defaultWidth: 210, minWidth: 120, sortField: 'client' },
   { id: 'status',    label: 'Status',    defaultWidth: 140, minWidth: 90,  sortField: 'status' },
   { id: 'progress',  label: 'Progress',  defaultWidth: 140, minWidth: 90                          },
   { id: 'due',       label: 'Due',       defaultWidth: 170, minWidth: 110, sortField: 'due'    },
@@ -539,7 +542,9 @@ export default function DepartmentView({
       ) : (
         <div className="pt-4">
           <TaskTable<typeof sort.field>
-            viewKey={`department.${category}`}
+            // v2: bumped so the old 360/220 stored widths are dropped and the
+            // narrower defaults (matching My Tasks, total 1260px) take effect.
+            viewKey={`department.v2.${category}`}
             columns={DEPARTMENT_COLUMNS}
             sortField={sort.field}
             sortDir={sort.dir}
