@@ -233,6 +233,17 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
   }
   function removeBlock(key: string) { save((blocks ?? []).filter(b => b.key !== key)); }
   function rePlan() { const customs = (blocks ?? []).filter(b => b.kind === 'custom'); save(generate(customs, nowMin)); }
+  // Ticking a task done marks it complete AND records a "from your plan" timesheet
+  // suggestion with the block's allotted time, linked to the task (to confirm in
+  // Timesheets). Only tasks (which carry a client + task id) do this.
+  function markTaskDone(task: Task | undefined, minutes: number) {
+    if (!task) return;
+    onMarkDone(task.id);
+    fetch('/api/timesheets/plan-suggestions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId: task.id, clientId: task.client_id ?? null, title: task.title, isInternal: !!task.is_internal, minutes, date: planDate }),
+    }).then(() => window.dispatchEvent(new CustomEvent('smith:timesheet-plan-suggestion'))).catch(() => {});
+  }
 
   const previewFor = (key: string, start: number, dur: number) => {
     if (!drag || drag.key !== key) return { start, dur };
@@ -324,7 +335,7 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
                       </p>
                       {h > 34 && <p className="truncate text-[10.5px] text-gray-500">{minToHHMM(p.start)}–{minToHHMM(p.start + p.dur)}{item && item.kind !== 'admin' && item.sub ? ` · ${item.sub}` : ''}</p>}
                     </div>
-                    {item?.onDone && <button onPointerDown={e => e.stopPropagation()} onClick={item.onDone} aria-label="Mark done" className="shrink-0 rounded-md p-0.5 text-gray-300 opacity-0 transition-opacity hover:bg-emerald-50 hover:text-emerald-600 group-hover:opacity-100"><CheckCircle2 size={16} /></button>}
+                    {item?.onDone && <button onPointerDown={e => e.stopPropagation()} onClick={() => markTaskDone(item.task, block.dur)} aria-label="Mark done" className="shrink-0 rounded-md p-0.5 text-gray-300 opacity-0 transition-opacity hover:bg-emerald-50 hover:text-emerald-600 group-hover:opacity-100"><CheckCircle2 size={16} /></button>}
                     {isCustom && <button onPointerDown={e => e.stopPropagation()} onClick={() => removeBlock(block.key)} aria-label="Remove block" className="shrink-0 rounded-md p-0.5 text-slate-300 opacity-0 hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"><X size={15} /></button>}
                   </div>
                   <div onPointerDown={e => beginDrag(e, block.key, 'resize', block.start, block.dur)} className="absolute inset-x-0 bottom-0 flex h-2.5 cursor-ns-resize items-end justify-center opacity-0 group-hover:opacity-100" style={{ touchAction: 'none' }}>
@@ -355,7 +366,7 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
                 <GripVertical size={13} className="shrink-0 text-gray-300 group-hover:text-gray-400" />
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: it.color }} />
                 <button onClick={it.onOpen} className="min-w-0 flex-1 text-left"><p className="truncate text-[12px] font-semibold text-gray-800">{it.label}</p>{it.sub && <p className="truncate text-[10.5px] text-gray-500">{it.sub}</p>}</button>
-                {it.onDone && <button onClick={it.onDone} aria-label="Mark done" className="shrink-0 rounded-md p-1 text-gray-300 hover:bg-emerald-50 hover:text-emerald-600"><CheckCircle2 size={15} /></button>}
+                {it.onDone && <button onClick={() => markTaskDone(it.task, it.minutes)} aria-label="Mark done" className="shrink-0 rounded-md p-1 text-gray-300 hover:bg-emerald-50 hover:text-emerald-600"><CheckCircle2 size={15} /></button>}
               </div>
             ))}
           </div>

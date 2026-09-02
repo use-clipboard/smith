@@ -134,4 +134,9 @@ export interface AiSuggestion {
   /** 0–1 confidence in the detection. */
   confidence: number;
   rationale: string;
+  /** Link to a Tasks-tool task, so accepting the suggestion logs against it. */
+  taskId?: string | null;
+  /** Set on suggestions sourced from the Organise-my-day plan (the server row id),
+   *  so accept/dismiss also clears the persisted plan suggestion. */
+  planId?: string;
 }

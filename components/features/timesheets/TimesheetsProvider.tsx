@@ -314,7 +314,8 @@ export default function TimesheetsProvider({
   // Persist timers + suggestions (device-local).
   useEffect(() => {
     if (!ready) return;
-    const serialised = JSON.stringify({ timers, suggestions });
+    // Plan suggestions are server-owned — never persist them device-local.
+    const serialised = JSON.stringify({ timers, suggestions: suggestions.filter(s => !s.planId) });
     if (serialised === lastWrittenRef.current) return; // unchanged — don't wake other tabs
     lastWrittenRef.current = serialised;
     try { window.localStorage.setItem(metaKey, serialised); } catch { /* quota */ }
@@ -687,13 +688,38 @@ export default function TimesheetsProvider({
         body: JSON.stringify({ days: 7 }),
       });
       const data = res.ok ? await res.json() : { suggestions: [] };
-      setSuggestions(Array.isArray(data.suggestions) ? (data.suggestions as AiSuggestion[]) : []);
+      const ai = Array.isArray(data.suggestions) ? (data.suggestions as AiSuggestion[]) : [];
+      // Keep any "from your plan" suggestions — the AI scan only owns the rest.
+      setSuggestions(prev => [...prev.filter(s => s.planId), ...ai]);
     } catch {
-      setSuggestions([]);
+      setSuggestions(prev => prev.filter(s => s.planId));
     } finally {
       setScanning(false);
     }
   }, []);
+
+  // "From your plan" suggestions — persisted server-side (created when a task is
+  // ticked done in the Organise-my-day planner). Merge them into the same list.
+  const refreshPlanSuggestions = useCallback(async () => {
+    try {
+      const res = await fetch('/api/timesheets/plan-suggestions');
+      if (!res.ok) return;
+      const d = await res.json() as { suggestions?: { id: string; taskId: string | null; clientId: string | null; clientName: string | null; title: string; isInternal: boolean; minutes: number; date: string }[] };
+      const plan: AiSuggestion[] = (d.suggestions ?? []).map(p => ({
+        id: `plan-${p.id}`, source: 'task', clientId: p.clientId, clientName: p.clientName ?? (p.isInternal ? 'Internal' : '—'),
+        activity: p.title, taskTitle: p.title, date: p.date, suggestedMinutes: p.minutes,
+        type: p.isInternal ? 'internal' : 'billable', confidence: 1, rationale: 'From your Organise-my-day plan',
+        taskId: p.taskId, planId: p.id,
+      }));
+      setSuggestions(prev => [...plan, ...prev.filter(s => !s.planId)]);
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => { if (ready) void refreshPlanSuggestions(); }, [ready, refreshPlanSuggestions]);
+  useEffect(() => {
+    const h = () => void refreshPlanSuggestions();
+    window.addEventListener('smith:timesheet-plan-suggestion', h);
+    return () => window.removeEventListener('smith:timesheet-plan-suggestion', h);
+  }, [refreshPlanSuggestions]);
 
   const acceptSuggestion = useCallback((id: string) => {
     setSuggestions(prev => {
@@ -706,23 +732,28 @@ export default function TimesheetsProvider({
           start: '—',
           clientId: s.clientId,
           clientName: s.clientName,
-          taskId: null,
+          taskId: s.taskId ?? null,
           taskTitle: s.taskTitle,
           activity: s.activity,
           department: activities.find(a => a.label === s.activity)?.department ?? 'General',
           type: s.type,
           minutes: s.suggestedMinutes,
           ratePence: s.type === 'billable' ? (meStaff?.ratePence ?? defaultRatePence) : 0,
-          notes: `Auto-captured from ${s.source.replace('_', ' ')}`,
+          notes: s.planId ? 'Logged from your Organise-my-day plan' : `Auto-captured from ${s.source.replace('_', ' ')}`,
           source: 'ai',
         });
+        if (s.planId) fetch(`/api/timesheets/plan-suggestions/${s.planId}`, { method: 'DELETE' }).catch(() => {});
       }
       return prev.filter(x => x.id !== id);
     });
   }, [addEntry, liveStaff, userId, activities, defaultRatePence]);
 
   const dismissSuggestion = useCallback((id: string) => {
-    setSuggestions(prev => prev.filter(x => x.id !== id));
+    setSuggestions(prev => {
+      const s = prev.find(x => x.id === id);
+      if (s?.planId) fetch(`/api/timesheets/plan-suggestions/${s.planId}`, { method: 'DELETE' }).catch(() => {});
+      return prev.filter(x => x.id !== id);
+    });
   }, []);
 
   const openStartModal = useCallback(() => setStartModalOpen(true), []);
