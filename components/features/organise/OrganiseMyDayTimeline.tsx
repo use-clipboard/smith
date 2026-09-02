@@ -24,7 +24,7 @@ export interface AdminItem { key: string; label: string; count: number; minutes:
 interface Busy { start: number; end: number }
 interface PlanItem { id: string; kind: 'admin' | 'task' | 'chase'; label: string; sub?: string; minutes: number; color: string; task?: Task; onOpen: () => void; onDone?: () => void }
 /** Persisted block: identifies a queue item (by key) or a custom focus block. */
-interface Block { key: string; kind: 'admin' | 'task' | 'chase' | 'custom'; start: number; dur: number; label?: string }
+interface Block { key: string; kind: 'admin' | 'task' | 'chase' | 'custom' | 'break' | 'wrap'; start: number; dur: number; label?: string }
 type DragState = { key: string; mode: 'move' | 'resize'; deltaMin: number } | null;
 
 const minToHHMM = (m: number): string => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(Math.round(m) % 60).padStart(2, '0')}`;
@@ -103,29 +103,59 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
     return () => { live = false; };
   }, [planDate]);
 
-  // Display range covers the working day + any early/late meeting.
+  // Display range covers the working day + any meeting outside it.
   const { events, dispStart, dispEnd } = useMemo(() => {
     const events = calEvents.map(e => ({ ...e, start: parseMin(e.startHHmm), end: parseMin(e.startHHmm) + e.minutes })).filter(e => e.minutes > 0);
     const mins = [settings.workStartMin, settings.workEndMin, ...events.flatMap(e => [e.start, e.end])];
-    if (settings.lunchStartMin != null) mins.push(settings.lunchStartMin, settings.lunchStartMin + settings.lunchMinutes);
     return { events, dispStart: Math.floor(Math.min(...mins) / 60) * 60, dispEnd: Math.ceil(Math.max(...mins) / 60) * 60 };
   }, [calEvents, settings]);
 
-  const lunch = settings.lunchStartMin != null && settings.lunchMinutes > 0 ? { start: settings.lunchStartMin, dur: settings.lunchMinutes } : null;
-  const wrap = settings.wrapMinutes > 0 ? { start: settings.workEndMin - settings.wrapMinutes, dur: settings.wrapMinutes } : null;
-  const fixedBusy = useMemo<Busy[]>(() => {
-    const b: Busy[] = events.map(e => ({ start: e.start, end: e.end }));
-    if (lunch) b.push({ start: lunch.start, end: lunch.start + lunch.dur });
-    if (wrap) b.push({ start: wrap.start, end: wrap.start + wrap.dur });
-    return b.sort((a, z) => a.start - z.start);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events, settings]);
+  // Calendar meetings are the only truly-fixed obstacles; lunch + wrap are now
+  // editable blocks that the plan places AROUND meetings.
+  const calBusy = useMemo<Busy[]>(() => events.map(e => ({ start: e.start, end: e.end })).sort((a, z) => a.start - z.start), [events]);
 
-  // Generate a fresh block layout from the current queue (+ keep custom blocks).
-  const generate = (existingCustoms: Block[], fromMin: number): Block[] => {
-    const busy: Busy[] = [...fixedBusy, ...existingCustoms.map(c => ({ start: c.start, end: c.start + c.dur }))].sort((a, z) => a.start - z.start);
+  const TIMELINE_H = ((dispEnd - dispStart) / 60) * PX_PER_HOUR;
+  const PX_PER_MIN = PX_PER_HOUR / 60;
+  const yFor = (m: number) => (m - dispStart) * PX_PER_MIN;
+  const hFor = (m: number) => m * PX_PER_MIN;
+  const blockMin = (k: Block['kind']) => (k === 'break' || k === 'wrap') ? SNAP : MOVABLE_MIN;
+  const clampStart = (start: number, dur: number) => Math.max(dispStart, Math.min(start, settings.workEndMin - dur));
+  const clampDur = (dur: number, start: number, min: number) => Math.max(min, Math.min(dur, dispEnd - start));
+  // Nudge a [start,dur] off any calendar meeting to the nearest free time.
+  const avoidCalendar = (start: number, dur: number): number => {
+    let s = clampStart(start, dur);
+    for (let g = 0; g < calBusy.length + 2; g++) {
+      const clash = calBusy.find(e => s < e.end && s + dur > e.start);
+      if (!clash) return s;
+      s = clash.end + dur <= settings.workEndMin ? clash.end : Math.max(dispStart, clash.start - dur);
+    }
+    return s;
+  };
+  const labelFor = (b: Block) => b.kind === 'break' ? 'Lunch' : b.kind === 'wrap' ? 'Wrap up · plan tomorrow' : (b.label ?? 'Focus time');
+
+  // Seed the structural lunch + wrap blocks from settings, placed around meetings.
+  const seedFixtures = (): Block[] => {
+    const out: Block[] = [];
+    const busy = [...calBusy];
+    if (settings.lunchStartMin != null && settings.lunchMinutes > 0) {
+      const s = findSlot(settings.lunchStartMin, settings.lunchMinutes, busy, settings.workStartMin, settings.workEndMin) ?? settings.lunchStartMin;
+      out.push({ key: 'lunch', kind: 'break', start: s, dur: settings.lunchMinutes });
+      busy.push({ start: s, end: s + settings.lunchMinutes });
+    }
+    if (settings.wrapMinutes > 0) {
+      const target = settings.workEndMin - settings.wrapMinutes;
+      const overlaps = calBusy.some(e => target < e.end && target + settings.wrapMinutes > e.start);
+      const s = overlaps ? (findSlot(target, settings.wrapMinutes, busy, settings.workStartMin, settings.workEndMin) ?? target) : target;
+      out.push({ key: 'wrap', kind: 'wrap', start: s, dur: settings.wrapMinutes });
+    }
+    return out;
+  };
+
+  // Generate a fresh layout: schedule the queue around meetings + kept blocks.
+  const generate = (keep: Block[], fromMin: number): Block[] => {
+    const busy: Busy[] = [...calBusy, ...keep.map(c => ({ start: c.start, end: c.start + c.dur }))].sort((a, z) => a.start - z.start);
     const startFrom = Math.max(Math.ceil(fromMin / SNAP) * SNAP, settings.workStartMin);
-    const out: Block[] = [...existingCustoms];
+    const out: Block[] = [...keep];
     let cursor = startFrom;
     for (const it of queue) {
       const slot = findSlot(Math.max(cursor, startFrom), it.minutes, busy, settings.workStartMin, settings.workEndMin);
@@ -142,58 +172,47 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
     fetch('/api/users/organise-plan', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: planDate, plan: { v: 1, blocks: next } }) }).catch(() => {});
   }
 
-  // First-time generation once calendar + saved-plan lookup have settled and
-  // there was no saved plan.
   useEffect(() => {
     if (didGenerate.current || !calLoaded || !planLoaded || blocks !== null) return;
     didGenerate.current = true;
-    save(generate([], openMin));
+    save(generate(seedFixtures(), openMin));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calLoaded, planLoaded, blocks]);
 
+  const NONQUEUE = ['custom', 'break', 'wrap'];
   const ready = blocks !== null;
-  const rendered = (blocks ?? []).map(b => ({ block: b, item: b.kind === 'custom' ? null : queueById.get(b.key) ?? undefined }))
-    .filter(r => r.block.kind === 'custom' || r.item !== undefined) as { block: Block; item: PlanItem | null }[];
+  const rendered = (blocks ?? []).map(b => ({ block: b, item: NONQUEUE.includes(b.kind) ? null : queueById.get(b.key) ?? undefined }))
+    .filter(r => NONQUEUE.includes(r.block.kind) || r.item !== undefined) as { block: Block; item: PlanItem | null }[];
   const scheduledKeys = new Set((blocks ?? []).map(b => b.key));
   const notScheduled = queue.filter(q => !scheduledKeys.has(q.id));
 
-  const TIMELINE_H = ((dispEnd - dispStart) / 60) * PX_PER_HOUR;
-  const PX_PER_MIN = PX_PER_HOUR / 60;
-  const yFor = (m: number) => (m - dispStart) * PX_PER_MIN;
-  const hFor = (m: number) => m * PX_PER_MIN;
-  const clampStart = (start: number, dur: number) => Math.max(dispStart, Math.min(start, settings.workEndMin - dur));
-  const clampDur = (dur: number, start: number) => Math.max(MOVABLE_MIN, Math.min(dur, dispEnd - start));
-
-  // Keep the edited block fixed and shrink neighbours so blocks never overlap:
-  // blocks after it shrink from the top, blocks before shrink from the bottom
-  // (cascading, floored at MOVABLE_MIN). Fixed lunch/wrap/calendar aren't blocks.
+  // Keep the edited block fixed and shrink neighbours so blocks never overlap.
   function resolveOverlaps(list: Block[], anchorKey: string): Block[] {
     const arr = [...list].sort((a, b) => a.start - b.start);
     const ai = arr.findIndex(b => b.key === anchorKey);
     if (ai < 0) return list;
     let floor = arr[ai].start + arr[ai].dur;
     for (let i = ai + 1; i < arr.length; i++) {
-      const b = arr[i], end = b.start + b.dur;
-      if (b.start < floor) { const nd = Math.max(MOVABLE_MIN, end - floor); arr[i] = { ...b, start: floor, dur: nd }; floor += nd; }
+      const b = arr[i], end = b.start + b.dur, min = blockMin(b.kind);
+      if (b.start < floor) { const nd = Math.max(min, end - floor); arr[i] = { ...b, start: floor, dur: nd }; floor += nd; }
       else floor = end;
     }
     let ceil = arr[ai].start;
     for (let i = ai - 1; i >= 0; i--) {
-      const b = arr[i], end = b.start + b.dur;
-      if (end > ceil) { const nd = Math.max(MOVABLE_MIN, ceil - b.start); arr[i] = { ...b, start: ceil - nd, dur: nd }; ceil -= nd; }
+      const b = arr[i], end = b.start + b.dur, min = blockMin(b.kind);
+      if (end > ceil) { const nd = Math.max(min, ceil - b.start); arr[i] = { ...b, start: ceil - nd, dur: nd }; ceil -= nd; }
       else ceil = b.start;
     }
-    return arr.map(b => { const start = Math.max(dispStart, Math.min(b.start, dispEnd - MOVABLE_MIN)); return { ...b, start, dur: Math.max(MOVABLE_MIN, Math.min(b.dur, dispEnd - start)) }; });
+    return arr.map(b => { const min = blockMin(b.kind); const start = Math.max(dispStart, Math.min(b.start, dispEnd - min)); return { ...b, start, dur: Math.max(min, Math.min(b.dur, dispEnd - start)) }; });
   }
 
-  const plannedMins = rendered.reduce((n, r) => n + r.block.dur, 0);
+  const plannedMins = rendered.reduce((n, r) => n + (r.block.kind === 'break' || r.block.kind === 'wrap' ? 0 : r.block.dur), 0);
   const nowVisible = nowMin >= dispStart && nowMin <= dispEnd;
 
   // Live "on now / up next".
   const bannerItems = [
-    ...rendered.map(r => ({ start: r.block.start, end: r.block.start + r.block.dur, title: r.item?.label ?? r.block.label ?? 'Focus time', open: r.item?.onOpen ?? null })),
+    ...rendered.map(r => ({ start: r.block.start, end: r.block.start + r.block.dur, title: r.item?.label ?? labelFor(r.block), open: r.item?.onOpen ?? null })),
     ...events.map(e => ({ start: e.start, end: e.end, title: e.title, open: null as (() => void) | null })),
-    ...(lunch ? [{ start: lunch.start, end: lunch.start + lunch.dur, title: 'Lunch', open: null as (() => void) | null }] : []),
   ].sort((a, b) => a.start - b.start);
   const currentItem = bannerItems.find(i => i.start <= nowMin && nowMin < i.end) ?? null;
   const nextItem = bannerItems.find(i => i.start > nowMin) ?? null;
@@ -209,9 +228,15 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
     const onUp = () => {
       window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); setDrag(null);
       if (!moved) { onTap?.(); return; }
+      const min = blockMin((blocks ?? []).find(b => b.key === key)?.kind ?? 'task');
       const edited = (blocks ?? []).map(b => {
         if (b.key !== key) return b;
-        return mode === 'move' ? { ...b, start: clampStart(baseStart + deltaMin, baseDur) } : { ...b, dur: clampDur(baseDur + deltaMin, baseStart) };
+        if (mode === 'move') return { ...b, start: avoidCalendar(baseStart + deltaMin, baseDur) };
+        // Resize: keep the block off the next meeting.
+        let nd = clampDur(baseDur + deltaMin, baseStart, min);
+        const next = calBusy.find(ev2 => ev2.start >= baseStart);
+        if (next) nd = Math.max(min, Math.min(nd, next.start - baseStart));
+        return { ...b, dur: nd };
       });
       save(resolveOverlaps(edited, key));
     };
@@ -222,17 +247,22 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
   function addBlockAt(offsetY: number) {
     customSeq.current += 1;
     const key = `focus-${Date.now()}-${customSeq.current}`;
-    save(resolveOverlaps([...(blocks ?? []), { key, kind: 'custom', label: 'Focus time', start: clampStart(yToMin(offsetY), MOVABLE_MIN), dur: MOVABLE_MIN }], key));
+    save(resolveOverlaps([...(blocks ?? []), { key, kind: 'custom', label: 'Focus time', start: avoidCalendar(yToMin(offsetY), MOVABLE_MIN), dur: MOVABLE_MIN }], key));
   }
   // Drag a "not in the plan" item onto the timeline to schedule it there.
   function addQueueItemAt(id: string, y: number) {
     const it = queueById.get(id);
     if (!it || (blocks ?? []).some(b => b.key === id)) return;
     const dur = Math.max(MOVABLE_MIN, it.minutes);
-    save(resolveOverlaps([...(blocks ?? []), { key: it.id, kind: it.kind, start: clampStart(yToMin(y), dur), dur }], it.id));
+    save(resolveOverlaps([...(blocks ?? []), { key: it.id, kind: it.kind, start: avoidCalendar(yToMin(y), dur), dur }], it.id));
   }
   function removeBlock(key: string) { save((blocks ?? []).filter(b => b.key !== key)); }
-  function rePlan() { const customs = (blocks ?? []).filter(b => b.kind === 'custom'); save(generate(customs, nowMin)); }
+  function rePlan() {
+    const keep = (blocks ?? []).filter(b => b.kind === 'custom' || b.kind === 'break' || b.kind === 'wrap');
+    const hasBreak = keep.some(b => b.kind === 'break'), hasWrap = keep.some(b => b.kind === 'wrap');
+    const seeds = seedFixtures().filter(s => (s.kind === 'break' && !hasBreak) || (s.kind === 'wrap' && !hasWrap));
+    save(generate([...keep, ...seeds], nowMin));
+  }
   // Ticking a task done marks it complete AND records a "from your plan" timesheet
   // suggestion with the block's allotted time, linked to the task (to confirm in
   // Timesheets). Only tasks (which carry a client + task id) do this.
@@ -247,7 +277,8 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
 
   const previewFor = (key: string, start: number, dur: number) => {
     if (!drag || drag.key !== key) return { start, dur };
-    return drag.mode === 'move' ? { start: clampStart(start + drag.deltaMin, dur), dur } : { start, dur: clampDur(dur + drag.deltaMin, start) };
+    const min = blockMin((blocks ?? []).find(b => b.key === key)?.kind ?? 'task');
+    return drag.mode === 'move' ? { start: clampStart(start + drag.deltaMin, dur), dur } : { start, dur: clampDur(dur + drag.deltaMin, start, min) };
   };
 
   if (!ready) {
@@ -306,9 +337,6 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
             onDrop={e => { const id = e.dataTransfer.getData('text/omd-item'); if (id) { e.preventDefault(); addQueueItemAt(id, e.clientY - e.currentTarget.getBoundingClientRect().top); } }}>
             {Array.from({ length: (dispEnd - dispStart) / 60 }, (_, i) => <div key={i} className="pointer-events-none absolute left-0 right-0 border-t border-dashed border-black/[0.05]" style={{ top: i * PX_PER_HOUR }} />)}
 
-            {lunch && <div className="pointer-events-none absolute left-1.5 right-1.5 flex items-center overflow-hidden rounded-lg border border-amber-200 bg-amber-50/70 px-2" style={{ top: Math.max(0, yFor(lunch.start)), height: Math.max(28, hFor(lunch.dur)) }}><p className="truncate text-[11px] font-semibold leading-none text-amber-800">Lunch · {minToHHMM(lunch.start)}</p></div>}
-            {wrap && <div className="pointer-events-none absolute left-1.5 right-1.5 flex items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-100/70 px-2" style={{ top: Math.max(0, yFor(wrap.start)), height: Math.max(28, hFor(wrap.dur)) }}><p className="truncate text-[11px] font-semibold leading-none text-slate-600">Wrap up · plan tomorrow</p></div>}
-
             {events.map(ev => (
               <div key={ev.id} className="pointer-events-none absolute left-1.5 right-1.5 overflow-hidden rounded-lg border border-dashed border-indigo-300 bg-indigo-50/80 px-2 py-1" style={{ top: Math.max(0, yFor(ev.start)), height: Math.max(18, hFor(ev.minutes)) }}>
                 <p className="truncate text-[11px] font-semibold text-indigo-900">{ev.title}</p>
@@ -317,18 +345,22 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
             ))}
 
             {rendered.map(({ block, item }) => {
-              const p = previewFor(block.key, block.start, block.dur); const h = Math.max(22, hFor(p.dur));
-              const isCustom = block.kind === 'custom';
-              const color = isCustom ? '#64748b' : (item?.color ?? '#6366f1');
-              const label = isCustom ? (block.label ?? 'Focus time') : (item?.label ?? '');
+              const p = previewFor(block.key, block.start, block.dur);
+              const kind = block.kind;
+              const soft = kind === 'custom' || kind === 'break' || kind === 'wrap';   // soft bg, no accent bar
+              const h = Math.max(soft ? 26 : 22, hFor(p.dur));
+              const color = kind === 'break' ? '#d97706' : (kind === 'wrap' || kind === 'custom') ? '#64748b' : (item?.color ?? '#6366f1');
+              const softBg = kind === 'break' ? 'border border-amber-200 bg-amber-50/80' : 'border border-slate-300 bg-slate-100';
+              const labelCls = kind === 'break' ? 'text-amber-800' : kind === 'wrap' ? 'text-slate-600' : 'text-gray-800';
+              const label = item?.label ?? labelFor(block);
               const dragging = drag?.key === block.key;
               return (
                 <div key={block.key} onPointerDown={e => beginDrag(e, block.key, 'move', block.start, block.dur, item?.onOpen)}
-                  className={`group absolute left-1.5 right-1.5 overflow-hidden rounded-lg px-2.5 py-1.5 shadow-sm ${dragging ? 'z-20 cursor-grabbing ring-2' : 'cursor-grab'} ${isCustom ? 'border border-slate-300 bg-slate-100' : ''}`}
-                  style={{ top: Math.max(0, yFor(p.start)), height: h, ...(isCustom ? {} : { background: `${color}1f`, borderLeft: `3px solid ${color}` }), touchAction: 'none', ...(dragging ? { boxShadow: `0 0 0 2px ${color}55` } : {}) }}>
+                  className={`group absolute left-1.5 right-1.5 overflow-hidden rounded-lg px-2.5 py-1.5 shadow-sm ${dragging ? 'z-20 cursor-grabbing ring-2' : 'cursor-grab'} ${soft ? softBg : ''}`}
+                  style={{ top: Math.max(0, yFor(p.start)), height: h, ...(soft ? {} : { background: `${color}1f`, borderLeft: `3px solid ${color}` }), touchAction: 'none', ...(dragging ? { boxShadow: `0 0 0 2px ${color}55` } : {}) }}>
                   <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
-                      <p className="flex items-center gap-1 truncate text-[12px] font-semibold text-gray-800">
+                      <p className={`flex items-center gap-1 truncate text-[12px] font-semibold ${labelCls}`}>
                         {item?.kind === 'admin' && <CheckCircle2 size={12} style={{ color }} className="shrink-0" />}
                         {item?.kind === 'chase' && <AlertTriangle size={12} style={{ color }} className="shrink-0" />}
                         <span className="truncate">{label}{item?.kind === 'admin' && item.sub ? ` (${item.sub})` : ''}</span>
@@ -336,7 +368,7 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
                       {h > 34 && <p className="truncate text-[10.5px] text-gray-500">{minToHHMM(p.start)}–{minToHHMM(p.start + p.dur)}{item && item.kind !== 'admin' && item.sub ? ` · ${item.sub}` : ''}</p>}
                     </div>
                     {item?.onDone && <button onPointerDown={e => e.stopPropagation()} onClick={() => markTaskDone(item.task, block.dur)} aria-label="Mark done" className="shrink-0 rounded-md p-0.5 text-gray-300 opacity-0 transition-opacity hover:bg-emerald-50 hover:text-emerald-600 group-hover:opacity-100"><CheckCircle2 size={16} /></button>}
-                    {isCustom && <button onPointerDown={e => e.stopPropagation()} onClick={() => removeBlock(block.key)} aria-label="Remove block" className="shrink-0 rounded-md p-0.5 text-slate-300 opacity-0 hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"><X size={15} /></button>}
+                    {kind === 'custom' && <button onPointerDown={e => e.stopPropagation()} onClick={() => removeBlock(block.key)} aria-label="Remove block" className="shrink-0 rounded-md p-0.5 text-slate-300 opacity-0 hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"><X size={15} /></button>}
                   </div>
                   <div onPointerDown={e => beginDrag(e, block.key, 'resize', block.start, block.dur)} className="absolute inset-x-0 bottom-0 flex h-2.5 cursor-ns-resize items-end justify-center opacity-0 group-hover:opacity-100" style={{ touchAction: 'none' }}>
                     <span className="mb-0.5 h-1 w-6 rounded-full" style={{ background: color }} />
