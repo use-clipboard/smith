@@ -20,6 +20,24 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Security response headers (applied to every route). A full content-
+  // restricting Content-Security-Policy is a planned follow-up (needs nonce-based
+  // rollout + testing against Next's inline runtime); for now we set the safe,
+  // high-value headers plus frame-ancestors for clickjacking protection.
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'microphone=(), geolocation=(), browsing-topics=()' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors 'self'" },
+        ],
+      },
+    ];
+  },
   webpack: (config) => {
     // canvg (pulled in by jspdf) imports `@babel/runtime/regenerator`, but that
     // subpath was removed in @babel/runtime 7.28+. Point it at the standalone
