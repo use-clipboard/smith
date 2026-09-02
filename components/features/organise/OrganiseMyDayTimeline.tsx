@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, CalendarClock, MoveRight, RotateCcw, Plus, X, PlayCircle, Clock3, AlertTriangle, PauseCircle, Loader2, GripVertical } from 'lucide-react';
+import { CheckCircle2, CalendarClock, MoveRight, RotateCcw, Plus, X, PlayCircle, Clock3, AlertTriangle, PauseCircle, Loader2, GripVertical, Pencil, Link2 } from 'lucide-react';
 import { buildDayPlan, TIER_META, CHASE_COLOR } from '@/lib/tasks/dayPlan';
+import OrganiseMyDayBlockEditor from './OrganiseMyDayBlockEditor';
 import { todayIso } from '@/lib/timesheets/format';
 import type { OrganiseSettings } from '@/lib/tasks/organiseSettings';
 import type { Task } from '@/types';
@@ -24,7 +25,7 @@ export interface AdminItem { key: string; label: string; count: number; minutes:
 interface Busy { start: number; end: number }
 interface PlanItem { id: string; kind: 'admin' | 'task' | 'chase'; label: string; sub?: string; minutes: number; color: string; task?: Task; onOpen: () => void; onDone?: () => void }
 /** Persisted block: identifies a queue item (by key) or a custom focus block. */
-interface Block { key: string; kind: 'admin' | 'task' | 'chase' | 'custom' | 'break' | 'wrap'; start: number; dur: number; label?: string }
+interface Block { key: string; kind: 'admin' | 'task' | 'chase' | 'custom' | 'break' | 'wrap'; start: number; dur: number; label?: string; color?: string; taskId?: string | null; taskTitle?: string | null; clientName?: string | null }
 type DragState = { key: string; mode: 'move' | 'resize'; deltaMin: number } | null;
 
 const minToHHMM = (m: number): string => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(Math.round(m) % 60).padStart(2, '0')}`;
@@ -66,6 +67,7 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
   const [planLoaded, setPlanLoaded] = useState(false);
   const [blocks, setBlocks] = useState<Block[] | null>(null);   // null = not decided yet
   const [drag, setDrag] = useState<DragState>(null);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
   const customSeq = useRef(0);
   const didGenerate = useRef(false);
   const openMin = useMemo(() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); }, []);
@@ -131,7 +133,7 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
     }
     return s;
   };
-  const labelFor = (b: Block) => b.kind === 'break' ? 'Lunch' : b.kind === 'wrap' ? 'Wrap up · plan tomorrow' : (b.label ?? 'Focus time');
+  const labelFor = (b: Block) => b.kind === 'break' ? 'Lunch' : b.kind === 'wrap' ? 'Wrap up · plan tomorrow' : (b.label ?? 'Custom');
 
   // Seed the structural lunch + wrap blocks from settings, placed around meetings.
   const seedFixtures = (): Block[] => {
@@ -247,7 +249,7 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
   function addBlockAt(offsetY: number) {
     customSeq.current += 1;
     const key = `focus-${Date.now()}-${customSeq.current}`;
-    save(resolveOverlaps([...(blocks ?? []), { key, kind: 'custom', label: 'Focus time', start: avoidCalendar(yToMin(offsetY), MOVABLE_MIN), dur: MOVABLE_MIN }], key));
+    save(resolveOverlaps([...(blocks ?? []), { key, kind: 'custom', label: 'Custom', start: avoidCalendar(yToMin(offsetY), MOVABLE_MIN), dur: MOVABLE_MIN }], key));
   }
   // Drag a "not in the plan" item onto the timeline to schedule it there.
   function addQueueItemAt(id: string, y: number) {
@@ -266,13 +268,26 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
   // Ticking a task done marks it complete AND records a "from your plan" timesheet
   // suggestion with the block's allotted time, linked to the task (to confirm in
   // Timesheets). Only tasks (which carry a client + task id) do this.
-  function markTaskDone(task: Task | undefined, minutes: number) {
-    if (!task) return;
-    onMarkDone(task.id);
+  function recordSuggestion(task: Task, minutes: number) {
     fetch('/api/timesheets/plan-suggestions', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ taskId: task.id, clientId: task.client_id ?? null, title: task.title, isInternal: !!task.is_internal, minutes, date: planDate }),
     }).then(() => window.dispatchEvent(new CustomEvent('smith:timesheet-plan-suggestion'))).catch(() => {});
+  }
+  function markTaskDone(task: Task | undefined, minutes: number) {
+    if (!task) return;
+    onMarkDone(task.id);
+    recordSuggestion(task, minutes);
+  }
+  // A linked custom block logs its time against the task (without completing it).
+  function logCustom(block: Block) {
+    const t = tasks.find(x => x.id === block.taskId);
+    if (t) recordSuggestion(t, block.dur);
+  }
+  function editBlock(patch: { label: string; color: string; taskId: string | null; taskTitle: string | null; clientName: string | null }) {
+    if (!editingKey) return;
+    save((blocks ?? []).map(b => b.key === editingKey ? { ...b, ...patch } : b));
+    setEditingKey(null);
   }
 
   const previewFor = (key: string, start: number, dur: number) => {
@@ -347,12 +362,13 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
             {rendered.map(({ block, item }) => {
               const p = previewFor(block.key, block.start, block.dur);
               const kind = block.kind;
-              const soft = kind === 'custom' || kind === 'break' || kind === 'wrap';   // soft bg, no accent bar
+              const soft = kind === 'break' || kind === 'wrap';   // soft strip; custom uses its colour accent
               const h = Math.max(soft ? 26 : 22, hFor(p.dur));
-              const color = kind === 'break' ? '#d97706' : (kind === 'wrap' || kind === 'custom') ? '#64748b' : (item?.color ?? '#6366f1');
+              const color = kind === 'break' ? '#d97706' : kind === 'wrap' ? '#64748b' : kind === 'custom' ? (block.color ?? '#64748b') : (item?.color ?? '#6366f1');
               const softBg = kind === 'break' ? 'border border-amber-200 bg-amber-50/80' : 'border border-slate-300 bg-slate-100';
               const labelCls = kind === 'break' ? 'text-amber-800' : kind === 'wrap' ? 'text-slate-600' : 'text-gray-800';
               const label = item?.label ?? labelFor(block);
+              const sub = kind === 'custom' && block.taskTitle ? `${block.taskTitle}${block.clientName ? ` · ${block.clientName}` : ''}` : (item && item.kind !== 'admin' ? item.sub : undefined);
               const dragging = drag?.key === block.key;
               return (
                 <div key={block.key} onPointerDown={e => beginDrag(e, block.key, 'move', block.start, block.dur, item?.onOpen)}
@@ -363,11 +379,14 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
                       <p className={`flex items-center gap-1 truncate text-[12px] font-semibold ${labelCls}`}>
                         {item?.kind === 'admin' && <CheckCircle2 size={12} style={{ color }} className="shrink-0" />}
                         {item?.kind === 'chase' && <AlertTriangle size={12} style={{ color }} className="shrink-0" />}
+                        {kind === 'custom' && block.taskId && <Link2 size={11} style={{ color }} className="shrink-0" />}
                         <span className="truncate">{label}{item?.kind === 'admin' && item.sub ? ` (${item.sub})` : ''}</span>
                       </p>
-                      {h > 34 && <p className="truncate text-[10.5px] text-gray-500">{minToHHMM(p.start)}–{minToHHMM(p.start + p.dur)}{item && item.kind !== 'admin' && item.sub ? ` · ${item.sub}` : ''}</p>}
+                      {h > 34 && <p className="truncate text-[10.5px] text-gray-500">{minToHHMM(p.start)}–{minToHHMM(p.start + p.dur)}{sub ? ` · ${sub}` : ''}</p>}
                     </div>
                     {item?.onDone && <button onPointerDown={e => e.stopPropagation()} onClick={() => markTaskDone(item.task, block.dur)} aria-label="Mark done" className="shrink-0 rounded-md p-0.5 text-gray-300 opacity-0 transition-opacity hover:bg-emerald-50 hover:text-emerald-600 group-hover:opacity-100"><CheckCircle2 size={16} /></button>}
+                    {kind === 'custom' && block.taskId && <button onPointerDown={e => e.stopPropagation()} onClick={() => logCustom(block)} aria-label="Log time" className="shrink-0 rounded-md p-0.5 text-gray-300 opacity-0 transition-opacity hover:bg-emerald-50 hover:text-emerald-600 group-hover:opacity-100"><CheckCircle2 size={15} /></button>}
+                    {kind === 'custom' && <button onPointerDown={e => e.stopPropagation()} onClick={() => setEditingKey(block.key)} aria-label="Edit block" className="shrink-0 rounded-md p-0.5 text-slate-300 opacity-0 hover:bg-indigo-50 hover:text-indigo-600 group-hover:opacity-100"><Pencil size={14} /></button>}
                     {kind === 'custom' && <button onPointerDown={e => e.stopPropagation()} onClick={() => removeBlock(block.key)} aria-label="Remove block" className="shrink-0 rounded-md p-0.5 text-slate-300 opacity-0 hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"><X size={15} /></button>}
                   </div>
                   <div onPointerDown={e => beginDrag(e, block.key, 'resize', block.start, block.dur)} className="absolute inset-x-0 bottom-0 flex h-2.5 cursor-ns-resize items-end justify-center opacity-0 group-hover:opacity-100" style={{ touchAction: 'none' }}>
@@ -411,6 +430,12 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
         {chaseCount > 0 && <span className="inline-flex items-center gap-1"><AlertTriangle size={12} className="text-red-400" /> {chaseCount} overdue grouped into the chase block</span>}
         <span className="inline-flex items-center gap-1"><Plus size={11} /> Click an empty slot to block out focus time</span>
       </div>
+
+      {editingKey && (() => {
+        const b = (blocks ?? []).find(x => x.key === editingKey);
+        if (!b) return null;
+        return <OrganiseMyDayBlockEditor initial={{ label: b.label ?? 'Custom', color: b.color, taskId: b.taskId, taskTitle: b.taskTitle, clientName: b.clientName }} tasks={tasks} onSave={editBlock} onClose={() => setEditingKey(null)} />;
+      })()}
     </div>
   );
 }
