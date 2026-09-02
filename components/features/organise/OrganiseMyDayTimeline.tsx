@@ -1,11 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, CalendarClock, MoveRight, RotateCcw, Plus, X, PlayCircle, Clock3, AlertTriangle, PauseCircle, Loader2 } from 'lucide-react';
+import { CheckCircle2, CalendarClock, MoveRight, RotateCcw, Plus, X, PlayCircle, Clock3, AlertTriangle, PauseCircle, Loader2, GripVertical } from 'lucide-react';
 import { buildDayPlan, TIER_META, CHASE_COLOR } from '@/lib/tasks/dayPlan';
 import { todayIso } from '@/lib/timesheets/format';
 import type { OrganiseSettings } from '@/lib/tasks/organiseSettings';
 import type { Task } from '@/types';
+
+const clientLabel = (t: Task) => t.is_internal ? 'Internal'
+  : `${t.client?.name ?? '—'}${t.client?.client_ref ? ` · ${t.client.client_ref}` : ''}`;
 
 // The day-planner. Admin quick-wins + the user's tasks scheduled into their
 // working hours AROUND calendar meetings, lunch and an end-of-day wrap, from now.
@@ -13,8 +16,9 @@ import type { Task } from '@/types';
 // automatically; "Re-plan" is the only thing that regenerates and pulls in new
 // work. Hand-editable (drag / resize / insert). All layout stored as blocks.
 
-const PX_PER_HOUR = 56;
+const PX_PER_HOUR = 68;
 const SNAP = 15;
+const MOVABLE_MIN = 30;   // shortest a task/admin/custom block can be (keeps actions usable)
 
 export interface AdminItem { key: string; label: string; count: number; minutes: number; color: string; onOpen: () => void }
 interface Busy { start: number; end: number }
@@ -76,7 +80,7 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
     const plan = buildDayPlan(tasks, userId);
     const q: PlanItem[] = [];
     for (const a of adminItems) if (a.count > 0) q.push({ id: `admin-${a.key}`, kind: 'admin', label: a.label, sub: `${a.count}`, minutes: a.minutes, color: a.color, onOpen: a.onOpen });
-    for (const m of TIER_META) for (const t of plan.tierTasks[m.tier]) q.push({ id: t.id, kind: 'task', label: t.title, sub: t.is_internal ? 'Internal' : (t.client?.name ?? '—'), minutes: estimateMinutes(t), color: m.color, task: t, onOpen: () => onOpenTask(t), onDone: () => onMarkDone(t.id) });
+    for (const m of TIER_META) for (const t of plan.tierTasks[m.tier]) q.push({ id: t.id, kind: 'task', label: t.title, sub: clientLabel(t), minutes: estimateMinutes(t), color: m.color, task: t, onOpen: () => onOpenTask(t), onDone: () => onMarkDone(t.id) });
     if (plan.chase.length > 0) q.push({ id: 'chase', kind: 'chase', label: 'Investigate / chase overdue', sub: `${plan.chase.length} overdue`, minutes: Math.min(45, 15 + plan.chase.length * 2), color: CHASE_COLOR, onOpen: onOpenTasks });
     return { queue: q, waitingCount: plan.waiting.length, chaseCount: plan.chase.length };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -158,7 +162,29 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
   const yFor = (m: number) => (m - dispStart) * PX_PER_MIN;
   const hFor = (m: number) => m * PX_PER_MIN;
   const clampStart = (start: number, dur: number) => Math.max(dispStart, Math.min(start, settings.workEndMin - dur));
-  const clampDur = (dur: number, start: number) => Math.max(SNAP, Math.min(dur, dispEnd - start));
+  const clampDur = (dur: number, start: number) => Math.max(MOVABLE_MIN, Math.min(dur, dispEnd - start));
+
+  // Keep the edited block fixed and shrink neighbours so blocks never overlap:
+  // blocks after it shrink from the top, blocks before shrink from the bottom
+  // (cascading, floored at MOVABLE_MIN). Fixed lunch/wrap/calendar aren't blocks.
+  function resolveOverlaps(list: Block[], anchorKey: string): Block[] {
+    const arr = [...list].sort((a, b) => a.start - b.start);
+    const ai = arr.findIndex(b => b.key === anchorKey);
+    if (ai < 0) return list;
+    let floor = arr[ai].start + arr[ai].dur;
+    for (let i = ai + 1; i < arr.length; i++) {
+      const b = arr[i], end = b.start + b.dur;
+      if (b.start < floor) { const nd = Math.max(MOVABLE_MIN, end - floor); arr[i] = { ...b, start: floor, dur: nd }; floor += nd; }
+      else floor = end;
+    }
+    let ceil = arr[ai].start;
+    for (let i = ai - 1; i >= 0; i--) {
+      const b = arr[i], end = b.start + b.dur;
+      if (end > ceil) { const nd = Math.max(MOVABLE_MIN, ceil - b.start); arr[i] = { ...b, start: ceil - nd, dur: nd }; ceil -= nd; }
+      else ceil = b.start;
+    }
+    return arr.map(b => { const start = Math.max(dispStart, Math.min(b.start, dispEnd - MOVABLE_MIN)); return { ...b, start, dur: Math.max(MOVABLE_MIN, Math.min(b.dur, dispEnd - start)) }; });
+  }
 
   const plannedMins = rendered.reduce((n, r) => n + r.block.dur, 0);
   const nowVisible = nowMin >= dispStart && nowMin <= dispEnd;
@@ -183,19 +209,27 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
     const onUp = () => {
       window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); setDrag(null);
       if (!moved) { onTap?.(); return; }
-      const cur = blocks ?? [];
-      save(cur.map(b => {
+      const edited = (blocks ?? []).map(b => {
         if (b.key !== key) return b;
         return mode === 'move' ? { ...b, start: clampStart(baseStart + deltaMin, baseDur) } : { ...b, dur: clampDur(baseDur + deltaMin, baseStart) };
-      }));
+      });
+      save(resolveOverlaps(edited, key));
     };
     window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp);
   }
 
+  const yToMin = (y: number) => Math.round((dispStart + (y / PX_PER_MIN)) / SNAP) * SNAP;
   function addBlockAt(offsetY: number) {
-    const min = Math.round((dispStart + (offsetY / PX_PER_MIN)) / SNAP) * SNAP;
     customSeq.current += 1;
-    save([...(blocks ?? []), { key: `focus-${Date.now()}-${customSeq.current}`, kind: 'custom', label: 'Focus time', start: clampStart(min, 30), dur: 30 }]);
+    const key = `focus-${Date.now()}-${customSeq.current}`;
+    save(resolveOverlaps([...(blocks ?? []), { key, kind: 'custom', label: 'Focus time', start: clampStart(yToMin(offsetY), MOVABLE_MIN), dur: MOVABLE_MIN }], key));
+  }
+  // Drag a "not in the plan" item onto the timeline to schedule it there.
+  function addQueueItemAt(id: string, y: number) {
+    const it = queueById.get(id);
+    if (!it || (blocks ?? []).some(b => b.key === id)) return;
+    const dur = Math.max(MOVABLE_MIN, it.minutes);
+    save(resolveOverlaps([...(blocks ?? []), { key: it.id, kind: it.kind, start: clampStart(yToMin(y), dur), dur }], it.id));
   }
   function removeBlock(key: string) { save((blocks ?? []).filter(b => b.key !== key)); }
   function rePlan() { const customs = (blocks ?? []).filter(b => b.kind === 'custom'); save(generate(customs, nowMin)); }
@@ -255,11 +289,14 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
             ))}
           </div>
           {/* Timeline column */}
-          <div className="relative flex-1 rounded-xl border border-gray-100 bg-gray-50/40" onClick={e => { if (e.target === e.currentTarget) addBlockAt(e.nativeEvent.offsetY); }}>
+          <div className="relative flex-1 rounded-xl border border-gray-100 bg-gray-50/40"
+            onClick={e => { if (e.target === e.currentTarget) addBlockAt(e.nativeEvent.offsetY); }}
+            onDragOver={e => { if (e.dataTransfer.types.includes('text/omd-item')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}
+            onDrop={e => { const id = e.dataTransfer.getData('text/omd-item'); if (id) { e.preventDefault(); addQueueItemAt(id, e.clientY - e.currentTarget.getBoundingClientRect().top); } }}>
             {Array.from({ length: (dispEnd - dispStart) / 60 }, (_, i) => <div key={i} className="pointer-events-none absolute left-0 right-0 border-t border-dashed border-black/[0.05]" style={{ top: i * PX_PER_HOUR }} />)}
 
-            {lunch && <div className="pointer-events-none absolute left-1.5 right-1.5 overflow-hidden rounded-lg border border-amber-200 bg-amber-50/70 px-2 py-1" style={{ top: Math.max(0, yFor(lunch.start)), height: Math.max(16, hFor(lunch.dur)) }}><p className="text-[11px] font-semibold text-amber-800">Lunch</p></div>}
-            {wrap && <div className="pointer-events-none absolute left-1.5 right-1.5 overflow-hidden rounded-lg border border-slate-200 bg-slate-100/70 px-2 py-1" style={{ top: Math.max(0, yFor(wrap.start)), height: Math.max(16, hFor(wrap.dur)) }}><p className="text-[11px] font-semibold text-slate-600">Wrap up · plan tomorrow</p></div>}
+            {lunch && <div className="pointer-events-none absolute left-1.5 right-1.5 flex items-center overflow-hidden rounded-lg border border-amber-200 bg-amber-50/70 px-2" style={{ top: Math.max(0, yFor(lunch.start)), height: Math.max(20, hFor(lunch.dur)) }}><p className="truncate text-[11px] font-semibold leading-none text-amber-800">Lunch</p></div>}
+            {wrap && <div className="pointer-events-none absolute left-1.5 right-1.5 flex items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-100/70 px-2" style={{ top: Math.max(0, yFor(wrap.start)), height: Math.max(20, hFor(wrap.dur)) }}><p className="truncate text-[11px] font-semibold leading-none text-slate-600">Wrap up · plan tomorrow</p></div>}
 
             {events.map(ev => (
               <div key={ev.id} className="pointer-events-none absolute left-1.5 right-1.5 overflow-hidden rounded-lg border border-dashed border-indigo-300 bg-indigo-50/80 px-2 py-1" style={{ top: Math.max(0, yFor(ev.start)), height: Math.max(18, hFor(ev.minutes)) }}>
@@ -309,10 +346,13 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
       {/* Not-in-plan list */}
       {notScheduled.length > 0 && (
         <div>
-          <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-amber-700"><MoveRight size={12} /> Not in the plan ({notScheduled.length})</p>
+          <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-amber-700"><MoveRight size={12} /> Not in the plan ({notScheduled.length}) <span className="font-medium normal-case tracking-normal text-gray-400">· drag onto the day, or Re-plan</span></p>
           <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {notScheduled.map(it => (
-              <div key={it.id} className="flex items-center gap-2 rounded-lg border border-gray-100 bg-white px-3 py-2 group">
+              <div key={it.id} draggable
+                onDragStart={e => { e.dataTransfer.setData('text/omd-item', it.id); e.dataTransfer.effectAllowed = 'copy'; }}
+                className="flex items-center gap-1.5 rounded-lg border border-gray-100 bg-white px-2 py-2 group cursor-grab active:cursor-grabbing">
+                <GripVertical size={13} className="shrink-0 text-gray-300 group-hover:text-gray-400" />
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: it.color }} />
                 <button onClick={it.onOpen} className="min-w-0 flex-1 text-left"><p className="truncate text-[12px] font-semibold text-gray-800">{it.label}</p>{it.sub && <p className="truncate text-[10.5px] text-gray-500">{it.sub}</p>}</button>
                 {it.onDone && <button onClick={it.onDone} aria-label="Mark done" className="shrink-0 rounded-md p-1 text-gray-300 hover:bg-emerald-50 hover:text-emerald-600"><CheckCircle2 size={15} /></button>}
