@@ -8,7 +8,14 @@
 export function isAuthorisedCron(request: Request): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
-    console.warn('[Cron] CRON_SECRET env var not set — allowing request. Set it in Vercel env vars to secure this endpoint.');
+    // Fail CLOSED in production: an unset secret must never turn a cron into a
+    // public trigger (sending campaigns, running billing, polling HMRC). Only
+    // allow the unauthenticated path in local/dev for convenience.
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[Cron] CRON_SECRET is not set in production — denying request. Set it in the environment.');
+      return false;
+    }
+    console.warn('[Cron] CRON_SECRET env var not set — allowing request in non-production only. Set it in Vercel env vars to secure this endpoint.');
     return true;
   }
   return request.headers.get('authorization') === `Bearer ${secret}`;

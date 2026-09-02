@@ -4,6 +4,7 @@ import { logTaxAudit } from '@/lib/tax-studio/audit';
 import { pollGateway, deleteFromGateway } from '@/lib/hmrc-sa/gateway';
 import { resolveSaCreds } from '@/lib/hmrc-sa/getSaCredsForFirm';
 import type { SaCreds } from '@/lib/hmrc-sa/config';
+import { isAuthorisedCron } from '@/lib/cronAuth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -15,11 +16,6 @@ export const maxDuration = 60;
 // Credentials are resolved per submission's firm (firm store → env fallback), so
 // this works across firms; a submission whose firm has no usable creds is left
 // pending for a later run.
-function isAuthorisedCron(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) { console.warn('[SA poll cron] CRON_SECRET not set — allowing through.'); return true; }
-  return request.headers.get('authorization') === `Bearer ${secret}`;
-}
 
 export async function GET(request: Request) {
   if (!isAuthorisedCron(request)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

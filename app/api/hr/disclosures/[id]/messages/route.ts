@@ -23,13 +23,18 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   const supabase = createClient();
 
-  // Fetch parent so we know if it's anonymous (and verify access via RLS)
+  // Fetch parent + verify the caller is a party to it in their own firm before
+  // returning the confidential thread (mirrors the POST guard below — do not
+  // rely on RLS alone for whistleblowing content).
   const { data: parent } = await supabase
     .from('hr_disclosures')
-    .select('id, reporter_id, is_anonymous')
+    .select('id, firm_id, reporter_id, recipient_id, is_anonymous')
     .eq('id', params.id)
     .maybeSingle();
-  if (!parent) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (!parent || parent.firm_id !== ctx.firmId) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (parent.reporter_id !== ctx.userId && parent.recipient_id !== ctx.userId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const { data, error } = await supabase
     .from('hr_disclosure_messages')

@@ -111,6 +111,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .update(patch)
     .eq('id', params.importId)
     .eq('book_id', params.id)
+    .eq('firm_id', ctx.firmId)
     .select(SELECT_IMPORT)
     .single();
   if (error || !data) return NextResponse.json({ error: error?.message ?? 'Not found' }, { status: 404 });

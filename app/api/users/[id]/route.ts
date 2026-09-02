@@ -69,6 +69,17 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const supabase = createClient();
   const service = createServiceClient();
 
+  // Verify the target user belongs to the caller's firm BEFORE any change — the
+  // auth-admin calls below take the raw params.id and bypass RLS, so without this
+  // an admin of one firm could alter another firm's user (e.g. change their login
+  // email, enabling a password-reset account takeover). A firm-scoped .update()
+  // that matches 0 rows returns no error, so it cannot be relied on as the guard.
+  const { data: target } = await service
+    .from('users').select('id, firm_id').eq('id', params.id).single();
+  if (!target || target.firm_id !== profile!.firm_id) {
+    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+  }
+
   // Update public users table fields (auth + HR)
   const publicUpdate: Record<string, unknown> = {};
   if (parsed.data.role) publicUpdate.role = parsed.data.role;
@@ -126,6 +137,13 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     .eq('id', params.id)
     .eq('firm_id', profile!.firm_id)
     .single();
+
+  // Guard the RLS-bypassing auth delete below: if the target isn't in the
+  // caller's firm the scoped lookup returns null, so stop here rather than
+  // deleting another firm's auth account.
+  if (!targetUser) {
+    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+  }
 
   if (targetUser?.role === 'admin') {
     const remaining = await countAdmins(profile!.firm_id, params.id);

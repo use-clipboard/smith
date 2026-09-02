@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase-server';
 import { runCampaignSend, continueCampaignSend } from '@/lib/campaigns/runSend';
+import { isAuthorisedCron } from '@/lib/cronAuth';
 
 // ─── /api/cron/campaigns-send ──────────────────────────────────────────────
 // Sends campaigns whose scheduled time has arrived. Each scheduled campaign is
@@ -9,15 +10,6 @@ import { runCampaignSend, continueCampaignSend } from '@/lib/campaigns/runSend';
 // double-fire from sending twice.
 
 export const maxDuration = 300;
-
-function isAuthorisedCron(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    console.warn('[campaigns-send] CRON_SECRET not set — allowing request.');
-    return true;
-  }
-  return request.headers.get('authorization') === `Bearer ${secret}`;
-}
 
 export async function GET(request: Request) {
   if (!isAuthorisedCron(request)) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });

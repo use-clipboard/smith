@@ -18,6 +18,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       client:clients!client_id ( id, name, client_ref, vat_number )
     `)
     .eq('id', params.id)
+    .eq('firm_id', ctx.firmId)
     .maybeSingle();
 
   if (error) {
@@ -41,6 +42,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     .from('outputs')
     .select('id, user_id, firm_id, client_id, feature, client_name')
     .eq('id', params.id)
+    .eq('firm_id', ctx.firmId)
     .maybeSingle();
 
   if (fetchErr) {
@@ -55,7 +57,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ error: 'Only the author or an admin can delete this analysis' }, { status: 403 });
   }
 
-  const { error: delErr } = await supabase.from('outputs').delete().eq('id', params.id);
+  const { error: delErr } = await supabase.from('outputs').delete().eq('id', params.id).eq('firm_id', ctx.firmId);
   if (delErr) {
     console.error('[DELETE /api/outputs/:id]', delErr);
     return NextResponse.json({ error: 'Failed to delete' }, { status: 500 });
