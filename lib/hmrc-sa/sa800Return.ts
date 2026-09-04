@@ -112,6 +112,8 @@ export function buildSa800Return(ret: TaxReturn): Sa800BuildResult {
           el('DividendsShare', moneyDown(s?.dividends)),            // box 22A
           el('OtherIncomeShare', moneyDown(s?.otherIncome)),        // box 15
           el('OtherTaxedIncomeShare', moneyDown(s?.otherTaxedIncome)), // box 23
+          el('TaxDeductedShare', moneyDown(s?.taxDeducted)),        // box 25
+          el('ResidentialFinanceShare', moneyDown(s?.residentialFinance)), // box 26
         ]);
       }),
     ),

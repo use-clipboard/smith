@@ -55,9 +55,9 @@ export default function Sa800LinkCard({ clientId, taxYear, existingPartners, onI
       // Prefer Accounts Studio (finalised partnership accounts); fall back to Bookkeeping.
       let t: TradingSummary | null = null;
       try {
-        const as = await fetchJson<{ found: boolean; entityLabel?: string; periodStart?: string; periodEnd?: string; turnover?: number; netProfit?: number }>(`/api/tax-studio/integrations/accounts-studio?clientId=${clientId}&taxYear=${encodeURIComponent(taxYear)}`, { cache: 'no-store' });
+        const as = await fetchJson<{ found: boolean; entityLabel?: string; periodStart?: string; periodEnd?: string; turnover?: number; netProfit?: number; lines?: PlLine[] }>(`/api/tax-studio/integrations/accounts-studio?clientId=${clientId}&taxYear=${encodeURIComponent(taxYear)}`, { cache: 'no-store' });
         if (as.found && (as.netProfit || as.turnover)) {
-          t = { found: true, source: 'as', label: as.entityLabel || 'Partnership accounts', periodStart: as.periodStart, periodEnd: as.periodEnd, turnover: as.turnover ?? 0, expenses: Math.max(0, (as.turnover ?? 0) - (as.netProfit ?? 0)), netProfit: as.netProfit ?? 0 };
+          t = { found: true, source: 'as', label: as.entityLabel || 'Partnership accounts', periodStart: as.periodStart, periodEnd: as.periodEnd, turnover: as.turnover ?? 0, expenses: Math.max(0, (as.turnover ?? 0) - (as.netProfit ?? 0)), netProfit: as.netProfit ?? 0, lines: as.lines };
         }
       } catch { /* try bookkeeping */ }
       if (!t) {

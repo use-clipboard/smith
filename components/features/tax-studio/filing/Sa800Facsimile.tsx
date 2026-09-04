@@ -163,6 +163,8 @@ export default function Sa800Facsimile({ ret }: { ret: TaxReturn }): JSX.Element
                 {sa.statement.full && p.dividends > 0 && <Money n="22A" label="Share of UK dividends" value={p.dividends} />}
                 {sa.statement.full && p.otherIncome > 0 && <Money n="15" label="Share of other income" value={p.otherIncome} />}
                 {sa.statement.full && p.otherTaxedIncome > 0 && <Money n="23" label="Share of other taxed income" value={p.otherTaxedIncome} />}
+                {sa.statement.full && p.taxDeducted > 0 && <Money n="25" label="Share of tax deducted" value={p.taxDeducted} />}
+                {sa.statement.full && p.residentialFinance > 0 && <Money n="26" label="Share of residential finance costs" value={p.residentialFinance} />}
               </Panel>
             </div>
           );

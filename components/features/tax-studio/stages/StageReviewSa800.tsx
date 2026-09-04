@@ -286,7 +286,7 @@ function PartnersTab({ ret, sa, shares, setPartners, setStatement }: {
   const upd = (id: string, u: Partial<Sa800Partner>) => setPartners(partners.map(p => p.id === id ? { ...p, ...u } : p));
   const add = () => setPartners([...partners, { id: rid('ptr'), sharePct: 0 }]);
   const del = (id: string) => setPartners(partners.filter(p => p.id !== id));
-  const empty = { profitShare: 0, loss: 0, basisAdj: 0, untaxedSavings: 0, cis: 0, charges: 0, property: 0, taxedInterest: 0, dividends: 0, otherIncome: 0, otherTaxedIncome: 0 };
+  const empty = { profitShare: 0, loss: 0, basisAdj: 0, untaxedSavings: 0, cis: 0, charges: 0, property: 0, taxedInterest: 0, dividends: 0, otherIncome: 0, otherTaxedIncome: 0, taxDeducted: 0, residentialFinance: 0 };
   const shareRow = (id: string) => shares.find(s => s.id === id) ?? empty;
 
   return (
@@ -326,6 +326,8 @@ function PartnersTab({ ret, sa, shares, setPartners, setStatement }: {
               {full && shareRow(p.id).dividends > 0 && <AllocRow label="UK dividends (box 22A)" value={shareRow(p.id).dividends} />}
               {full && shareRow(p.id).otherIncome > 0 && <AllocRow label="Other income (box 15)" value={shareRow(p.id).otherIncome} />}
               {full && shareRow(p.id).otherTaxedIncome > 0 && <AllocRow label="Other taxed income (box 23)" value={shareRow(p.id).otherTaxedIncome} />}
+              {full && shareRow(p.id).taxDeducted > 0 && <AllocRow label="Tax deducted (box 25)" value={shareRow(p.id).taxDeducted} />}
+              {full && shareRow(p.id).residentialFinance > 0 && <AllocRow label="Residential finance costs (box 26)" value={shareRow(p.id).residentialFinance} />}
             </div>
           </div>
         ))}

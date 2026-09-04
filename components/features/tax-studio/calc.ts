@@ -2211,6 +2211,8 @@ export interface Sa800Computation {
     dividends: number;        // box 22A — share of UK dividends (SA804 box 7.23)
     otherIncome: number;      // box 15 — share of other income profit (SA804 box 7.26)
     otherTaxedIncome: number; // box 23 — share of other taxed income (SA804 box 7.30)
+    taxDeducted: number;      // box 25 — share of tax deducted (SA801 1.22 + SA804)
+    residentialFinance: number; // box 26 — share of residential finance costs (SA801 1.40)
   }[];
   allocatedProfit: number;      // sum of partner profit shares
   unallocated: number;          // profit − allocatedProfit
@@ -2260,7 +2262,8 @@ export function computeSa800(
 
   // Partnership Statement — allocate each income stream to each partner. Every
   // stream is share% of the partnership total, or a manual per-partner override.
-  const propertyProfit = data?.property ? computeSa801(data.property).profitForPeriod : 0; // SA801 box 1.39
+  const prop = data?.property ? computeSa801(data.property) : null;
+  const propertyProfit = prop ? prop.profitForPeriod : 0; // SA801 box 1.39
   const sav = data?.savings ? computeSa804(data.savings) : null;
   const partners = data?.statement.partners ?? [];
   const totals = {
@@ -2276,6 +2279,8 @@ export function computeSa800(
     dividends: sav ? sav.dividends : 0,                    // box 22A
     otherIncome: sav ? sav.otherIncomeProfit : 0,          // box 15
     otherTaxedIncome: sav ? sav.otherTaxedIncomeGross : 0, // box 23
+    taxDeducted: (prop?.taxDeducted ?? 0) + (sav?.taxDeducted ?? 0), // box 25 (SA801 1.22 + SA804)
+    residentialFinance: prop?.residentialFinance ?? 0,     // box 26 (SA801 1.40)
   };
   const alloc = (override: number | undefined, total: number, pct: number) => override != null ? r0(override) : partnerAllocatedShare(total, pct);
   const partnerShares = partners.map(p => {
@@ -2295,6 +2300,8 @@ export function computeSa800(
       dividends: partnerAllocatedShare(totals.dividends, pct),             // box 22A
       otherIncome: partnerAllocatedShare(totals.otherIncome, pct),         // box 15
       otherTaxedIncome: partnerAllocatedShare(totals.otherTaxedIncome, pct), // box 23
+      taxDeducted: partnerAllocatedShare(totals.taxDeducted, pct),         // box 25
+      residentialFinance: partnerAllocatedShare(totals.residentialFinance, pct), // box 26
     };
   });
   const allocatedProfit = partnerShares.reduce((a, p) => a + p.profitShare, 0);
