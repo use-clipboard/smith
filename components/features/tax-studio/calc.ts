@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, CapexAddition, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner, Ct600Data, Ct600LossStream, Sa800Data, Sa801Property, Sa804Savings } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, CapexAddition, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner, Ct600Data, Ct600LossStream, Sa800Data, Sa801Property, Sa804Savings, Sa802Foreign } from './types';
 
 /** The taxpayer's ownership share (0–1) of a jointly-owned item. No owners ⇒ 1.
  *  Shared by CGT disposals and joint interest. */
@@ -2183,6 +2183,37 @@ export function computeSa804(s: Sa804Savings | undefined): Sa804Computation {
   };
 }
 
+/** SA802 Partnership Foreign computation. */
+export interface Sa802Computation {
+  savingsIncome: number;         // box 14  (2.6)
+  dividendsIncome: number;       // box 14A (2.6A)
+  propertyProfit: number;        // box 17  (2.26)
+  propertyLoss: number;          // box 18  (2.27)
+  offshoreFundDisposals: number; // box 21  (2.9)
+  residentialFinance: number;    // box 27  (2.10A)
+  foreignTax: number;            // box 28  (2.8 = savings + dividends + property foreign tax)
+}
+
+export function computeSa802(f: Sa802Foreign | undefined): Sa802Computation {
+  const n = (v?: number) => v || 0;
+  const propExpenses = n(f?.propRentRates) + n(f?.propRepairs) + n(f?.propFinanceNonResi)
+    + n(f?.propLegal) + n(f?.propServices) + n(f?.propOther);          // 2.18
+  const propNet = n(f?.propRents) - propExpenses;                       // 2.19
+  const propAdditions = n(f?.propPrivateUse) + n(f?.propBalancingCharges); // 2.22
+  const propDeductions = n(f?.propChargePoint) + n(f?.propSba) + n(f?.propZeroEmission)
+    + n(f?.propOtherCA) + n(f?.propReplacingDomestic);                  // 2.25
+  const propResult = propNet + propAdditions - propDeductions;          // 2.26/2.27
+  return {
+    savingsIncome: r0(n(f?.savingsIncome)),
+    dividendsIncome: r0(n(f?.dividendsIncome)),
+    propertyProfit: r0(Math.max(0, propResult)),
+    propertyLoss: r0(Math.max(0, -propResult)),
+    offshoreFundDisposals: r0(n(f?.offshoreFundDisposals)),
+    residentialFinance: r0(n(f?.residentialFinance)),
+    foreignTax: r0(n(f?.savingsForeignTax) + n(f?.dividendsForeignTax) + n(f?.propForeignTax)),
+  };
+}
+
 export interface Sa800Computation {
   taxYear: string;
   grossProfit: number;          // box 3.49 (full P&L only)
@@ -2213,6 +2244,13 @@ export interface Sa800Computation {
     otherTaxedIncome: number; // box 23 — share of other taxed income (SA804 box 7.30)
     taxDeducted: number;      // box 25 — share of tax deducted (SA801 1.22 + SA804)
     residentialFinance: number; // box 26 — share of residential finance costs (SA801 1.40)
+    foreignSavings: number;   // box 14 — share of foreign savings (SA802 2.6)
+    foreignDividends: number; // box 14A — share of foreign dividends (SA802 2.6A)
+    foreignProperty: number;  // box 17 — share of foreign property profit (SA802 2.26)
+    foreignPropertyLoss: number; // box 18 — share of foreign property loss (SA802 2.27)
+    offshoreFund: number;     // box 21 — share of offshore-fund disposals (SA802 2.9)
+    foreignResiFinance: number; // box 27 — share of foreign residential finance (SA802 2.10A)
+    foreignTax: number;       // box 28 — share of foreign tax (SA802 2.8)
   }[];
   allocatedProfit: number;      // sum of partner profit shares
   unallocated: number;          // profit − allocatedProfit
@@ -2265,6 +2303,7 @@ export function computeSa800(
   const prop = data?.property ? computeSa801(data.property) : null;
   const propertyProfit = prop ? prop.profitForPeriod : 0; // SA801 box 1.39
   const sav = data?.savings ? computeSa804(data.savings) : null;
+  const fgn = data?.foreign ? computeSa802(data.foreign) : null;
   const partners = data?.statement.partners ?? [];
   const totals = {
     profit, loss,
@@ -2281,6 +2320,13 @@ export function computeSa800(
     otherTaxedIncome: sav ? sav.otherTaxedIncomeGross : 0, // box 23
     taxDeducted: (prop?.taxDeducted ?? 0) + (sav?.taxDeducted ?? 0), // box 25 (SA801 1.22 + SA804)
     residentialFinance: prop?.residentialFinance ?? 0,     // box 26 (SA801 1.40)
+    foreignSavings: fgn?.savingsIncome ?? 0,               // box 14
+    foreignDividends: fgn?.dividendsIncome ?? 0,           // box 14A
+    foreignProperty: fgn?.propertyProfit ?? 0,             // box 17
+    foreignPropertyLoss: fgn?.propertyLoss ?? 0,           // box 18
+    offshoreFund: fgn?.offshoreFundDisposals ?? 0,         // box 21
+    foreignResiFinance: fgn?.residentialFinance ?? 0,      // box 27
+    foreignTax: fgn?.foreignTax ?? 0,                      // box 28
   };
   const alloc = (override: number | undefined, total: number, pct: number) => override != null ? r0(override) : partnerAllocatedShare(total, pct);
   const partnerShares = partners.map(p => {
@@ -2302,6 +2348,13 @@ export function computeSa800(
       otherTaxedIncome: partnerAllocatedShare(totals.otherTaxedIncome, pct), // box 23
       taxDeducted: partnerAllocatedShare(totals.taxDeducted, pct),         // box 25
       residentialFinance: partnerAllocatedShare(totals.residentialFinance, pct), // box 26
+      foreignSavings: partnerAllocatedShare(totals.foreignSavings, pct),   // box 14
+      foreignDividends: partnerAllocatedShare(totals.foreignDividends, pct), // box 14A
+      foreignProperty: partnerAllocatedShare(totals.foreignProperty, pct), // box 17
+      foreignPropertyLoss: partnerAllocatedShare(totals.foreignPropertyLoss, pct), // box 18
+      offshoreFund: partnerAllocatedShare(totals.offshoreFund, pct),       // box 21
+      foreignResiFinance: partnerAllocatedShare(totals.foreignResiFinance, pct), // box 27
+      foreignTax: partnerAllocatedShare(totals.foreignTax, pct),           // box 28
     };
   });
   const allocatedProfit = partnerShares.reduce((a, p) => a + p.profitShare, 0);

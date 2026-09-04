@@ -6,16 +6,16 @@
 // Partnership Statement. Box numbers are the HMRC SA800 (2026) ones.
 
 import { useState } from 'react';
-import { ArrowRight, Building2, Calculator, Users, Plus, Trash2, ListTree, Send, Loader2, CheckCircle2, Home, PiggyBank } from 'lucide-react';
+import { ArrowRight, Building2, Calculator, Users, Plus, Trash2, ListTree, Send, Loader2, CheckCircle2, Home, PiggyBank, Globe } from 'lucide-react';
 import { StudioCard } from '../primitives';
-import { computeSa800, computeSa801, computeSa804 } from '../calc';
+import { computeSa800, computeSa801, computeSa804, computeSa802 } from '../calc';
 import { fmtMoney } from '../data';
 import { findPartnerReturn, pushPartnerShare } from '../sa800PartnerFeed';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import Sa800LinkCard from '../Sa800LinkCard';
-import type { TaxReturn, Sa800Data, Sa800Trading, Sa800Partner, Sa801Property, Sa804Savings } from '../types';
+import type { TaxReturn, Sa800Data, Sa800Trading, Sa800Partner, Sa801Property, Sa804Savings, Sa802Foreign } from '../types';
 
-type Tab = 'details' | 'trading' | 'property' | 'savings' | 'partners';
+type Tab = 'details' | 'trading' | 'property' | 'savings' | 'foreign' | 'partners';
 const rid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
 
 export default function StageReviewSa800({ ret, patch, advance }: {
@@ -44,6 +44,10 @@ export default function StageReviewSa800({ ret, patch, advance }: {
     const s = r.sa800 as Sa800Data;
     return { ...r, sa800: { ...s, savings: { ...s.savings, ...u } } };
   });
+  const setForeign = (u: Partial<Sa802Foreign>) => patch(r => {
+    const s = r.sa800 as Sa800Data;
+    return { ...r, sa800: { ...s, foreign: { ...s.foreign, ...u } } };
+  });
 
   const c = computeSa800(sa, ret.taxYear, { periodStart: sa.periodStart, periodEnd: sa.periodEnd });
   const t = sa.trading;
@@ -54,6 +58,7 @@ export default function StageReviewSa800({ ret, patch, advance }: {
     { id: 'trading', label: 'Trading', icon: ListTree },
     ...(sa.hasUkProperty ? [{ id: 'property' as Tab, label: 'UK property', icon: Home }] : []),
     ...(sa.hasOtherIncome ? [{ id: 'savings' as Tab, label: 'Savings & income', icon: PiggyBank }] : []),
+    ...(sa.hasForeign ? [{ id: 'foreign' as Tab, label: 'Foreign', icon: Globe }] : []),
     { id: 'partners', label: `Partners${sa.statement.partners.length ? ` (${sa.statement.partners.length})` : ''}`, icon: Users },
   ];
 
@@ -245,6 +250,46 @@ export default function StageReviewSa800({ ret, patch, advance }: {
             );
           })()}
 
+          {tab === 'foreign' && (() => {
+            const f = sa.foreign ?? {};
+            const cf = computeSa802(f);
+            return (
+              <StudioCard className="space-y-5 p-5">
+                <Section title="Foreign savings & dividends (→ boxes 14 / 14A)">
+                  <Field label="Foreign savings/interest income" value={n(f.savingsIncome)} box="2.6" onChange={v => setForeign({ savingsIncome: v })} />
+                  <Field label="Foreign tax on savings" value={n(f.savingsForeignTax)} onChange={v => setForeign({ savingsForeignTax: v })} />
+                  <Field label="Foreign dividend income" value={n(f.dividendsIncome)} box="2.6A" onChange={v => setForeign({ dividendsIncome: v })} />
+                  <Field label="Foreign tax on dividends" value={n(f.dividendsForeignTax)} onChange={v => setForeign({ dividendsForeignTax: v })} />
+                </Section>
+                <Section title="Foreign property — income & expenses">
+                  <Field label="Total rents & other receipts" value={n(f.propRents)} box="2.11" onChange={v => setForeign({ propRents: v })} />
+                  <Field label="Rent, rates, insurance" value={n(f.propRentRates)} box="2.12" onChange={v => setForeign({ propRentRates: v })} />
+                  <Field label="Repairs and maintenance" value={n(f.propRepairs)} box="2.13" onChange={v => setForeign({ propRepairs: v })} />
+                  <Field label="Non-residential finance costs" value={n(f.propFinanceNonResi)} box="2.14" onChange={v => setForeign({ propFinanceNonResi: v })} />
+                  <Field label="Legal and professional" value={n(f.propLegal)} box="2.15" onChange={v => setForeign({ propLegal: v })} />
+                  <Field label="Cost of services" value={n(f.propServices)} box="2.16" onChange={v => setForeign({ propServices: v })} />
+                  <Field label="Other expenses" value={n(f.propOther)} box="2.17" onChange={v => setForeign({ propOther: v })} />
+                </Section>
+                <Section title="Foreign property — adjustments">
+                  <Field label="Private use" value={n(f.propPrivateUse)} box="2.20" onChange={v => setForeign({ propPrivateUse: v })} />
+                  <Field label="Balancing charges" value={n(f.propBalancingCharges)} box="2.21" onChange={v => setForeign({ propBalancingCharges: v })} />
+                  <Field label="Electric charge-point allowance" value={n(f.propChargePoint)} box="2.21A" onChange={v => setForeign({ propChargePoint: v })} />
+                  <Field label="Structures & Buildings Allowance" value={n(f.propSba)} box="2.21B" onChange={v => setForeign({ propSba: v })} />
+                  <Field label="Zero-emission car allowance" value={n(f.propZeroEmission)} box="2.21C" onChange={v => setForeign({ propZeroEmission: v })} />
+                  <Field label="All other capital allowances" value={n(f.propOtherCA)} box="2.23" onChange={v => setForeign({ propOtherCA: v })} />
+                  <Field label="Costs of replacing domestic items" value={n(f.propReplacingDomestic)} box="2.24" onChange={v => setForeign({ propReplacingDomestic: v })} />
+                  <Field label="Adjusted profit (box 17)" value={cf.propertyProfit} box="2.26" calc />
+                </Section>
+                <Section title="Other foreign (→ boxes 21 / 27 / 28)">
+                  <Field label="Offshore-fund disposals" value={n(f.offshoreFundDisposals)} box="2.9" onChange={v => setForeign({ offshoreFundDisposals: v })} />
+                  <Field label="Foreign tax on property" value={n(f.propForeignTax)} box="2.30" onChange={v => setForeign({ propForeignTax: v })} />
+                  <Field label="Residential finance costs" value={n(f.residentialFinance)} box="2.10A" onChange={v => setForeign({ residentialFinance: v })} />
+                  <Field label="Total foreign tax (box 28)" value={cf.foreignTax} box="2.8" calc />
+                </Section>
+              </StudioCard>
+            );
+          })()}
+
           {tab === 'partners' && (
             <PartnersTab ret={ret} sa={sa} shares={c.partnerShares} setPartners={setPartners}
               setStatement={u => patch(r => { const s = r.sa800 as Sa800Data; return { ...r, sa800: { ...s, statement: { ...s.statement, ...u } } }; })} />
@@ -286,7 +331,7 @@ function PartnersTab({ ret, sa, shares, setPartners, setStatement }: {
   const upd = (id: string, u: Partial<Sa800Partner>) => setPartners(partners.map(p => p.id === id ? { ...p, ...u } : p));
   const add = () => setPartners([...partners, { id: rid('ptr'), sharePct: 0 }]);
   const del = (id: string) => setPartners(partners.filter(p => p.id !== id));
-  const empty = { profitShare: 0, loss: 0, basisAdj: 0, untaxedSavings: 0, cis: 0, charges: 0, property: 0, taxedInterest: 0, dividends: 0, otherIncome: 0, otherTaxedIncome: 0, taxDeducted: 0, residentialFinance: 0 };
+  const empty = { profitShare: 0, loss: 0, basisAdj: 0, untaxedSavings: 0, cis: 0, charges: 0, property: 0, taxedInterest: 0, dividends: 0, otherIncome: 0, otherTaxedIncome: 0, taxDeducted: 0, residentialFinance: 0, foreignSavings: 0, foreignDividends: 0, foreignProperty: 0, foreignPropertyLoss: 0, offshoreFund: 0, foreignResiFinance: 0, foreignTax: 0 };
   const shareRow = (id: string) => shares.find(s => s.id === id) ?? empty;
 
   return (
@@ -328,6 +373,11 @@ function PartnersTab({ ret, sa, shares, setPartners, setStatement }: {
               {full && shareRow(p.id).otherTaxedIncome > 0 && <AllocRow label="Other taxed income (box 23)" value={shareRow(p.id).otherTaxedIncome} />}
               {full && shareRow(p.id).taxDeducted > 0 && <AllocRow label="Tax deducted (box 25)" value={shareRow(p.id).taxDeducted} />}
               {full && shareRow(p.id).residentialFinance > 0 && <AllocRow label="Residential finance costs (box 26)" value={shareRow(p.id).residentialFinance} />}
+              {full && shareRow(p.id).foreignSavings > 0 && <AllocRow label="Foreign savings (box 14)" value={shareRow(p.id).foreignSavings} />}
+              {full && shareRow(p.id).foreignDividends > 0 && <AllocRow label="Foreign dividends (box 14A)" value={shareRow(p.id).foreignDividends} />}
+              {full && shareRow(p.id).foreignProperty > 0 && <AllocRow label="Foreign property (box 17)" value={shareRow(p.id).foreignProperty} />}
+              {full && shareRow(p.id).offshoreFund > 0 && <AllocRow label="Offshore-fund disposals (box 21)" value={shareRow(p.id).offshoreFund} />}
+              {full && shareRow(p.id).foreignTax > 0 && <AllocRow label="Foreign tax (box 28)" value={shareRow(p.id).foreignTax} />}
             </div>
           </div>
         ))}

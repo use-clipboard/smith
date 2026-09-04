@@ -5,7 +5,7 @@
 // (TEAL theme). Figures come from computeSa800; box numbers are the HMRC ones.
 
 import { FormThemeContext, TEAL_THEME, Page, Panel, Teal, SubHead, Note, Money, Cells, Line, Tick, toDDMMYYYY } from './formPrimitives';
-import { computeSa800, computeSa801, computeSa804 } from '../calc';
+import { computeSa800, computeSa801, computeSa804, computeSa802 } from '../calc';
 import type { TaxReturn, Sa800Data } from '../types';
 
 const n = (v?: number) => v || 0;
@@ -17,6 +17,7 @@ export default function Sa800Facsimile({ ret }: { ret: TaxReturn }): JSX.Element
   const full = (t.accountsMode ?? 'full') === 'full';
   const cp = computeSa801(sa.property);
   const cs = computeSa804(sa.savings);
+  const cf = computeSa802(sa.foreign);
   const foot = (tag: string) => ({ code: 'SA800' as const, footerLeft: `SA800 2026 PTR Page ${tag}`, footerRight: 'HMRC 12/25' });
 
   return (
@@ -165,6 +166,11 @@ export default function Sa800Facsimile({ ret }: { ret: TaxReturn }): JSX.Element
                 {sa.statement.full && p.otherTaxedIncome > 0 && <Money n="23" label="Share of other taxed income" value={p.otherTaxedIncome} />}
                 {sa.statement.full && p.taxDeducted > 0 && <Money n="25" label="Share of tax deducted" value={p.taxDeducted} />}
                 {sa.statement.full && p.residentialFinance > 0 && <Money n="26" label="Share of residential finance costs" value={p.residentialFinance} />}
+                {sa.statement.full && p.foreignSavings > 0 && <Money n="14" label="Share of foreign savings" value={p.foreignSavings} />}
+                {sa.statement.full && p.foreignDividends > 0 && <Money n="14A" label="Share of foreign dividends" value={p.foreignDividends} />}
+                {sa.statement.full && p.foreignProperty > 0 && <Money n="17" label="Share of foreign property income" value={p.foreignProperty} />}
+                {sa.statement.full && p.offshoreFund > 0 && <Money n="21" label="Share of offshore-fund disposals" value={p.offshoreFund} />}
+                {sa.statement.full && p.foreignTax > 0 && <Money n="28" label="Share of foreign tax" value={p.foreignTax} />}
               </Panel>
             </div>
           );
@@ -259,6 +265,36 @@ export default function Sa800Facsimile({ ret }: { ret: TaxReturn }): JSX.Element
             <Money n="7.27" label="Other income — loss" value={n(sa.savings?.otherIncomeLoss)} />
             <Money n="7.29" label="Other taxed income — tax deducted" value={n(sa.savings?.otherTaxedIncomeTax)} />
             <Money n="7.30" label="Other taxed income — gross" value={n(sa.savings?.otherTaxedIncomeGross)} />
+          </Panel>
+        </Page>
+      )}
+
+      {/* ── SA802 — Partnership Foreign (supplementary) ── */}
+      {sa.hasForeign && (
+        <Page tag="PF1" code="SA802" footerLeft="SA802 2026 Page PF 1" footerRight="HMRC 12/25">
+          <h2 className="mb-2 text-[16px] font-bold" style={{ color: TEAL_THEME.panelBorder }}>Partnership Foreign</h2>
+          <Teal>Foreign savings & dividends (→ boxes 14 / 14A)</Teal>
+          <Panel>
+            <Money n="2.6" label="Foreign interest / savings income" value={cf.savingsIncome} />
+            <Money n="2.6A" label="Foreign dividend income" value={cf.dividendsIncome} />
+          </Panel>
+          <Teal>Foreign land and property</Teal>
+          <Panel>
+            <Money n="2.11" label="Total rents and other receipts" value={n(sa.foreign?.propRents)} />
+            <Money n="2.12" label="Rent, rates, insurance, ground rents" value={n(sa.foreign?.propRentRates)} />
+            <Money n="2.13" label="Repairs and maintenance" value={n(sa.foreign?.propRepairs)} />
+            <Money n="2.14" label="Non-residential property finance costs" value={n(sa.foreign?.propFinanceNonResi)} />
+            <Money n="2.15" label="Legal and professional costs" value={n(sa.foreign?.propLegal)} />
+            <Money n="2.16" label="Cost of services provided" value={n(sa.foreign?.propServices)} />
+            <Money n="2.17" label="Other expenses" value={n(sa.foreign?.propOther)} />
+            <Money n="2.26" label="Adjusted profit (→ box 17)" value={cf.propertyProfit} />
+            <Money n="2.27" label="Adjusted loss (→ box 18)" value={cf.propertyLoss} />
+          </Panel>
+          <Teal>Other foreign (→ boxes 21 / 27 / 28)</Teal>
+          <Panel>
+            <Money n="2.9" label="Disposals of holdings in offshore fund" value={n(sa.foreign?.offshoreFundDisposals)} />
+            <Money n="2.10A" label="Residential property finance costs" value={n(sa.foreign?.residentialFinance)} />
+            <Money n="2.8" label="Total foreign tax" value={cf.foreignTax} />
           </Panel>
         </Page>
       )}

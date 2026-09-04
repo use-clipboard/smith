@@ -1827,6 +1827,39 @@ export interface Sa804Savings {
   otherTaxedIncomeGross?: number;// 7.30 → box 23
 }
 
+/** SA802 Partnership Foreign (supplementary page). Box numbers are the HMRC SA802
+ *  (2026) ones. Its totals feed the Full Partnership Statement: foreign savings →
+ *  box 14, foreign dividends → box 14A, foreign property profit/loss → boxes
+ *  17/18, offshore-fund disposals → box 21, residential finance → box 27, foreign
+ *  tax → box 28. (Per-country detail for each partner's foreign tax credit relief
+ *  is claimed on their own SA106 — the partnership return carries the totals.) */
+export interface Sa802Foreign {
+  traditionalAccounting?: boolean;  // 2.8A
+  // Foreign savings & dividends (→ boxes 14 / 14A)
+  savingsIncome?: number;       // 2.6 — foreign interest/savings income (sterling)
+  savingsForeignTax?: number;   // foreign tax on savings (part of 2.8)
+  dividendsIncome?: number;     // 2.6A — foreign dividend income
+  dividendsForeignTax?: number; // foreign tax on dividends
+  // Foreign land & property (PF3, boxes 2.11–2.27)
+  propRents?: number;           // 2.11 — total rents & other receipts
+  propRentRates?: number;       // 2.12
+  propRepairs?: number;         // 2.13
+  propFinanceNonResi?: number;  // 2.14 — non-residential finance costs
+  propLegal?: number;           // 2.15
+  propServices?: number;        // 2.16
+  propOther?: number;           // 2.17
+  propPrivateUse?: number;      // 2.20
+  propBalancingCharges?: number;// 2.21
+  propChargePoint?: number;     // 2.21A
+  propSba?: number;             // 2.21B
+  propZeroEmission?: number;    // 2.21C
+  propOtherCA?: number;         // 2.23
+  propReplacingDomestic?: number; // 2.24
+  propForeignTax?: number;      // 2.30 — foreign tax on property (part of 2.8)
+  residentialFinance?: number;  // 2.10A/2.30A → box 27
+  offshoreFundDisposals?: number; // 2.9 → box 21
+}
+
 /** The full SA800 Partnership Tax Return data. */
 export interface Sa800Data {
   businessName?: string;
@@ -1851,6 +1884,8 @@ export interface Sa800Data {
   property?: Sa801Property;
   /** SA804 savings, investments & other income (present when Q7 / hasOtherIncome). */
   savings?: Sa804Savings;
+  /** SA802 foreign income (present when Q2 / hasForeign). */
+  foreign?: Sa802Foreign;
   statement: Sa800Statement;
 }
 
