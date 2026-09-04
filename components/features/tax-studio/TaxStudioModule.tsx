@@ -297,9 +297,9 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
             </div>
             <div className="flex items-center gap-2">
               {stage === 'review' && ret.returnType !== 'ct600' && ret.returnType !== 'sa800' && <ReviewSearch onGo={goToReview} />}
-              {stage === 'review' && ret.returnType !== 'sa800' && (
+              {stage === 'review' && (
                 <button onClick={() => setPreviewOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90">
-                  <FileText size={14} /> {ret.returnType === 'ct600' ? 'CT600 Preview' : 'Tax Return Preview'}
+                  <FileText size={14} /> {ret.returnType === 'ct600' ? 'CT600 Preview' : ret.returnType === 'sa800' ? 'SA800 Preview' : 'Tax Return Preview'}
                 </button>
               )}
               <WorkspaceControls

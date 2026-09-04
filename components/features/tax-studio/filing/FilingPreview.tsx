@@ -8,6 +8,7 @@ import type { PageId } from '../stages/StageReview';
 import { buildFilingForms, type FilingForm, type FilingRow } from './filingModel';
 import Sa100Facsimile from './Sa100Facsimile';
 import Ct600Facsimile from './Ct600Facsimile';
+import Sa800Facsimile from './Sa800Facsimile';
 import EmploymentFacsimile from './EmploymentFacsimile';
 import SelfEmploymentFacsimile from './SelfEmploymentFacsimile';
 import SelfEmploymentShortFacsimile from './SelfEmploymentShortFacsimile';
@@ -258,7 +259,7 @@ function pdfFileName(ret: TaxReturn): string {
   const endYear = isCt
     ? (ret.periodEnd ? ret.periodEnd.slice(0, 4) : '')
     : (Number.isNaN(yy) ? '' : String(2000 + yy)); // "2025/26" -> "2026"
-  const label = isCt ? 'Corporation Tax Return' : 'Personal Tax Return';
+  const label = isCt ? 'Corporation Tax Return' : ret.returnType === 'sa800' ? 'Partnership Tax Return' : 'Personal Tax Return';
   const raw = `${endYear}_${label}_${ret.clientName || 'Client'}_${ret.clientRef || ''}`;
   const clean = raw
     .replace(/[\/:*?"<>|]/g, '') // strip only filename-illegal characters (keep spaces)
@@ -669,6 +670,8 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
           <div ref={sheetsRef} className="sa-sheets-wrap px-4 py-6" style={{ zoom }}>
             {ret.returnType === 'ct600' ? (
               <Ct600Facsimile ret={ret} editable={editablePreview} />
+            ) : ret.returnType === 'sa800' ? (
+              <Sa800Facsimile ret={ret} />
             ) : (
              <>
             <Sa100Facsimile ret={ret} editable={editablePreview} />
