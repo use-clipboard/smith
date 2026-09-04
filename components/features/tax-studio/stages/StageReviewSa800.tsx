@@ -11,6 +11,7 @@ import { StudioCard } from '../primitives';
 import { computeSa800 } from '../calc';
 import { fmtMoney } from '../data';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
+import Sa800LinkCard from '../Sa800LinkCard';
 import type { TaxReturn, Sa800Data, Sa800Trading, Sa800Partner } from '../types';
 
 type Tab = 'details' | 'trading' | 'partners';
@@ -47,6 +48,15 @@ export default function StageReviewSa800({ ret, patch, advance }: {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
+      <Sa800LinkCard
+        clientId={ret.clientId}
+        taxYear={ret.taxYear}
+        existingPartners={sa.statement.partners}
+        onImportTrading={u => setTrading(u)}
+        onImportPartners={partners => setPartners(partners)}
+        onPeriod={(start, end) => { if (!sa.periodStart && !sa.periodEnd) setData({ periodStart: start, periodEnd: end }); }}
+      />
+
       <div className="flex flex-wrap gap-1 rounded-xl border border-[var(--border)] bg-white p-1">
         {TABS.map(x => {
           const on = x.id === tab;
