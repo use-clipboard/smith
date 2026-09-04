@@ -172,6 +172,8 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
   function save(next: Block[]) {
     setBlocks(next);
     fetch('/api/users/organise-plan', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: planDate, plan: { v: 1, blocks: next } }) }).catch(() => {});
+    // Tell the header a plan now exists for today (drives the "plan ready" dot).
+    window.dispatchEvent(new CustomEvent('smith:organise-plan-saved'));
   }
 
   useEffect(() => {

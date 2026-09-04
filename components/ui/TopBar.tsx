@@ -18,7 +18,7 @@ import { useNotifications } from './NotificationsProvider';
 import { notificationTarget, goToNotification, NAVIGATE_TAB_EVENT } from '@/lib/notificationTarget';
 import { useModules } from './ModulesProvider';
 import { hasPracticeSuite } from '@/config/modules.config';
-import { useTaskCountsOrZero } from './TasksCountProvider';
+import { todayIso } from '@/lib/timesheets/format';
 import { useOrganiseMyDay } from '@/components/features/organise/OrganiseMyDayProvider';
 import { useTimesheets } from '@/components/features/timesheets/TimesheetsProvider';
 import { fmtStopwatch, timerElapsedMs } from '@/lib/timesheets/format';
@@ -176,8 +176,20 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
   // the user knows a plan is ready without opening it.
   const practiceSuite = hasPracticeSuite(activeModules);
   const { open: openMyDay, mounted: myDayMounted, minimised: myDayMinimised } = useOrganiseMyDay();
-  const dayCounts = useTaskCountsOrZero();
-  const myDayReady = (dayCounts.overdue + dayCounts.dueWithin7) > 0;
+  // The dot means "today's plan actually exists", not just "you have work". Set on
+  // load (a saved plan for today) and when the planner saves one.
+  const [myDayPlanned, setMyDayPlanned] = useState(false);
+  useEffect(() => {
+    if (!practiceSuite) return;
+    let live = true;
+    fetch(`/api/users/organise-plan?date=${todayIso()}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then((d: { plan?: { blocks?: unknown[] } | null } | null) => { if (live && (d?.plan?.blocks?.length ?? 0) > 0) setMyDayPlanned(true); })
+      .catch(() => {});
+    const onSaved = () => setMyDayPlanned(true);
+    window.addEventListener('smith:organise-plan-saved', onSaved);
+    return () => { live = false; window.removeEventListener('smith:organise-plan-saved', onSaved); };
+  }, [practiceSuite]);
   const myDayShowing = myDayMounted && !myDayMinimised;
 
   // Notification toasts now live in NotificationToastNotifier (rendered at the
@@ -396,20 +408,20 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
 
         {/* Organise my day — opens the app-wide plan lightbox (sparkle-pencil) */}
         {practiceSuite && (
-          <Tooltip label={myDayReady ? 'Organise my day — a plan is ready' : 'Organise my day'}>
+          <Tooltip label={myDayPlanned ? "Organise my day — today's plan is ready" : 'Organise my day'}>
             <button
               onClick={openMyDay}
               aria-label="Organise my day"
               className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
                 myDayShowing
                   ? 'bg-[var(--accent)] text-white'
-                  : myDayReady
+                  : myDayPlanned
                     ? 'bg-[var(--accent-light)] text-[var(--accent)] hover:brightness-95'
                     : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
               }`}
             >
               <Wand2 size={16} />
-              {myDayReady && !myDayShowing && (
+              {myDayPlanned && !myDayShowing && (
                 <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-60" />
                   <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 ring-2 ring-white" />
