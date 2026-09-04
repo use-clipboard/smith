@@ -5,7 +5,7 @@
 // (TEAL theme). Figures come from computeSa800; box numbers are the HMRC ones.
 
 import { FormThemeContext, TEAL_THEME, Page, Panel, Teal, SubHead, Note, Money, Cells, Line, Tick, toDDMMYYYY } from './formPrimitives';
-import { computeSa800 } from '../calc';
+import { computeSa800, computeSa801 } from '../calc';
 import type { TaxReturn, Sa800Data } from '../types';
 
 const n = (v?: number) => v || 0;
@@ -15,6 +15,7 @@ export default function Sa800Facsimile({ ret }: { ret: TaxReturn }): JSX.Element
   const t = sa.trading;
   const c = computeSa800(sa, ret.taxYear, { periodStart: sa.periodStart, periodEnd: sa.periodEnd });
   const full = (t.accountsMode ?? 'full') === 'full';
+  const cp = computeSa801(sa.property);
   const foot = (tag: string) => ({ code: 'SA800' as const, footerLeft: `SA800 2026 PTR Page ${tag}`, footerRight: 'HMRC 12/25' });
 
   return (
@@ -156,6 +157,7 @@ export default function Sa800Facsimile({ ret }: { ret: TaxReturn }): JSX.Element
                 {sa.statement.full && p.untaxedSavings > 0 && <Money n="24" label="Share of untaxed interest" value={p.untaxedSavings} />}
                 {sa.statement.full && p.cis > 0 && <Money n="24A" label="Share of CIS deductions" value={p.cis} />}
                 {sa.statement.full && p.charges > 0 && <Money n="29" label="Share of partnership charges" value={p.charges} />}
+                {sa.statement.full && p.property > 0 && <Money n="19" label="Share of UK property income" value={p.property} />}
               </Panel>
             </div>
           );
@@ -174,6 +176,48 @@ export default function Sa800Facsimile({ ret }: { ret: TaxReturn }): JSX.Element
           <Line n="Name" label="Nominated partner" value={ret.preparedBy} />
         </Panel>
       </Page>
+
+      {/* ── SA801 — Partnership UK property (supplementary) ── */}
+      {sa.hasUkProperty && (
+        <Page tag="PL2" code="SA801" footerLeft="SA801 2026 Page PL 2" footerRight="HMRC 12/25">
+          <h2 className="mb-2 text-[16px] font-bold" style={{ color: TEAL_THEME.panelBorder }}>Partnership UK property</h2>
+          <Teal>Income</Teal>
+          <Panel>
+            <Money n="1.21" label="Rents and other income from UK property" value={n(sa.property?.rents)} />
+            <Money n="1.22" label="Tax deducted" value={n(sa.property?.taxDeducted)} />
+            <Money n="1.23" label="Chargeable premiums" value={n(sa.property?.chargeablePremiums)} />
+            <Money n="1.23A" label="Reverse premiums" value={n(sa.property?.reversePremiums)} />
+            <Money n="1.24" label="Total income (boxes 1.21 + 1.23 + 1.23A)" value={cp.totalIncome} />
+          </Panel>
+          <Teal>Expenses</Teal>
+          <Panel>
+            <Money n="1.25" label="Rent, rates, insurance and ground rents" value={n(sa.property?.rentRatesInsurance)} />
+            <Money n="1.26" label="Repairs and maintenance" value={n(sa.property?.repairs)} />
+            <Money n="1.27" label="Non-residential property finance costs" value={n(sa.property?.financeCostsNonResi)} />
+            <Money n="1.28" label="Legal and professional costs" value={n(sa.property?.legalProfessional)} />
+            <Money n="1.29" label="Cost of services provided, including wages" value={n(sa.property?.costOfServices)} />
+            <Money n="1.30" label="Other expenses" value={n(sa.property?.otherExpenses)} />
+            <Money n="1.31" label="Total expenses (boxes 1.25 to 1.30)" value={cp.totalExpenses} />
+            <Money n="1.32" label="Net profit (box 1.24 minus box 1.31)" value={cp.netProfit} />
+          </Panel>
+          <Teal>Tax adjustments</Teal>
+          <Panel>
+            <Money n="1.33" label="Private use" value={n(sa.property?.privateUse)} />
+            <Money n="1.34" label="Balancing charges" value={n(sa.property?.balancingCharges)} />
+            <Money n="1.35" label="Total additions (boxes 1.33 + 1.34)" value={cp.additions} />
+            <Money n="1.35A" label="Annual Investment Allowance" value={n(sa.property?.aia)} />
+            <Money n="1.35B" label="Electric charge-point allowance" value={n(sa.property?.chargePointAllowance)} />
+            <Money n="1.35C" label="Structures and Buildings Allowance" value={n(sa.property?.sba)} />
+            <Money n="1.35D" label="Freeports and Investment Zones SBA" value={n(sa.property?.freeportsSba)} />
+            <Money n="1.35E" label="Zero-emission car allowance" value={n(sa.property?.zeroEmissionCar)} />
+            <Money n="1.36" label="All other capital allowances" value={n(sa.property?.otherCapitalAllowances)} />
+            <Money n="1.37" label="Costs of replacing domestic items" value={n(sa.property?.replacingDomesticItems)} />
+            <Money n="1.38" label="Total deductions" value={cp.deductions} />
+            <Money n="1.39" label="Profit or loss for the return period (→ PS Full box 19)" value={cp.profitForPeriod} />
+            <Money n="1.40" label="Residential property finance costs (→ box 26)" value={n(sa.property?.residentialFinanceCosts)} />
+          </Panel>
+        </Page>
+      )}
     </FormThemeContext.Provider>
   );
 }

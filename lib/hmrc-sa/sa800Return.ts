@@ -13,7 +13,7 @@
 // in THIS file, exactly as SA100 was built and then schema-validated.
 
 import type { TaxReturn, Sa800Data } from '@/components/features/tax-studio/types';
-import { computeSa800 } from '@/components/features/tax-studio/calc';
+import { computeSa800, computeSa801 } from '@/components/features/tax-studio/calc';
 import { periodEndFor } from './sa100Return';
 import { el, group, isoDate, moneyDown, digitsOnly, clip } from './xml';
 
@@ -68,6 +68,16 @@ export function buildSa800Return(ret: TaxReturn): Sa800BuildResult {
     el('UntaxedInterest', moneyDown(sa.untaxedInterest)),            // 7.9A
   ]);
 
+  // SA801 UK property (supplementary page), when present.
+  const cp = computeSa801(sa.property);
+  const property = sa.property ? group('PropertyIncome', [
+    el('TotalIncome', moneyDown(cp.totalIncome)),           // 1.24
+    el('TotalExpenses', moneyDown(cp.totalExpenses)),       // 1.31
+    el('NetProfit', moneyDown(cp.profitForPeriod)),         // 1.39 (→ PS box 19)
+    el('ResidentialFinanceCosts', moneyDown(cp.residentialFinance)), // 1.40 (→ box 26)
+    el('TaxDeducted', moneyDown(cp.taxDeducted)),           // 1.22 (→ box 25)
+  ]) : '';
+
   // Partnership Statement — one <Partner> per member with their allocation.
   const statement = group('PartnershipStatement',
     [el('Full', sa.statement.full ? 'yes' : undefined)].concat(
@@ -85,6 +95,7 @@ export function buildSa800Return(ret: TaxReturn): Sa800BuildResult {
           el('UntaxedSavings', moneyDown(s?.untaxedSavings)),// box 24
           el('CisDeductions', moneyDown(s?.cis)),            // box 24A
           el('PartnershipCharges', moneyDown(s?.charges)),   // box 29
+          el('PropertyIncomeShare', moneyDown(s?.property)), // box 19
         ]);
       }),
     ),
@@ -93,7 +104,7 @@ export function buildSa800Return(ret: TaxReturn): Sa800BuildResult {
   // Agent filing declaration (nominated partner declaration is captured on-screen).
   const declaration = '<Declaration><AgentDeclaration>yes</AgentDeclaration></Declaration>';
 
-  const returnBody = group('PartnershipTaxReturn', [details, trade, statement, declaration]);
+  const returnBody = group('PartnershipTaxReturn', [details, trade, property, statement, declaration]);
   const irEnvelope = `<IRenvelope xmlns="${SA800_NS}">${irHeader}${returnBody}</IRenvelope>`;
   return { irEnvelope, periodEnd, utr };
 }

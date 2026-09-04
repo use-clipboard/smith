@@ -1767,6 +1767,36 @@ export interface Sa800Trading {
   additionalInfo?: string;     // 3.116
 }
 
+/** SA801 Partnership UK property (supplementary page). Box numbers are the HMRC
+ *  SA801 (2026) ones. Its profit for the return period (box 1.39) is allocated to
+ *  the partners in the Full Partnership Statement (box 19). */
+export interface Sa801Property {
+  traditionalAccounting?: boolean; // 1.22A
+  // Income
+  rents?: number;              // 1.21 — rents and other income from UK property
+  taxDeducted?: number;        // 1.22 — tax deducted (→ PS Full box 25)
+  chargeablePremiums?: number; // 1.23
+  reversePremiums?: number;    // 1.23A
+  // Expenses (1.25–1.30)
+  rentRatesInsurance?: number; // 1.25 — rent, rates, insurance, ground rents
+  repairs?: number;            // 1.26 — repairs and maintenance
+  financeCostsNonResi?: number;// 1.27 — non-residential property finance costs
+  legalProfessional?: number;  // 1.28 — legal and professional costs
+  costOfServices?: number;     // 1.29 — cost of services provided, incl. wages
+  otherExpenses?: number;      // 1.30 — other expenses
+  // Tax adjustments
+  privateUse?: number;         // 1.33
+  balancingCharges?: number;   // 1.34
+  aia?: number;                // 1.35A — Annual Investment Allowance
+  chargePointAllowance?: number; // 1.35B — electric charge-point allowance
+  sba?: number;                // 1.35C — Structures and Buildings Allowance
+  freeportsSba?: number;       // 1.35D — Freeports/Investment Zones SBA
+  zeroEmissionCar?: number;    // 1.35E — zero-emission car allowance
+  otherCapitalAllowances?: number; // 1.36
+  replacingDomesticItems?: number; // 1.37 — costs of replacing domestic items
+  residentialFinanceCosts?: number; // 1.40 (→ PS Full box 26)
+}
+
 /** The full SA800 Partnership Tax Return data. */
 export interface Sa800Data {
   businessName?: string;
@@ -1787,6 +1817,8 @@ export interface Sa800Data {
   hasOtherIncome?: boolean;    // Q7 → SA804 / box 7.9A
   untaxedInterest?: number;    // 7.9A — untaxed interest from UK banks/building societies
   trading: Sa800Trading;
+  /** SA801 UK property supplementary page (present when Q1 / hasUkProperty). */
+  property?: Sa801Property;
   statement: Sa800Statement;
 }
 

@@ -6,16 +6,16 @@
 // Partnership Statement. Box numbers are the HMRC SA800 (2026) ones.
 
 import { useState } from 'react';
-import { ArrowRight, Building2, Calculator, Users, Plus, Trash2, ListTree, Send, Loader2, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, Building2, Calculator, Users, Plus, Trash2, ListTree, Send, Loader2, CheckCircle2, Home } from 'lucide-react';
 import { StudioCard } from '../primitives';
-import { computeSa800 } from '../calc';
+import { computeSa800, computeSa801 } from '../calc';
 import { fmtMoney } from '../data';
 import { findPartnerReturn, pushPartnerShare } from '../sa800PartnerFeed';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import Sa800LinkCard from '../Sa800LinkCard';
-import type { TaxReturn, Sa800Data, Sa800Trading, Sa800Partner } from '../types';
+import type { TaxReturn, Sa800Data, Sa800Trading, Sa800Partner, Sa801Property } from '../types';
 
-type Tab = 'details' | 'trading' | 'partners';
+type Tab = 'details' | 'trading' | 'property' | 'partners';
 const rid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
 
 export default function StageReviewSa800({ ret, patch, advance }: {
@@ -36,6 +36,10 @@ export default function StageReviewSa800({ ret, patch, advance }: {
     const s = r.sa800 as Sa800Data;
     return { ...r, sa800: { ...s, statement: { ...s.statement, partners } } };
   });
+  const setProperty = (u: Partial<Sa801Property>) => patch(r => {
+    const s = r.sa800 as Sa800Data;
+    return { ...r, sa800: { ...s, property: { ...s.property, ...u } } };
+  });
 
   const c = computeSa800(sa, ret.taxYear, { periodStart: sa.periodStart, periodEnd: sa.periodEnd });
   const t = sa.trading;
@@ -44,6 +48,7 @@ export default function StageReviewSa800({ ret, patch, advance }: {
   const TABS: { id: Tab; label: string; icon: typeof Building2 }[] = [
     { id: 'details', label: 'Details', icon: Building2 },
     { id: 'trading', label: 'Trading', icon: ListTree },
+    ...(sa.hasUkProperty ? [{ id: 'property' as Tab, label: 'UK property', icon: Home }] : []),
     { id: 'partners', label: `Partners${sa.statement.partners.length ? ` (${sa.statement.partners.length})` : ''}`, icon: Users },
   ];
 
@@ -160,6 +165,45 @@ export default function StageReviewSa800({ ret, patch, advance }: {
             </StudioCard>
           )}
 
+          {tab === 'property' && (() => {
+            const p = sa.property ?? {};
+            const cp = computeSa801(p);
+            return (
+              <StudioCard className="space-y-5 p-5">
+                <Section title="Income (UK property)">
+                  <Field label="Rents and other income" value={n(p.rents)} box="1.21" onChange={v => setProperty({ rents: v })} />
+                  <Field label="Chargeable premiums" value={n(p.chargeablePremiums)} box="1.23" onChange={v => setProperty({ chargeablePremiums: v })} />
+                  <Field label="Reverse premiums" value={n(p.reversePremiums)} box="1.23A" onChange={v => setProperty({ reversePremiums: v })} />
+                  <Field label="Total income" value={cp.totalIncome} box="1.24" calc />
+                  <Field label="Tax deducted" value={n(p.taxDeducted)} box="1.22" onChange={v => setProperty({ taxDeducted: v })} />
+                </Section>
+                <Section title="Expenses">
+                  <Field label="Rent, rates, insurance, ground rents" value={n(p.rentRatesInsurance)} box="1.25" onChange={v => setProperty({ rentRatesInsurance: v })} />
+                  <Field label="Repairs and maintenance" value={n(p.repairs)} box="1.26" onChange={v => setProperty({ repairs: v })} />
+                  <Field label="Non-residential finance costs" value={n(p.financeCostsNonResi)} box="1.27" onChange={v => setProperty({ financeCostsNonResi: v })} />
+                  <Field label="Legal and professional costs" value={n(p.legalProfessional)} box="1.28" onChange={v => setProperty({ legalProfessional: v })} />
+                  <Field label="Cost of services (incl. wages)" value={n(p.costOfServices)} box="1.29" onChange={v => setProperty({ costOfServices: v })} />
+                  <Field label="Other expenses" value={n(p.otherExpenses)} box="1.30" onChange={v => setProperty({ otherExpenses: v })} />
+                  <Field label="Total expenses" value={cp.totalExpenses} box="1.31" calc />
+                  <Field label="Net profit" value={cp.netProfit} box="1.32" calc />
+                </Section>
+                <Section title="Tax adjustments">
+                  <Field label="Private use" value={n(p.privateUse)} box="1.33" onChange={v => setProperty({ privateUse: v })} />
+                  <Field label="Balancing charges" value={n(p.balancingCharges)} box="1.34" onChange={v => setProperty({ balancingCharges: v })} />
+                  <Field label="Annual Investment Allowance" value={n(p.aia)} box="1.35A" onChange={v => setProperty({ aia: v })} />
+                  <Field label="Electric charge-point allowance" value={n(p.chargePointAllowance)} box="1.35B" onChange={v => setProperty({ chargePointAllowance: v })} />
+                  <Field label="Structures & Buildings Allowance" value={n(p.sba)} box="1.35C" onChange={v => setProperty({ sba: v })} />
+                  <Field label="Freeports/IZ SBA" value={n(p.freeportsSba)} box="1.35D" onChange={v => setProperty({ freeportsSba: v })} />
+                  <Field label="Zero-emission car allowance" value={n(p.zeroEmissionCar)} box="1.35E" onChange={v => setProperty({ zeroEmissionCar: v })} />
+                  <Field label="All other capital allowances" value={n(p.otherCapitalAllowances)} box="1.36" onChange={v => setProperty({ otherCapitalAllowances: v })} />
+                  <Field label="Costs of replacing domestic items" value={n(p.replacingDomesticItems)} box="1.37" onChange={v => setProperty({ replacingDomesticItems: v })} />
+                  <Field label="Residential finance costs" value={n(p.residentialFinanceCosts)} box="1.40" onChange={v => setProperty({ residentialFinanceCosts: v })} />
+                  <Field label="Profit for return period" value={cp.profitForPeriod} box="1.39" calc />
+                </Section>
+              </StudioCard>
+            );
+          })()}
+
           {tab === 'partners' && (
             <PartnersTab ret={ret} sa={sa} shares={c.partnerShares} setPartners={setPartners}
               setStatement={u => patch(r => { const s = r.sa800 as Sa800Data; return { ...r, sa800: { ...s, statement: { ...s.statement, ...u } } }; })} />
@@ -201,7 +245,7 @@ function PartnersTab({ ret, sa, shares, setPartners, setStatement }: {
   const upd = (id: string, u: Partial<Sa800Partner>) => setPartners(partners.map(p => p.id === id ? { ...p, ...u } : p));
   const add = () => setPartners([...partners, { id: rid('ptr'), sharePct: 0 }]);
   const del = (id: string) => setPartners(partners.filter(p => p.id !== id));
-  const empty = { profitShare: 0, loss: 0, basisAdj: 0, untaxedSavings: 0, cis: 0, charges: 0 };
+  const empty = { profitShare: 0, loss: 0, basisAdj: 0, untaxedSavings: 0, cis: 0, charges: 0, property: 0 };
   const shareRow = (id: string) => shares.find(s => s.id === id) ?? empty;
 
   return (
@@ -236,6 +280,7 @@ function PartnersTab({ ret, sa, shares, setPartners, setStatement }: {
               {full && shareRow(p.id).untaxedSavings > 0 && <AllocRow label="Untaxed interest (box 24)" value={shareRow(p.id).untaxedSavings} />}
               {full && shareRow(p.id).cis > 0 && <AllocRow label="CIS deductions (box 24A)" value={shareRow(p.id).cis} />}
               {full && shareRow(p.id).charges > 0 && <AllocRow label="Partnership charges (box 29)" value={shareRow(p.id).charges} />}
+              {full && shareRow(p.id).property > 0 && <AllocRow label="UK property income (box 19)" value={shareRow(p.id).property} />}
             </div>
           </div>
         ))}

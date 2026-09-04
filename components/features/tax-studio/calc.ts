@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, CapexAddition, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner, Ct600Data, Ct600LossStream, Sa800Data } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, CapexAddition, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner, Ct600Data, Ct600LossStream, Sa800Data, Sa801Property } from './types';
 
 /** The taxpayer's ownership share (0–1) of a jointly-owned item. No owners ⇒ 1.
  *  Shared by CGT disposals and joint interest. */
@@ -2134,6 +2134,31 @@ export function ct600FilingDue(periodEndIso?: string): string {
 
 // ── SA800 Partnership Tax Return ─────────────────────────────────────────────
 
+/** SA801 Partnership UK property computation. */
+export interface Sa801Computation {
+  totalIncome: number;        // box 1.24
+  totalExpenses: number;      // box 1.31
+  netProfit: number;          // box 1.32
+  additions: number;          // box 1.35 (private use + balancing charges)
+  deductions: number;         // box 1.38 (capital allowances etc.)
+  profitForPeriod: number;    // box 1.39 → Partnership Statement (Full) box 19
+  residentialFinance: number; // box 1.40 → box 26
+  taxDeducted: number;        // box 1.22 → box 25
+}
+
+export function computeSa801(p: Sa801Property | undefined): Sa801Computation {
+  const n = (v?: number) => v || 0;
+  const totalIncome = r0(n(p?.rents) + n(p?.chargeablePremiums) + n(p?.reversePremiums));          // 1.24
+  const totalExpenses = r0(n(p?.rentRatesInsurance) + n(p?.repairs) + n(p?.financeCostsNonResi)
+    + n(p?.legalProfessional) + n(p?.costOfServices) + n(p?.otherExpenses));                        // 1.31
+  const netProfit = r0(totalIncome - totalExpenses);                                                // 1.32
+  const additions = r0(n(p?.privateUse) + n(p?.balancingCharges));                                  // 1.35
+  const deductions = r0(n(p?.aia) + n(p?.chargePointAllowance) + n(p?.sba) + n(p?.freeportsSba)
+    + n(p?.zeroEmissionCar) + n(p?.otherCapitalAllowances) + n(p?.replacingDomesticItems));         // 1.38
+  const profitForPeriod = r0(netProfit + additions - deductions);                                   // 1.39
+  return { totalIncome, totalExpenses, netProfit, additions, deductions, profitForPeriod, residentialFinance: r0(n(p?.residentialFinanceCosts)), taxDeducted: r0(n(p?.taxDeducted)) };
+}
+
 export interface Sa800Computation {
   taxYear: string;
   grossProfit: number;          // box 3.49 (full P&L only)
@@ -2157,9 +2182,11 @@ export interface Sa800Computation {
     untaxedSavings: number;   // box 24 — share of untaxed interest (box 7.9A)
     cis: number;              // box 24A — share of CIS deductions (box 3.97)
     charges: number;          // box 29 — share of partnership charges (box 3.117)
+    property: number;         // box 19 — share of UK property profit (SA801 box 1.39)
   }[];
   allocatedProfit: number;      // sum of partner profit shares
   unallocated: number;          // profit − allocatedProfit
+  propertyProfit: number;       // SA801 box 1.39 (UK property profit for the period)
   notes: string[];
 }
 
@@ -2205,6 +2232,7 @@ export function computeSa800(
 
   // Partnership Statement — allocate each income stream to each partner. Every
   // stream is share% of the partnership total, or a manual per-partner override.
+  const propertyProfit = data?.property ? computeSa801(data.property).profitForPeriod : 0; // SA801 box 1.39
   const partners = data?.statement.partners ?? [];
   const totals = {
     profit, loss,
@@ -2212,6 +2240,7 @@ export function computeSa800(
     untaxedSavings: n(data?.untaxedInterest), // box 7.9A → 24
     cis: n(t.cisDeductions),                  // box 3.97 → 24A
     charges: n(t.netPartnershipCharges),      // box 3.117 → 29
+    property: propertyProfit,                 // SA801 1.39 → box 19
   };
   const alloc = (override: number | undefined, total: number, pct: number) => override != null ? r0(override) : partnerAllocatedShare(total, pct);
   const partnerShares = partners.map(p => {
@@ -2226,6 +2255,7 @@ export function computeSa800(
       untaxedSavings: alloc(p.untaxedSavings, totals.untaxedSavings, pct),
       cis: alloc(p.cisDeductions, totals.cis, pct),
       charges: alloc(p.chargesShare, totals.charges, pct),
+      property: partnerAllocatedShare(totals.property, pct), // box 19
     };
   });
   const allocatedProfit = partnerShares.reduce((a, p) => a + p.profitShare, 0);
@@ -2240,7 +2270,7 @@ export function computeSa800(
   return {
     taxYear, grossProfit, totalExpenses, netProfitPerAccounts, disallowable, goodsOwnUse,
     balancingCharges, capitalAllowances, netProfitForTax, profit, loss,
-    partnerShares, allocatedProfit, unallocated, notes,
+    partnerShares, allocatedProfit, unallocated, propertyProfit, notes,
   };
 }
 
