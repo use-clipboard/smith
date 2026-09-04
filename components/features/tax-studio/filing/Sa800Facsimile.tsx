@@ -5,7 +5,7 @@
 // (TEAL theme). Figures come from computeSa800; box numbers are the HMRC ones.
 
 import { FormThemeContext, TEAL_THEME, Page, Panel, Teal, SubHead, Note, Money, Cells, Line, Tick, toDDMMYYYY } from './formPrimitives';
-import { computeSa800, computeSa801 } from '../calc';
+import { computeSa800, computeSa801, computeSa804 } from '../calc';
 import type { TaxReturn, Sa800Data } from '../types';
 
 const n = (v?: number) => v || 0;
@@ -16,6 +16,7 @@ export default function Sa800Facsimile({ ret }: { ret: TaxReturn }): JSX.Element
   const c = computeSa800(sa, ret.taxYear, { periodStart: sa.periodStart, periodEnd: sa.periodEnd });
   const full = (t.accountsMode ?? 'full') === 'full';
   const cp = computeSa801(sa.property);
+  const cs = computeSa804(sa.savings);
   const foot = (tag: string) => ({ code: 'SA800' as const, footerLeft: `SA800 2026 PTR Page ${tag}`, footerRight: 'HMRC 12/25' });
 
   return (
@@ -158,6 +159,10 @@ export default function Sa800Facsimile({ ret }: { ret: TaxReturn }): JSX.Element
                 {sa.statement.full && p.cis > 0 && <Money n="24A" label="Share of CIS deductions" value={p.cis} />}
                 {sa.statement.full && p.charges > 0 && <Money n="29" label="Share of partnership charges" value={p.charges} />}
                 {sa.statement.full && p.property > 0 && <Money n="19" label="Share of UK property income" value={p.property} />}
+                {sa.statement.full && p.taxedInterest > 0 && <Money n="22" label="Share of taxed interest" value={p.taxedInterest} />}
+                {sa.statement.full && p.dividends > 0 && <Money n="22A" label="Share of UK dividends" value={p.dividends} />}
+                {sa.statement.full && p.otherIncome > 0 && <Money n="15" label="Share of other income" value={p.otherIncome} />}
+                {sa.statement.full && p.otherTaxedIncome > 0 && <Money n="23" label="Share of other taxed income" value={p.otherTaxedIncome} />}
               </Panel>
             </div>
           );
@@ -215,6 +220,43 @@ export default function Sa800Facsimile({ ret }: { ret: TaxReturn }): JSX.Element
             <Money n="1.38" label="Total deductions" value={cp.deductions} />
             <Money n="1.39" label="Profit or loss for the return period (→ PS Full box 19)" value={cp.profitForPeriod} />
             <Money n="1.40" label="Residential property finance costs (→ box 26)" value={n(sa.property?.residentialFinanceCosts)} />
+          </Panel>
+        </Page>
+      )}
+
+      {/* ── SA804 — Partnership savings, investments and other income ── */}
+      {sa.hasOtherIncome && (
+        <Page tag="PS1" code="SA804" footerLeft="SA804 2026 Page PS 1" footerRight="HMRC 12/25">
+          <h2 className="mb-2 text-[16px] font-bold" style={{ color: TEAL_THEME.panelBorder }}>Partnership savings, investments and other income</h2>
+          <Teal>Interest with no UK tax deducted (→ box 13)</Teal>
+          <Panel>
+            <Money n="7.3" label="Untaxed UK interest and alternative finance receipts" value={n(sa.savings?.untaxedInterest)} />
+            <Money n="7.4" label="National Savings and Investments" value={n(sa.savings?.nationalSavings)} />
+            <Money n="7.5" label="Other income from UK savings and investments" value={n(sa.savings?.otherUntaxedSavings)} />
+            <Money n="7.6" label="Total (boxes 7.3 + 7.4 + 7.5)" value={cs.untaxedInterest} />
+          </Panel>
+          <Teal>Interest with UK tax deducted (→ box 22, tax → box 25)</Teal>
+          <Panel>
+            <Money n="7.8" label="Taxed interest — tax deducted" value={n(sa.savings?.taxedInterestTax)} />
+            <Money n="7.9" label="Taxed interest — gross before tax" value={n(sa.savings?.taxedInterestGross)} />
+            <Money n="7.15" label="Other taxed income — tax deducted" value={n(sa.savings?.otherTaxedTax)} />
+            <Money n="7.16" label="Other taxed income — gross before tax" value={n(sa.savings?.otherTaxedGross)} />
+            <Money n="7.18" label="Total taxed (gross)" value={cs.taxedInterestGross} />
+          </Panel>
+          <Teal>Dividends (→ box 22A)</Teal>
+          <Panel>
+            <Money n="7.19" label="Dividends from UK companies" value={n(sa.savings?.dividendsUk)} />
+            <Money n="7.20" label="Dividend distributions from UK unit trusts / OEICs" value={n(sa.savings?.dividendDistributions)} />
+            <Money n="7.21" label="Stock dividends from UK companies" value={n(sa.savings?.stockDividends)} />
+            <Money n="7.22" label="Bonus issues / redeemable shares / loans written off" value={n(sa.savings?.bonusIssues)} />
+            <Money n="7.23" label="Total dividends" value={cs.dividends} />
+          </Panel>
+          <Teal>Other income (→ boxes 15 / 16 / 23)</Teal>
+          <Panel>
+            <Money n="7.26" label="Other income — profit" value={n(sa.savings?.otherIncomeProfit)} />
+            <Money n="7.27" label="Other income — loss" value={n(sa.savings?.otherIncomeLoss)} />
+            <Money n="7.29" label="Other taxed income — tax deducted" value={n(sa.savings?.otherTaxedIncomeTax)} />
+            <Money n="7.30" label="Other taxed income — gross" value={n(sa.savings?.otherTaxedIncomeGross)} />
           </Panel>
         </Page>
       )}

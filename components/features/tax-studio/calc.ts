@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, CapexAddition, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner, Ct600Data, Ct600LossStream, Sa800Data, Sa801Property } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, CapexAddition, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner, Ct600Data, Ct600LossStream, Sa800Data, Sa801Property, Sa804Savings } from './types';
 
 /** The taxpayer's ownership share (0–1) of a jointly-owned item. No owners ⇒ 1.
  *  Shared by CGT disposals and joint interest. */
@@ -2159,6 +2159,30 @@ export function computeSa801(p: Sa801Property | undefined): Sa801Computation {
   return { totalIncome, totalExpenses, netProfit, additions, deductions, profitForPeriod, residentialFinance: r0(n(p?.residentialFinanceCosts)), taxDeducted: r0(n(p?.taxDeducted)) };
 }
 
+/** SA804 Partnership savings, investments & other income computation. */
+export interface Sa804Computation {
+  untaxedInterest: number;       // box 13  (7.6 = 7.3+7.4+7.5)
+  taxedInterestGross: number;    // box 22  (7.9+7.16)
+  dividends: number;             // box 22A (7.19+7.20+7.21+7.22)
+  otherIncomeProfit: number;     // box 15  (7.26)
+  otherIncomeLoss: number;       // box 16  (7.27)
+  otherTaxedIncomeGross: number; // box 23  (7.30)
+  taxDeducted: number;           // box 25 savings portion (7.8+7.15+7.29)
+}
+
+export function computeSa804(s: Sa804Savings | undefined): Sa804Computation {
+  const n = (v?: number) => v || 0;
+  return {
+    untaxedInterest: r0(n(s?.untaxedInterest) + n(s?.nationalSavings) + n(s?.otherUntaxedSavings)),
+    taxedInterestGross: r0(n(s?.taxedInterestGross) + n(s?.otherTaxedGross)),
+    dividends: r0(n(s?.dividendsUk) + n(s?.dividendDistributions) + n(s?.stockDividends) + n(s?.bonusIssues)),
+    otherIncomeProfit: r0(n(s?.otherIncomeProfit)),
+    otherIncomeLoss: r0(n(s?.otherIncomeLoss)),
+    otherTaxedIncomeGross: r0(n(s?.otherTaxedIncomeGross)),
+    taxDeducted: r0(n(s?.taxedInterestTax) + n(s?.otherTaxedTax) + n(s?.otherTaxedIncomeTax)),
+  };
+}
+
 export interface Sa800Computation {
   taxYear: string;
   grossProfit: number;          // box 3.49 (full P&L only)
@@ -2183,6 +2207,10 @@ export interface Sa800Computation {
     cis: number;              // box 24A — share of CIS deductions (box 3.97)
     charges: number;          // box 29 — share of partnership charges (box 3.117)
     property: number;         // box 19 — share of UK property profit (SA801 box 1.39)
+    taxedInterest: number;    // box 22 — share of taxed interest (SA804 box 7.18)
+    dividends: number;        // box 22A — share of UK dividends (SA804 box 7.23)
+    otherIncome: number;      // box 15 — share of other income profit (SA804 box 7.26)
+    otherTaxedIncome: number; // box 23 — share of other taxed income (SA804 box 7.30)
   }[];
   allocatedProfit: number;      // sum of partner profit shares
   unallocated: number;          // profit − allocatedProfit
@@ -2233,14 +2261,21 @@ export function computeSa800(
   // Partnership Statement — allocate each income stream to each partner. Every
   // stream is share% of the partnership total, or a manual per-partner override.
   const propertyProfit = data?.property ? computeSa801(data.property).profitForPeriod : 0; // SA801 box 1.39
+  const sav = data?.savings ? computeSa804(data.savings) : null;
   const partners = data?.statement.partners ?? [];
   const totals = {
     profit, loss,
     basisAdj: n(t.basisAdjustment),          // box 3.82 → 11A
-    untaxedSavings: n(data?.untaxedInterest), // box 7.9A → 24
+    // Untaxed interest: SA804 box 13 when the savings page is used, else the SA800
+    // short box 7.9A.
+    untaxedSavings: sav ? sav.untaxedInterest : n(data?.untaxedInterest), // → box 13/24
     cis: n(t.cisDeductions),                  // box 3.97 → 24A
     charges: n(t.netPartnershipCharges),      // box 3.117 → 29
     property: propertyProfit,                 // SA801 1.39 → box 19
+    taxedInterest: sav ? sav.taxedInterestGross : 0,       // box 22
+    dividends: sav ? sav.dividends : 0,                    // box 22A
+    otherIncome: sav ? sav.otherIncomeProfit : 0,          // box 15
+    otherTaxedIncome: sav ? sav.otherTaxedIncomeGross : 0, // box 23
   };
   const alloc = (override: number | undefined, total: number, pct: number) => override != null ? r0(override) : partnerAllocatedShare(total, pct);
   const partnerShares = partners.map(p => {
@@ -2255,7 +2290,11 @@ export function computeSa800(
       untaxedSavings: alloc(p.untaxedSavings, totals.untaxedSavings, pct),
       cis: alloc(p.cisDeductions, totals.cis, pct),
       charges: alloc(p.chargesShare, totals.charges, pct),
-      property: partnerAllocatedShare(totals.property, pct), // box 19
+      property: partnerAllocatedShare(totals.property, pct),               // box 19
+      taxedInterest: partnerAllocatedShare(totals.taxedInterest, pct),     // box 22
+      dividends: partnerAllocatedShare(totals.dividends, pct),             // box 22A
+      otherIncome: partnerAllocatedShare(totals.otherIncome, pct),         // box 15
+      otherTaxedIncome: partnerAllocatedShare(totals.otherTaxedIncome, pct), // box 23
     };
   });
   const allocatedProfit = partnerShares.reduce((a, p) => a + p.profitShare, 0);

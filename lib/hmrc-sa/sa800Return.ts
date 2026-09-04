@@ -13,7 +13,7 @@
 // in THIS file, exactly as SA100 was built and then schema-validated.
 
 import type { TaxReturn, Sa800Data } from '@/components/features/tax-studio/types';
-import { computeSa800, computeSa801 } from '@/components/features/tax-studio/calc';
+import { computeSa800, computeSa801, computeSa804 } from '@/components/features/tax-studio/calc';
 import { periodEndFor } from './sa100Return';
 import { el, group, isoDate, moneyDown, digitsOnly, clip } from './xml';
 
@@ -78,6 +78,18 @@ export function buildSa800Return(ret: TaxReturn): Sa800BuildResult {
     el('TaxDeducted', moneyDown(cp.taxDeducted)),           // 1.22 (→ box 25)
   ]) : '';
 
+  // SA804 savings, investments & other income (supplementary page), when present.
+  const csav = computeSa804(sa.savings);
+  const savings = sa.savings ? group('SavingsIncome', [
+    el('UntaxedInterest', moneyDown(csav.untaxedInterest)),           // box 13
+    el('TaxedInterestGross', moneyDown(csav.taxedInterestGross)),     // box 22
+    el('Dividends', moneyDown(csav.dividends)),                       // box 22A
+    el('OtherIncomeProfit', moneyDown(csav.otherIncomeProfit)),       // box 15
+    el('OtherIncomeLoss', moneyDown(csav.otherIncomeLoss)),           // box 16
+    el('OtherTaxedIncomeGross', moneyDown(csav.otherTaxedIncomeGross)), // box 23
+    el('TaxDeducted', moneyDown(csav.taxDeducted)),                   // box 25 (savings portion)
+  ]) : '';
+
   // Partnership Statement — one <Partner> per member with their allocation.
   const statement = group('PartnershipStatement',
     [el('Full', sa.statement.full ? 'yes' : undefined)].concat(
@@ -95,7 +107,11 @@ export function buildSa800Return(ret: TaxReturn): Sa800BuildResult {
           el('UntaxedSavings', moneyDown(s?.untaxedSavings)),// box 24
           el('CisDeductions', moneyDown(s?.cis)),            // box 24A
           el('PartnershipCharges', moneyDown(s?.charges)),   // box 29
-          el('PropertyIncomeShare', moneyDown(s?.property)), // box 19
+          el('PropertyIncomeShare', moneyDown(s?.property)),        // box 19
+          el('TaxedInterestShare', moneyDown(s?.taxedInterest)),    // box 22
+          el('DividendsShare', moneyDown(s?.dividends)),            // box 22A
+          el('OtherIncomeShare', moneyDown(s?.otherIncome)),        // box 15
+          el('OtherTaxedIncomeShare', moneyDown(s?.otherTaxedIncome)), // box 23
         ]);
       }),
     ),
@@ -104,7 +120,7 @@ export function buildSa800Return(ret: TaxReturn): Sa800BuildResult {
   // Agent filing declaration (nominated partner declaration is captured on-screen).
   const declaration = '<Declaration><AgentDeclaration>yes</AgentDeclaration></Declaration>';
 
-  const returnBody = group('PartnershipTaxReturn', [details, trade, property, statement, declaration]);
+  const returnBody = group('PartnershipTaxReturn', [details, trade, property, savings, statement, declaration]);
   const irEnvelope = `<IRenvelope xmlns="${SA800_NS}">${irHeader}${returnBody}</IRenvelope>`;
   return { irEnvelope, periodEnd, utr };
 }

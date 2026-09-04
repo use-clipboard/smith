@@ -1797,6 +1797,36 @@ export interface Sa801Property {
   residentialFinanceCosts?: number; // 1.40 (→ PS Full box 26)
 }
 
+/** SA804 Partnership savings, investments and other income (supplementary page).
+ *  Box numbers are the HMRC SA804 (2026) ones. Its totals feed the Full
+ *  Partnership Statement: untaxed interest → box 13, taxed interest → box 22,
+ *  dividends → box 22A, other income profit/loss → boxes 15/16, other taxed
+ *  income → box 23, tax deducted → box 25. */
+export interface Sa804Savings {
+  // Untaxed UK interest & alternative finance (7.3–7.6 → box 13)
+  untaxedInterest?: number;      // 7.3
+  nationalSavings?: number;      // 7.4
+  otherUntaxedSavings?: number;  // 7.5
+  // Taxed UK interest & alternative finance (7.7–7.9, 7.14–7.16 → box 22; tax → 25)
+  taxedInterestNet?: number;     // 7.7 — amount after tax
+  taxedInterestTax?: number;     // 7.8 — tax deducted
+  taxedInterestGross?: number;   // 7.9 — gross before tax
+  otherTaxedNet?: number;        // 7.14
+  otherTaxedTax?: number;        // 7.15
+  otherTaxedGross?: number;      // 7.16
+  // Dividends from UK companies (7.19–7.23 → box 22A)
+  dividendsUk?: number;          // 7.19
+  dividendDistributions?: number;// 7.20 — UK unit trusts / OEICs
+  stockDividends?: number;       // 7.21
+  bonusIssues?: number;          // 7.22 — bonus issues / redeemable shares / loans written off
+  // Other income (7.26–7.30 → boxes 15/16/23; tax → 25)
+  otherIncomeProfit?: number;    // 7.26 → box 15
+  otherIncomeLoss?: number;      // 7.27 → box 16
+  otherTaxedIncomeNet?: number;  // 7.28 — other income received with tax deducted
+  otherTaxedIncomeTax?: number;  // 7.29
+  otherTaxedIncomeGross?: number;// 7.30 → box 23
+}
+
 /** The full SA800 Partnership Tax Return data. */
 export interface Sa800Data {
   businessName?: string;
@@ -1819,6 +1849,8 @@ export interface Sa800Data {
   trading: Sa800Trading;
   /** SA801 UK property supplementary page (present when Q1 / hasUkProperty). */
   property?: Sa801Property;
+  /** SA804 savings, investments & other income (present when Q7 / hasOtherIncome). */
+  savings?: Sa804Savings;
   statement: Sa800Statement;
 }
 

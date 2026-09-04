@@ -6,16 +6,16 @@
 // Partnership Statement. Box numbers are the HMRC SA800 (2026) ones.
 
 import { useState } from 'react';
-import { ArrowRight, Building2, Calculator, Users, Plus, Trash2, ListTree, Send, Loader2, CheckCircle2, Home } from 'lucide-react';
+import { ArrowRight, Building2, Calculator, Users, Plus, Trash2, ListTree, Send, Loader2, CheckCircle2, Home, PiggyBank } from 'lucide-react';
 import { StudioCard } from '../primitives';
-import { computeSa800, computeSa801 } from '../calc';
+import { computeSa800, computeSa801, computeSa804 } from '../calc';
 import { fmtMoney } from '../data';
 import { findPartnerReturn, pushPartnerShare } from '../sa800PartnerFeed';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import Sa800LinkCard from '../Sa800LinkCard';
-import type { TaxReturn, Sa800Data, Sa800Trading, Sa800Partner, Sa801Property } from '../types';
+import type { TaxReturn, Sa800Data, Sa800Trading, Sa800Partner, Sa801Property, Sa804Savings } from '../types';
 
-type Tab = 'details' | 'trading' | 'property' | 'partners';
+type Tab = 'details' | 'trading' | 'property' | 'savings' | 'partners';
 const rid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
 
 export default function StageReviewSa800({ ret, patch, advance }: {
@@ -40,6 +40,10 @@ export default function StageReviewSa800({ ret, patch, advance }: {
     const s = r.sa800 as Sa800Data;
     return { ...r, sa800: { ...s, property: { ...s.property, ...u } } };
   });
+  const setSavings = (u: Partial<Sa804Savings>) => patch(r => {
+    const s = r.sa800 as Sa800Data;
+    return { ...r, sa800: { ...s, savings: { ...s.savings, ...u } } };
+  });
 
   const c = computeSa800(sa, ret.taxYear, { periodStart: sa.periodStart, periodEnd: sa.periodEnd });
   const t = sa.trading;
@@ -49,6 +53,7 @@ export default function StageReviewSa800({ ret, patch, advance }: {
     { id: 'details', label: 'Details', icon: Building2 },
     { id: 'trading', label: 'Trading', icon: ListTree },
     ...(sa.hasUkProperty ? [{ id: 'property' as Tab, label: 'UK property', icon: Home }] : []),
+    ...(sa.hasOtherIncome ? [{ id: 'savings' as Tab, label: 'Savings & income', icon: PiggyBank }] : []),
     { id: 'partners', label: `Partners${sa.statement.partners.length ? ` (${sa.statement.partners.length})` : ''}`, icon: Users },
   ];
 
@@ -204,6 +209,41 @@ export default function StageReviewSa800({ ret, patch, advance }: {
             );
           })()}
 
+          {tab === 'savings' && (() => {
+            const s = sa.savings ?? {};
+            const cs = computeSa804(s);
+            return (
+              <StudioCard className="space-y-5 p-5">
+                <Section title="Untaxed UK interest (→ box 13)">
+                  <Field label="Untaxed UK interest" value={n(s.untaxedInterest)} box="7.3" onChange={v => setSavings({ untaxedInterest: v })} />
+                  <Field label="National Savings & Investments" value={n(s.nationalSavings)} box="7.4" onChange={v => setSavings({ nationalSavings: v })} />
+                  <Field label="Other UK savings income" value={n(s.otherUntaxedSavings)} box="7.5" onChange={v => setSavings({ otherUntaxedSavings: v })} />
+                  <Field label="Total untaxed interest" value={cs.untaxedInterest} box="7.6" calc />
+                </Section>
+                <Section title="Taxed UK interest (→ box 22)">
+                  <Field label="Taxed interest — gross" value={n(s.taxedInterestGross)} box="7.9" onChange={v => setSavings({ taxedInterestGross: v })} />
+                  <Field label="Taxed interest — tax deducted" value={n(s.taxedInterestTax)} box="7.8" onChange={v => setSavings({ taxedInterestTax: v })} />
+                  <Field label="Other taxed income — gross" value={n(s.otherTaxedGross)} box="7.16" onChange={v => setSavings({ otherTaxedGross: v })} />
+                  <Field label="Other taxed income — tax" value={n(s.otherTaxedTax)} box="7.15" onChange={v => setSavings({ otherTaxedTax: v })} />
+                  <Field label="Total taxed (gross)" value={cs.taxedInterestGross} box="7.18" calc />
+                </Section>
+                <Section title="Dividends (→ box 22A)">
+                  <Field label="Dividends from UK companies" value={n(s.dividendsUk)} box="7.19" onChange={v => setSavings({ dividendsUk: v })} />
+                  <Field label="Dividend distributions (unit trusts/OEICs)" value={n(s.dividendDistributions)} box="7.20" onChange={v => setSavings({ dividendDistributions: v })} />
+                  <Field label="Stock dividends" value={n(s.stockDividends)} box="7.21" onChange={v => setSavings({ stockDividends: v })} />
+                  <Field label="Bonus issues / loans written off" value={n(s.bonusIssues)} box="7.22" onChange={v => setSavings({ bonusIssues: v })} />
+                  <Field label="Total dividends" value={cs.dividends} box="7.23" calc />
+                </Section>
+                <Section title="Other income (→ boxes 15/16/23)">
+                  <Field label="Other income — profit" value={n(s.otherIncomeProfit)} box="7.26" onChange={v => setSavings({ otherIncomeProfit: v })} />
+                  <Field label="Other income — loss" value={n(s.otherIncomeLoss)} box="7.27" onChange={v => setSavings({ otherIncomeLoss: v })} />
+                  <Field label="Other taxed income — gross" value={n(s.otherTaxedIncomeGross)} box="7.30" onChange={v => setSavings({ otherTaxedIncomeGross: v })} />
+                  <Field label="Other taxed income — tax" value={n(s.otherTaxedIncomeTax)} box="7.29" onChange={v => setSavings({ otherTaxedIncomeTax: v })} />
+                </Section>
+              </StudioCard>
+            );
+          })()}
+
           {tab === 'partners' && (
             <PartnersTab ret={ret} sa={sa} shares={c.partnerShares} setPartners={setPartners}
               setStatement={u => patch(r => { const s = r.sa800 as Sa800Data; return { ...r, sa800: { ...s, statement: { ...s.statement, ...u } } }; })} />
@@ -245,7 +285,7 @@ function PartnersTab({ ret, sa, shares, setPartners, setStatement }: {
   const upd = (id: string, u: Partial<Sa800Partner>) => setPartners(partners.map(p => p.id === id ? { ...p, ...u } : p));
   const add = () => setPartners([...partners, { id: rid('ptr'), sharePct: 0 }]);
   const del = (id: string) => setPartners(partners.filter(p => p.id !== id));
-  const empty = { profitShare: 0, loss: 0, basisAdj: 0, untaxedSavings: 0, cis: 0, charges: 0, property: 0 };
+  const empty = { profitShare: 0, loss: 0, basisAdj: 0, untaxedSavings: 0, cis: 0, charges: 0, property: 0, taxedInterest: 0, dividends: 0, otherIncome: 0, otherTaxedIncome: 0 };
   const shareRow = (id: string) => shares.find(s => s.id === id) ?? empty;
 
   return (
@@ -281,6 +321,10 @@ function PartnersTab({ ret, sa, shares, setPartners, setStatement }: {
               {full && shareRow(p.id).cis > 0 && <AllocRow label="CIS deductions (box 24A)" value={shareRow(p.id).cis} />}
               {full && shareRow(p.id).charges > 0 && <AllocRow label="Partnership charges (box 29)" value={shareRow(p.id).charges} />}
               {full && shareRow(p.id).property > 0 && <AllocRow label="UK property income (box 19)" value={shareRow(p.id).property} />}
+              {full && shareRow(p.id).taxedInterest > 0 && <AllocRow label="Taxed interest (box 22)" value={shareRow(p.id).taxedInterest} />}
+              {full && shareRow(p.id).dividends > 0 && <AllocRow label="UK dividends (box 22A)" value={shareRow(p.id).dividends} />}
+              {full && shareRow(p.id).otherIncome > 0 && <AllocRow label="Other income (box 15)" value={shareRow(p.id).otherIncome} />}
+              {full && shareRow(p.id).otherTaxedIncome > 0 && <AllocRow label="Other taxed income (box 23)" value={shareRow(p.id).otherTaxedIncome} />}
             </div>
           </div>
         ))}
