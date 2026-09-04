@@ -6,10 +6,11 @@
 // Partnership Statement. Box numbers are the HMRC SA800 (2026) ones.
 
 import { useState } from 'react';
-import { ArrowRight, Building2, Calculator, Users, Plus, Trash2, ListTree } from 'lucide-react';
+import { ArrowRight, Building2, Calculator, Users, Plus, Trash2, ListTree, Send, Loader2, CheckCircle2 } from 'lucide-react';
 import { StudioCard } from '../primitives';
 import { computeSa800 } from '../calc';
 import { fmtMoney } from '../data';
+import { findPartnerReturn, pushPartnerShare } from '../sa800PartnerFeed';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import Sa800LinkCard from '../Sa800LinkCard';
 import type { TaxReturn, Sa800Data, Sa800Trading, Sa800Partner } from '../types';
@@ -160,7 +161,7 @@ export default function StageReviewSa800({ ret, patch, advance }: {
           )}
 
           {tab === 'partners' && (
-            <PartnersTab sa={sa} shares={c.partnerShares} setPartners={setPartners}
+            <PartnersTab ret={ret} sa={sa} shares={c.partnerShares} setPartners={setPartners}
               setStatement={u => patch(r => { const s = r.sa800 as Sa800Data; return { ...r, sa800: { ...s, statement: { ...s.statement, ...u } } }; })} />
           )}
         </div>
@@ -188,7 +189,8 @@ export default function StageReviewSa800({ ret, patch, advance }: {
 
 const n = (v?: number) => v || 0;
 
-function PartnersTab({ sa, shares, setPartners, setStatement }: {
+function PartnersTab({ ret, sa, shares, setPartners, setStatement }: {
+  ret: TaxReturn;
   sa: Sa800Data;
   shares: { id: string; name: string; sharePct: number; profitShare: number }[];
   setPartners: (p: Sa800Partner[]) => void;
@@ -225,7 +227,57 @@ function PartnersTab({ sa, shares, setPartners, setStatement }: {
         ))}
         <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add partner</button>
       </div>
+      <PartnerFeed ret={ret} partners={partners} shares={shares} />
     </StudioCard>
+  );
+}
+
+// ── SA104 partner feed — push each partner's share into their SA100 ───────────
+function PartnerFeed({ ret, partners, shares }: {
+  ret: TaxReturn;
+  partners: Sa800Partner[];
+  shares: { id: string; name: string; sharePct: number; profitShare: number }[];
+}): JSX.Element | null {
+  const [status, setStatus] = useState<Record<string, 'sending' | 'sent' | 'created' | 'error'>>({});
+  const linked = partners.filter(p => p.clientId);
+  if (!linked.length) return null;
+  const shareOf = (id: string) => shares.find(s => s.id === id)?.profitShare ?? 0;
+
+  async function send(p: Sa800Partner) {
+    if (!p.clientId) return;
+    setStatus(s => ({ ...s, [p.id]: 'sending' }));
+    try {
+      const existing = await findPartnerReturn(p.clientId, ret.taxYear);
+      const { created } = await pushPartnerShare({ sa800Ret: ret, push: { partnerId: p.id, clientId: p.clientId, name: p.name ?? 'Partner', share: shareOf(p.id) }, existing });
+      setStatus(s => ({ ...s, [p.id]: created ? 'created' : 'sent' }));
+    } catch {
+      setStatus(s => ({ ...s, [p.id]: 'error' }));
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-[var(--accent)]/25 bg-[var(--accent)]/[0.04] p-3">
+      <p className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--accent)]"><Send size={13} /> Feed each partner&apos;s share to their SA100 (SA104)</p>
+      <div className="space-y-1.5">
+        {linked.map(p => {
+          const st = status[p.id];
+          return (
+            <div key={p.id} className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-white/70 px-3 py-1.5 text-[12px]">
+              <span className="min-w-0 flex-1 truncate font-semibold text-[var(--text-primary)]">{p.name || 'Partner'}</span>
+              <span className="shrink-0 font-semibold text-[var(--accent)]">{fmtMoney(shareOf(p.id))}</span>
+              <button onClick={() => send(p)} disabled={st === 'sending'} className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[var(--accent)] px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-40">
+                {st === 'sending' ? <><Loader2 size={12} className="animate-spin" /> Sending</>
+                  : st === 'sent' ? <><CheckCircle2 size={12} /> Updated</>
+                  : st === 'created' ? <><CheckCircle2 size={12} /> Created</>
+                  : st === 'error' ? 'Retry'
+                  : <><Send size={12} /> Send to SA100</>}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-1.5 text-[10.5px] text-[var(--text-muted)]">Adds an SA104 Partnership page (box 8 = the partner&apos;s share) to their Self Assessment return for {ret.taxYear}, creating the return if they don&apos;t have one yet.</p>
+    </div>
   );
 }
 
