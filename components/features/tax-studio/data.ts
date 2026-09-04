@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import type {
   TaxReturn, ReturnTypeId, StageId, StageState, ReturnStatus,
-  Sa100Income, ConnectedSource, TaxSuggestion, ReviewPoint, Ct600Data, Ct600LossStream,
+  Sa100Income, ConnectedSource, TaxSuggestion, ReviewPoint, Ct600Data, Ct600LossStream, Sa800Data,
 } from './types';
 import { estimateSa100, employmentBenefits, dividendsTotal } from './calc';
 
@@ -178,6 +178,15 @@ export function emptyCt600(): Ct600Data {
   };
 }
 
+/** A fresh, empty SA800 Partnership Tax Return. */
+export function emptySa800(): Sa800Data {
+  return {
+    hasTrade: true,
+    trading: { accountsMode: 'full' },
+    statement: { full: false, partners: [] },
+  };
+}
+
 /** Roll a prior CT600 into a fresh period: each loss stream's carried-forward
  *  becomes the new period's brought-forward. Trading figures start blank. */
 export function rollForwardCt600(prior: Ct600Data): Ct600Data {
@@ -278,6 +287,7 @@ export function buildReturn(input: NewReturnInput): TaxReturn {
     stageStatus: freshStageStatus('setup'),
     income: emptyIncome(),
     ...(input.returnType === 'ct600' ? { ct600: emptyCt600() } : {}),
+    ...(input.returnType === 'sa800' ? { sa800: emptySa800() } : {}),
     reviewPoints: [],
     suggestions: [],
     scenarios: [],

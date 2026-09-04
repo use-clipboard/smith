@@ -1672,6 +1672,124 @@ export interface Ct600Data {
   losses: Ct600Losses;
 }
 
+// ── SA800 Partnership Tax Return ─────────────────────────────────────────────
+// Box numbers are the HMRC SA800 (2026) ones. The partnership is tax-transparent:
+// it reports income here and allocates each partner their share via the
+// Partnership Statement (pages 6–7); each partner then reports on their SA104.
+
+/** One partner on the Partnership Statement (SA800 pages 6–7, boxes 1–31). */
+export interface Sa800Partner {
+  id: string;
+  name?: string;               // box 6
+  address?: string;
+  postcode?: string;
+  utr?: string;                // partner's Unique Taxpayer Reference (box 3)
+  nino?: string;               // partner's National Insurance number
+  dateAppointed?: string;      // box 7  — if during 2024–25 / 2025–26 (YYYY-MM-DD)
+  dateCeased?: string;         // box 9  — if during 2024–25 / 2025–26
+  sharePct?: number;           // profit-share % — drives the allocation
+  /** Link to the partner's client record (for the SA104 feed). */
+  clientId?: string | null;
+  /** True for a corporate partner — their share goes to a CT600, not an SA104. */
+  isCompany?: boolean;
+  // Allocated amounts (boxes 11–31). Normally sharePct × the partnership totals,
+  // but each may be overridden by the preparer.
+  profitShare?: number;        // box 11  (from box 3.83)
+  basisAdjustment?: number;    // box 11A (from box 3.82)
+  lossShare?: number;          // box 12  (from box 3.84)
+  untaxedSavings?: number;     // box 24  (from box 7.9A)
+  cisDeductions?: number;      // box 24A (from box 3.97)
+  chargesShare?: number;       // box 29  (from box 3.117)
+}
+
+/** SA800 Partnership Statement (short) — pages 6–7. */
+export interface Sa800Statement {
+  natureOfTrade?: string;
+  periodStart?: string;        // statement accounting period (may differ from tax year)
+  periodEnd?: string;
+  nonResidentRules?: boolean;  // tick — drawn up using non-resident rules
+  ctRules?: boolean;           // tick — drawn up using Corporation Tax rules
+  /** Use the Full statement (all income types), not the short (trade + untaxed interest). */
+  full?: boolean;
+  partners: Sa800Partner[];
+}
+
+/** SA800 trading & professional income + capital allowances + balance sheet
+ *  (pages 3–5). Turnover < £90k uses the 3-line short account; £90k–£15m uses the
+ *  full P&L. Capital allowances run through the shared `computeCapitalAllowances`. */
+export interface Sa800Trading {
+  /** Which income path is used: '3line' (page 3) or 'full' (page 4 P&L). */
+  accountsMode?: '3line' | 'full';
+
+  // Page 3 — 3-line account
+  turnover3line?: number;      // 3.24
+  expenses3line?: number;      // 3.25
+  // (3.26 net profit is computed)
+
+  // Page 4 — full P&L (boxes 3.29–3.73)
+  vatInclusive?: boolean;      // 3.27/3.28 — figures include VAT?
+  sales?: number;              // 3.29
+  costOfSales?: number;        // 3.46
+  subcontractorCosts?: number; // 3.47
+  otherDirectCosts?: number;   // 3.48
+  otherIncome?: number;        // 3.50
+  employeeCosts?: number;      // 3.51
+  premisesCosts?: number;      // 3.52
+  repairs?: number;            // 3.53
+  adminCosts?: number;         // 3.54
+  motorExpenses?: number;      // 3.55
+  travel?: number;             // 3.56
+  advertising?: number;        // 3.57
+  legalProfessional?: number;  // 3.58
+  badDebts?: number;           // 3.59
+  interest?: number;           // 3.60
+  otherFinance?: number;       // 3.61
+  depreciation?: number;       // 3.62
+  otherExpenses?: number;      // 3.63
+  disallowableTotal?: number;  // 3.66 — total disallowable (boxes 3.30–3.45)
+  goodsOwnUse?: number;        // 3.67 — goods for own use / other additions
+
+  // Capital allowances (shared engine); its total feeds 3.22, balancing → 3.23.
+  capitalAllowancesCalc?: CapitalAllowancesState;
+  capitalAllowances?: number;  // 3.22 (applied total)
+  balancingCharges?: number;   // 3.23 (applied total)
+
+  // Page 5 — taxable profit / adjustments / CIS
+  basisAdjustment?: number;    // 3.82 — adjustment on change of basis
+  provisional?: boolean;       // 3.93
+  cisDeductions?: number;      // 3.97 — CIS deductions (construction subcontractors)
+  taxTakenOff?: number;        // 3.98 — other tax taken off trading income
+  netPartnershipCharges?: number; // 3.117
+
+  // Page 5 — summary balance sheet (optional; blank if no B/S or turnover > £15m)
+  balanceSheet?: Record<string, number>; // boxes 3.99–3.115, keyed by box number
+
+  additionalInfo?: string;     // 3.116
+}
+
+/** The full SA800 Partnership Tax Return data. */
+export interface Sa800Data {
+  businessName?: string;
+  tradeDescription?: string;
+  startedInYear?: boolean;     // 3.7Q
+  dateStarted?: string;        // 3.7
+  ceasedInYear?: boolean;      // 3.8Q
+  dateCeased?: string;         // 3.8
+  traditionalAccounting?: boolean; // 3.9 (vs cash basis)
+  periodStart?: string;        // 3.4
+  periodEnd?: string;          // 3.5
+  // Supplementary-page triggers (Q1–Q7)
+  hasUkProperty?: boolean;     // Q1 → SA801
+  hasForeign?: boolean;        // Q2 → SA802
+  hasTrade?: boolean;          // Q3 → pages 3–5
+  hasDisposals?: boolean;      // Q4 → SA803
+  hasCompanyOrNonResPartner?: boolean; // Q5
+  hasOtherIncome?: boolean;    // Q7 → SA804 / box 7.9A
+  untaxedInterest?: number;    // 7.9A — untaxed interest from UK banks/building societies
+  trading: Sa800Trading;
+  statement: Sa800Statement;
+}
+
 export interface TaxReturn {
   id: string;
   clientId: string | null;
@@ -1715,6 +1833,7 @@ export interface TaxReturn {
   /** CT600 (Corporation Tax) data — present on limited-company returns. SA100
    *  returns keep `income`; CT600 returns keep an empty `income` and use this. */
   ct600?: Ct600Data;
+  sa800?: Sa800Data;
   reviewPoints: ReviewPoint[];
   suggestions: TaxSuggestion[];
   scenarios: Scenario[];
