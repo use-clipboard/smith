@@ -8,6 +8,11 @@
 /** GovTalk message Class for the SA100 individual return. */
 export const SA_CLASS = 'HMRC-SA-SA100';
 
+/** GovTalk message Class for the SA800 Partnership Tax Return. Same Transaction
+ *  Engine + IRmark + vendor id (9626 covers SA100/SA800/SA900); only the Class
+ *  and the return schema differ. */
+export const SA800_CLASS = 'HMRC-SA-SA800';
+
 /** Resolved Government Gateway credentials for a submission (firm store or env). */
 export interface SaCreds {
   /** Gateway user id (goes in <SenderID>). */

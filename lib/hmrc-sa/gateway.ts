@@ -57,14 +57,15 @@ function govTalkDetailsXml(utr: string, creds?: SaCreds): string {
 }
 
 /** Build the full submission envelope. `submissionBody` is the `<Body>…</Body>`
- *  produced by markIrEnvelope() (IRmark already filled in). */
-export function buildSubmissionEnvelope(submissionBody: string, utr: string, creds?: SaCreds): string {
+ *  produced by markIrEnvelope() (IRmark already filled in). `saClass` selects the
+ *  GovTalk message class — SA100 by default, SA800 for a Partnership Tax Return. */
+export function buildSubmissionEnvelope(submissionBody: string, utr: string, creds?: SaCreds, saClass: string = SA_CLASS): string {
   return `${XML_DECL}
 <GovTalkMessage xmlns="${ENVELOPE_NS}">
   <EnvelopeVersion>2.0</EnvelopeVersion>
   <Header>
     <MessageDetails>
-      <Class>${SA_CLASS}</Class>
+      <Class>${saClass}</Class>
       <Qualifier>request</Qualifier>
       <Function>submit</Function>
       <Transformation>XML</Transformation>
@@ -78,13 +79,13 @@ export function buildSubmissionEnvelope(submissionBody: string, utr: string, cre
 }
 
 /** A poll or delete request — Body is empty; CorrelationID identifies the job. */
-function buildControlEnvelope(qualifier: 'poll' | 'delete', correlationId: string, creds?: SaCreds): string {
+function buildControlEnvelope(qualifier: 'poll' | 'delete', correlationId: string, creds?: SaCreds, saClass: string = SA_CLASS): string {
   return `${XML_DECL}
 <GovTalkMessage xmlns="${ENVELOPE_NS}">
   <EnvelopeVersion>2.0</EnvelopeVersion>
   <Header>
     <MessageDetails>
-      <Class>${SA_CLASS}</Class>
+      <Class>${saClass}</Class>
       <Qualifier>${qualifier}</Qualifier>
       <Function>submit</Function>
       <CorrelationID>${esc(correlationId)}</CorrelationID>
@@ -98,8 +99,8 @@ function buildControlEnvelope(qualifier: 'poll' | 'delete', correlationId: strin
 </GovTalkMessage>`;
 }
 
-export const buildPollEnvelope = (correlationId: string, creds?: SaCreds) => buildControlEnvelope('poll', correlationId, creds);
-export const buildDeleteEnvelope = (correlationId: string, creds?: SaCreds) => buildControlEnvelope('delete', correlationId, creds);
+export const buildPollEnvelope = (correlationId: string, creds?: SaCreds, saClass?: string) => buildControlEnvelope('poll', correlationId, creds, saClass);
+export const buildDeleteEnvelope = (correlationId: string, creds?: SaCreds, saClass?: string) => buildControlEnvelope('delete', correlationId, creds, saClass);
 
 // ── Response parsing (mirrors the CH gateway) ────────────────────────────────
 
@@ -176,5 +177,5 @@ export async function submitToGateway(envelope: string, endpoint?: string): Prom
   return parseGatewayResponse(raw, res.status);
 }
 
-export const pollGateway = (correlationId: string, endpoint?: string, creds?: SaCreds) => submitToGateway(buildPollEnvelope(correlationId, creds), endpoint);
-export const deleteFromGateway = (correlationId: string, endpoint?: string, creds?: SaCreds) => submitToGateway(buildDeleteEnvelope(correlationId, creds), endpoint);
+export const pollGateway = (correlationId: string, endpoint?: string, creds?: SaCreds, saClass?: string) => submitToGateway(buildPollEnvelope(correlationId, creds, saClass), endpoint);
+export const deleteFromGateway = (correlationId: string, endpoint?: string, creds?: SaCreds, saClass?: string) => submitToGateway(buildDeleteEnvelope(correlationId, creds, saClass), endpoint);

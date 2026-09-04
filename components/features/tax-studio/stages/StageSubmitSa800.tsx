@@ -1,14 +1,16 @@
 'use client';
 
-import { CheckCircle2, XCircle, ShieldCheck, FileCheck2, Landmark } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { CheckCircle2, XCircle, ShieldCheck, FileCheck2, Landmark, AlertTriangle, Loader2, Send } from 'lucide-react';
 import { StudioCard } from '../primitives';
 import { computeSa800 } from '../calc';
 import { fmtMoney, fmtDateUK } from '../data';
+import { fetchJson } from '@/lib/fetchJson';
 import type { TaxReturn } from '../types';
 
-// SA800 Submit — records the return as filed. Online filing (legacy GovTalk /
-// Transaction Engine, vendor 9626) is a later phase; for now, file via HMRC's
-// route and record it here.
+// SA800 Submit — files the Partnership Tax Return to HMRC's Transaction Engine
+// (legacy GovTalk, Class HMRC-SA-SA800, vendor 9626 shared with SA100), or records
+// it as filed if filed elsewhere.
 export default function StageSubmitSa800({ ret, patch }: {
   ret: TaxReturn;
   patch: (u: (r: TaxReturn) => TaxReturn) => void;
@@ -27,6 +29,46 @@ export default function StageSubmitSa800({ ret, patch }: {
   ];
   const ready = checks.every(chk => chk.ok);
 
+  // HMRC online-filing state.
+  const [credsReady, setCredsReady] = useState<boolean | null>(null);
+  const [filing, setFiling] = useState(false);
+  const [error, setError] = useState('');
+  const [pending, setPending] = useState<{ irmark: string; message: string } | null>(null);
+  const [isTest, setIsTest] = useState(true);
+
+  useEffect(() => {
+    let live = true;
+    fetchJson<{ ready: boolean }>('/api/firms/sa-filing', { cache: 'no-store' })
+      .then(s => { if (live) setCredsReady(!!s.ready); })
+      .catch(() => { if (live) setCredsReady(false); });
+    return () => { live = false; };
+  }, []);
+
+  async function fileToHmrc() {
+    setFiling(true); setError(''); setPending(null);
+    try {
+      const res = await fetch(`/api/tax-studio/returns/${ret.id}/sa800-submit`, { method: 'POST' });
+      const json = await res.json().catch(() => ({} as Record<string, unknown>));
+      if (typeof json.isTest === 'boolean') setIsTest(json.isTest);
+      if (!res.ok) throw new Error((json.error as string) || 'HMRC rejected the return.');
+      if (json.accepted) {
+        patch(r => ({
+          ...r,
+          approvalStatus: 'submitted', submittedAt: json.submittedAt as string, submissionRef: json.irmark as string,
+          timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: json.submittedAt as string, kind: 'filed', label: `Filed SA800 to HMRC${json.isTest ? ' (TPVS test)' : ''} — IRmark ${json.irmark}` }],
+        }));
+      } else if (json.pending) {
+        setPending({ irmark: json.irmark as string, message: (json.message as string) || 'Submitted — HMRC is still processing.' });
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Filing failed.');
+    } finally {
+      setFiling(false);
+    }
+  }
+
+  const canFile = ready && credsReady === true && !filing && !submitted;
+
   function markFiled() {
     patch(r => ({
       ...r, approvalStatus: 'submitted', submittedAt: new Date().toISOString(),
@@ -36,6 +78,7 @@ export default function StageSubmitSa800({ ret, patch }: {
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
+      {/* Readiness --------------------------------------------------------------- */}
       <StudioCard className="p-5">
         <div className="mb-3 flex items-center gap-1.5"><ShieldCheck size={15} className="text-[var(--accent)]" /><h3 className="text-[15px] font-bold text-[var(--text-primary)]">Readiness</h3></div>
         <div className="space-y-2">
@@ -49,35 +92,55 @@ export default function StageSubmitSa800({ ret, patch }: {
         </div>
       </StudioCard>
 
+      {/* Online filing ----------------------------------------------------------- */}
       <StudioCard className="overflow-hidden">
         <div className="flex items-center gap-2.5 border-b border-black/5 px-5 py-3.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><Landmark size={18} /></div>
           <div className="flex-1">
-            <p className="text-[13.5px] font-bold text-[var(--text-primary)]">SA800 online filing</p>
-            <p className="text-[11.5px] text-[var(--text-muted)]">File the Partnership Tax Return to HMRC.</p>
+            <p className="text-[13.5px] font-bold text-[var(--text-primary)]">File SA800 online with HMRC</p>
+            <p className="text-[11.5px] text-[var(--text-muted)]">Submit the Partnership Tax Return to HMRC&apos;s online filing service.</p>
           </div>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">Coming soon</span>
+          {isTest && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700">Test</span>}
         </div>
         <div className="px-5 py-4">
-          <p className="text-[12px] leading-relaxed text-[var(--text-muted)]">Direct SA800 online filing isn&apos;t wired up yet. For now, file through HMRC&apos;s route and record it as filed below.</p>
+          {submitted ? (
+            <div className="flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+              <FileCheck2 size={18} className="shrink-0 text-emerald-600" />
+              <div>
+                <p className="text-[13px] font-bold text-emerald-800">Filed</p>
+                <p className="text-[11.5px] text-emerald-700">{ret.submissionRef ? `IRmark ${ret.submissionRef}` : ret.submittedAt ? `Recorded ${fmtDateUK(ret.submittedAt)}` : 'Filed with HMRC'}</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {credsReady === false && (
+                <p className="mb-3 flex flex-wrap items-center gap-1 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] text-amber-700">
+                  <AlertTriangle size={13} /> HMRC filing isn&apos;t set up yet. Add your Government Gateway credentials in{' '}
+                  <a href="/settings?tab=sa-filing" className="font-semibold underline">Settings → Tax Studio</a>.
+                </p>
+              )}
+              {!ready && (
+                <p className="mb-3 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] text-amber-700"><AlertTriangle size={13} /> Complete every readiness check above before filing.</p>
+              )}
+              {pending && <p className="mb-3 rounded-lg bg-sky-50 px-3 py-2 text-[11.5px] text-sky-700">{pending.message} (IRmark {pending.irmark}). We&apos;ll confirm the outcome once HMRC responds.</p>}
+              {error && <p className="mb-3 flex items-start gap-1.5 rounded-lg bg-rose-50 px-3 py-2 text-[11.5px] text-rose-700"><XCircle size={13} className="mt-px shrink-0" /> {error}</p>}
+              <button onClick={fileToHmrc} disabled={!canFile} className="btn-primary disabled:opacity-40">
+                {filing ? <><Loader2 size={15} className="animate-spin" /> Filing…</> : <><Send size={15} /> File SA800 to HMRC{isTest ? ' (test)' : ''}</>}
+              </button>
+            </>
+          )}
         </div>
       </StudioCard>
 
-      <StudioCard className="p-5">
-        <h3 className="mb-1 text-[15px] font-bold text-[var(--text-primary)]">Record filing</h3>
-        {submitted ? (
-          <div className="flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-            <FileCheck2 size={18} className="shrink-0 text-emerald-600" />
-            <div>
-              <p className="text-[13px] font-bold text-emerald-800">Filed</p>
-              <p className="text-[11.5px] text-emerald-700">{ret.submittedAt ? `Recorded ${fmtDateUK(ret.submittedAt)}` : 'Recorded as filed'}</p>
-            </div>
-          </div>
-        ) : (
-          <button onClick={markFiled} disabled={!ready} className="btn-primary disabled:opacity-40"><CheckCircle2 size={15} /> Mark as filed</button>
-        )}
-        {!submitted && !ready && <p className="mt-2 text-[10.5px] text-[var(--text-muted)]">Complete every readiness check above first.</p>}
-      </StudioCard>
+      {/* Filed elsewhere (fallback) --------------------------------------------- */}
+      {!submitted && (
+        <StudioCard className="p-5">
+          <h3 className="mb-1 text-[15px] font-bold text-[var(--text-primary)]">Filed elsewhere?</h3>
+          <p className="mb-3 text-[12px] text-[var(--text-muted)]">If the SA800 was filed through HMRC&apos;s portal or another route, record it here instead.</p>
+          <button onClick={markFiled} disabled={!ready} className="btn-secondary bg-white disabled:opacity-40"><CheckCircle2 size={15} /> Mark as filed</button>
+          {!ready && <p className="mt-2 text-[10.5px] text-[var(--text-muted)]">Complete every readiness check above first.</p>}
+        </StudioCard>
+      )}
     </div>
   );
 }

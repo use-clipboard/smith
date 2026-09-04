@@ -3,7 +3,7 @@ import { createServiceClient } from '@/lib/supabase-server';
 import { logTaxAudit } from '@/lib/tax-studio/audit';
 import { pollGateway, deleteFromGateway } from '@/lib/hmrc-sa/gateway';
 import { resolveSaCreds } from '@/lib/hmrc-sa/getSaCredsForFirm';
-import type { SaCreds } from '@/lib/hmrc-sa/config';
+import { SA800_CLASS, type SaCreds } from '@/lib/hmrc-sa/config';
 import { isAuthorisedCron } from '@/lib/cronAuth';
 
 export const dynamic = 'force-dynamic';
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
   const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
   const { data: rows } = await service
     .from('tax_studio_sa_submissions')
-    .select('id, firm_id, return_id, client_id, correlation_id, irmark')
+    .select('id, firm_id, return_id, client_id, correlation_id, irmark, form')
     .eq('gateway_status', 'pending')
     .not('correlation_id', 'is', null)
     .gte('submitted_at', since)
@@ -47,7 +47,8 @@ export async function GET(request: Request) {
   for (const row of rows ?? []) {
     const creds = await credsFor(row.firm_id as string);
     if (!creds) { skippedNoCreds++; continue; } // firm has no usable creds — leave pending
-    const result = await pollGateway(row.correlation_id as string, undefined, creds);
+    const saClass = row.form === 'SA800' ? SA800_CLASS : undefined; // SA100 default
+    const result = await pollGateway(row.correlation_id as string, undefined, creds, saClass);
     if (result.status === 'submitted') { stillPending++; continue; } // not resolved yet
 
     // Update the receipt with the final outcome.
@@ -57,7 +58,7 @@ export async function GET(request: Request) {
 
     if (result.status === 'accepted') {
       accepted++;
-      await deleteFromGateway(row.correlation_id as string, undefined, creds).catch(() => { /* best-effort */ });
+      await deleteFromGateway(row.correlation_id as string, undefined, creds, saClass).catch(() => { /* best-effort */ });
       if (row.return_id) {
         const { data: rt } = await service.from('tax_studio_returns').select('data').eq('id', row.return_id).eq('firm_id', row.firm_id).single();
         const data = (rt?.data ?? {}) as Record<string, unknown>;
@@ -69,7 +70,7 @@ export async function GET(request: Request) {
           await logTaxAudit({
             firmId: row.firm_id as string, returnId: row.return_id as string, clientId: (row.client_id as string) ?? null,
             clientName: (data.clientName as string) ?? null, actorId: null,
-            action: 'submitted', summary: `SA100 accepted by HMRC (poll) — IRmark ${row.irmark}`,
+            action: 'submitted', summary: `${row.form === 'SA800' ? 'SA800' : 'SA100'} accepted by HMRC (poll) — IRmark ${row.irmark}`,
           });
         }
       }
