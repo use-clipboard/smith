@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, CapexAddition, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner, Ct600Data, Ct600LossStream } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, CapexAddition, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner, Ct600Data, Ct600LossStream, Sa800Data } from './types';
 
 /** The taxpayer's ownership share (0–1) of a jointly-owned item. No owners ⇒ 1.
  *  Shared by CGT disposals and joint interest. */
@@ -2130,6 +2130,91 @@ export function ct600FilingDue(periodEndIso?: string): string {
   if (!parts) return '';
   const due = addCalendarMonths(parts.y, parts.m, parts.d, 12); // 29 Feb → 28 Feb
   return isoOut(due.y, due.m, due.d);
+}
+
+// ── SA800 Partnership Tax Return ─────────────────────────────────────────────
+
+export interface Sa800Computation {
+  taxYear: string;
+  grossProfit: number;          // box 3.49 (full P&L only)
+  totalExpenses: number;        // box 3.64 (full P&L only)
+  netProfitPerAccounts: number; // box 3.26 (3-line) or 3.65 (full)
+  disallowable: number;         // box 3.66
+  goodsOwnUse: number;          // box 3.67
+  balancingCharges: number;     // box 3.23 / 3.68
+  capitalAllowances: number;    // box 3.22 / 3.70
+  netProfitForTax: number;      // box 3.73 (or 3.26)
+  profit: number;               // box 3.83 — net profit for tax, floored at 0
+  loss: number;                 // box 3.84 — allowable loss, floored at 0
+  /** Per-partner allocation of the profit (from share % or a manual override). */
+  partnerShares: { id: string; name: string; sharePct: number; profitShare: number }[];
+  allocatedProfit: number;      // sum of partner shares
+  unallocated: number;          // profit − allocatedProfit
+  notes: string[];
+}
+
+/** Compute the SA800: trading result (3-line or full P&L) → net profit for tax
+ *  (box 3.73/3.26) → the Partnership Statement allocation to each partner.
+ *  Capital allowances run through the shared engine in trader mode (partnerships
+ *  get AIA/WDA/FYA — not the company-only full expensing). */
+export function computeSa800(
+  data: Sa800Data | undefined,
+  taxYear = '2025/26',
+  opts?: { periodStart?: string; periodEnd?: string },
+): Sa800Computation {
+  const t = data?.trading ?? {};
+  const n = (v?: number) => v || 0;
+  const notes: string[] = [];
+
+  const ca = t.capitalAllowancesCalc
+    ? computeCapitalAllowances(t.capitalAllowancesCalc, { mode: 'trader', periodStart: opts?.periodStart, periodEnd: opts?.periodEnd })
+    : null;
+  const capitalAllowances = ca ? ca.total : n(t.capitalAllowances);
+  const balancingCharges = ca ? ca.balancingCharge : n(t.balancingCharges);
+
+  let netProfitPerAccounts: number, grossProfit = 0, totalExpenses = 0;
+  if (t.accountsMode === '3line') {
+    netProfitPerAccounts = r0(n(t.turnover3line) - n(t.expenses3line)); // box 3.26
+  } else {
+    grossProfit = r0(n(t.sales) - n(t.costOfSales) - n(t.subcontractorCosts) - n(t.otherDirectCosts)); // 3.49
+    totalExpenses = r0(
+      n(t.employeeCosts) + n(t.premisesCosts) + n(t.repairs) + n(t.adminCosts) + n(t.motorExpenses)
+      + n(t.travel) + n(t.advertising) + n(t.legalProfessional) + n(t.badDebts) + n(t.interest)
+      + n(t.otherFinance) + n(t.depreciation) + n(t.otherExpenses),
+    ); // 3.64
+    netProfitPerAccounts = r0(grossProfit + n(t.otherIncome) - totalExpenses); // 3.65
+  }
+
+  const disallowable = n(t.disallowableTotal);   // 3.66
+  const goodsOwnUse = n(t.goodsOwnUse);          // 3.67
+  const additions = disallowable + goodsOwnUse + balancingCharges;         // 3.69
+  const netProfitForTax = r0(netProfitPerAccounts + additions - capitalAllowances); // 3.73
+
+  const profit = Math.max(0, netProfitForTax); // 3.83
+  const loss = Math.max(0, -netProfitForTax);  // 3.84
+
+  // Partnership Statement — allocate the profit to each partner.
+  const partners = data?.statement.partners ?? [];
+  const partnerShares = partners.map(p => ({
+    id: p.id,
+    name: p.name ?? '',
+    sharePct: n(p.sharePct),
+    profitShare: p.profitShare != null ? r0(p.profitShare) : partnerAllocatedShare(profit, n(p.sharePct)),
+  }));
+  const allocatedProfit = partnerShares.reduce((a, p) => a + p.profitShare, 0);
+  const unallocated = profit - allocatedProfit;
+  const sharesTotal = partners.reduce((a, p) => a + n(p.sharePct), 0);
+  if (!partners.length) notes.push('No partners added yet — add the partners to allocate the profit.');
+  else {
+    if (Math.abs(sharesTotal - 100) > 0.01) notes.push(`Partner profit shares total ${sharesTotal}% — they should add up to 100%.`);
+    if (Math.abs(unallocated) > 1) notes.push(`£${Math.abs(unallocated).toLocaleString('en-GB')} of profit is ${unallocated > 0 ? 'not yet allocated' : 'over-allocated'} across the partners.`);
+  }
+
+  return {
+    taxYear, grossProfit, totalExpenses, netProfitPerAccounts, disallowable, goodsOwnUse,
+    balancingCharges, capitalAllowances, netProfitForTax, profit, loss,
+    partnerShares, allocatedProfit, unallocated, notes,
+  };
 }
 
 // ── Legacy adapters ──────────────────────────────────────────────────────────
