@@ -26,6 +26,11 @@ import StageSetupCt600 from './stages/StageSetupCt600';
 import StageAnalyseCt600 from './stages/StageAnalyseCt600';
 import StageApprovalCt600 from './stages/StageApprovalCt600';
 import StageSubmitCt600 from './stages/StageSubmitCt600';
+import StageReviewSa800 from './stages/StageReviewSa800';
+import StageSetupSa800 from './stages/StageSetupSa800';
+import StageAnalyseSa800 from './stages/StageAnalyseSa800';
+import StageApprovalSa800 from './stages/StageApprovalSa800';
+import StageSubmitSa800 from './stages/StageSubmitSa800';
 import StageApproval from './stages/StageApproval';
 import StageSubmit from './stages/StageSubmit';
 import FilingPreview from './filing/FilingPreview';
@@ -291,8 +296,8 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
               <p className="text-[13px] text-[var(--text-muted)]">{stageMeta.blurb}</p>
             </div>
             <div className="flex items-center gap-2">
-              {stage === 'review' && ret.returnType !== 'ct600' && <ReviewSearch onGo={goToReview} />}
-              {stage === 'review' && (
+              {stage === 'review' && ret.returnType !== 'ct600' && ret.returnType !== 'sa800' && <ReviewSearch onGo={goToReview} />}
+              {stage === 'review' && ret.returnType !== 'sa800' && (
                 <button onClick={() => setPreviewOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90">
                   <FileText size={14} /> {ret.returnType === 'ct600' ? 'CT600 Preview' : 'Tax Return Preview'}
                 </button>
@@ -320,17 +325,26 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
             <div className="min-w-0 flex-1">
               {stage === 'setup' && (ret.returnType === 'ct600'
                 ? <StageSetupCt600 ret={ret} patch={patch} advance={() => advanceFrom('setup')} reveal={setupReveal} />
+                : ret.returnType === 'sa800'
+                ? <StageSetupSa800 ret={ret} patch={patch} advance={() => advanceFrom('setup')} />
                 : <StageSetup ret={ret} patch={patch} advance={() => advanceFrom('setup')} reveal={setupReveal} />)}
               {stage === 'analyse' && (ret.returnType === 'ct600'
                 ? <StageAnalyseCt600 ret={ret} patch={patch} advance={() => advanceFrom('analyse')} />
+                : ret.returnType === 'sa800'
+                ? <StageAnalyseSa800 ret={ret} patch={patch} advance={() => advanceFrom('analyse')} />
                 : <StageAnalyse ret={ret} patch={patch} advance={() => advanceFrom('analyse')} />)}
               {stage === 'review' && ret.returnType === 'ct600' && <StageReviewCt600 ret={ret} patch={patch} advance={() => advanceFrom('review')} />}
-              {stage === 'review' && ret.returnType !== 'ct600' && <StageReview ret={ret} patch={patch} advance={() => advanceFrom('review')} page={reviewPage} setPage={setReviewPage} reveal={reviewReveal} onNavigate={goToReview} />}
+              {stage === 'review' && ret.returnType === 'sa800' && <StageReviewSa800 ret={ret} patch={patch} advance={() => advanceFrom('review')} />}
+              {stage === 'review' && ret.returnType !== 'ct600' && ret.returnType !== 'sa800' && <StageReview ret={ret} patch={patch} advance={() => advanceFrom('review')} page={reviewPage} setPage={setReviewPage} reveal={reviewReveal} onNavigate={goToReview} />}
               {stage === 'approval' && (ret.returnType === 'ct600'
                 ? <StageApprovalCt600 ret={ret} patch={patch} advance={() => advanceFrom('approval')} />
+                : ret.returnType === 'sa800'
+                ? <StageApprovalSa800 ret={ret} patch={patch} advance={() => advanceFrom('approval')} />
                 : <StageApproval ret={ret} patch={patch} advance={() => advanceFrom('approval')} />)}
               {stage === 'submit' && (ret.returnType === 'ct600'
                 ? <StageSubmitCt600 ret={ret} patch={patch} />
+                : ret.returnType === 'sa800'
+                ? <StageSubmitSa800 ret={ret} patch={patch} />
                 : <StageSubmit ret={ret} patch={patch} />)}
             </div>
             {assistantOpen && (

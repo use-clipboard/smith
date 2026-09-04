@@ -15,7 +15,7 @@ export const RETURN_TYPES: {
 }[] = [
   { id: 'sa100',        form: 'SA100', label: 'Personal Tax',     blurb: 'Individuals & sole traders',   icon: User,      entityLabel: 'Individual',        enabled: true },
   { id: 'ct600',        form: 'CT600', label: 'Company Tax',      blurb: 'Limited companies',            icon: Building2, entityLabel: 'Limited company',   enabled: true },
-  { id: 'sa800',        form: 'SA800', label: 'Partnership',      blurb: 'Partnerships & LLPs',          icon: Users,     entityLabel: 'Partnership',       enabled: false },
+  { id: 'sa800',        form: 'SA800', label: 'Partnership',      blurb: 'Partnerships & LLPs',          icon: Users,     entityLabel: 'Partnership',       enabled: true },
   { id: 'sa900',        form: 'SA900', label: 'Trust & Estate',   blurb: 'Trusts & estates',             icon: Landmark,  entityLabel: 'Trust',             enabled: false },
   { id: 'cgt',          form: 'CGT',   label: 'Capital Gains',    blurb: 'Standalone CGT reporting',     icon: TrendingUp,entityLabel: 'Individual',        enabled: false },
   { id: 'non_resident', form: 'SA109', label: 'Non-resident',     blurb: 'Non-resident individuals',     icon: Globe2,    entityLabel: 'Non-resident',      enabled: false },
