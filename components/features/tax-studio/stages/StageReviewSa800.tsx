@@ -18,10 +18,12 @@ import type { TaxReturn, Sa800Data, Sa800Trading, Sa800Partner, Sa801Property, S
 type Tab = 'details' | 'trading' | 'property' | 'savings' | 'foreign' | 'disposals' | 'partners';
 const rid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
 
-export default function StageReviewSa800({ ret, patch, advance }: {
+/** The SA800 tabbed editor — used both as the Review stage and, without the
+ *  Continue button, as the filing-preview click-to-edit lightbox editor. */
+export function Sa800ReturnEditor({ ret, patch, advance }: {
   ret: TaxReturn;
   patch: (u: (r: TaxReturn) => TaxReturn) => void;
-  advance: () => void;
+  advance?: () => void;
 }): JSX.Element {
   const sa = ret.sa800 ?? { trading: {}, statement: { partners: [] } };
   const [tab, setTab] = useState<Tab>('details');
@@ -84,7 +86,7 @@ export default function StageReviewSa800({ ret, patch, advance }: {
           const on = x.id === tab;
           return (
             <button key={x.id} data-review-tab={x.label} onClick={() => setTab(x.id)}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${on ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:bg-black/5'}`}>
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${on ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:bg-black/5'}`}>
               <x.icon size={13} /> {x.label}
             </button>
           );
@@ -341,9 +343,11 @@ export default function StageReviewSa800({ ret, patch, advance }: {
         <Sa800ComputationCard c={c} />
       </div>
 
-      <div className="flex justify-end">
-        <button onClick={advance} className="btn-primary">Continue to approval <ArrowRight size={15} /></button>
-      </div>
+      {advance && (
+        <div className="flex justify-end">
+          <button onClick={advance} className="btn-primary">Continue to approval <ArrowRight size={15} /></button>
+        </div>
+      )}
 
       {caOpen && (
         <CapitalAllowancesCalculator
@@ -357,6 +361,15 @@ export default function StageReviewSa800({ ret, patch, advance }: {
       )}
     </div>
   );
+}
+
+/** SA800 Review stage — the tabbed editor plus the Continue button. */
+export default function StageReviewSa800(props: {
+  ret: TaxReturn;
+  patch: (u: (r: TaxReturn) => TaxReturn) => void;
+  advance: () => void;
+}): JSX.Element {
+  return <Sa800ReturnEditor {...props} />;
 }
 
 const n = (v?: number) => v || 0;

@@ -26,7 +26,7 @@ import StageSetupCt600 from './stages/StageSetupCt600';
 import StageAnalyseCt600 from './stages/StageAnalyseCt600';
 import StageApprovalCt600 from './stages/StageApprovalCt600';
 import StageSubmitCt600 from './stages/StageSubmitCt600';
-import StageReviewSa800 from './stages/StageReviewSa800';
+import StageReviewSa800, { Sa800ReturnEditor } from './stages/StageReviewSa800';
 import StageSetupSa800 from './stages/StageSetupSa800';
 import StageAnalyseSa800 from './stages/StageAnalyseSa800';
 import StageApprovalSa800 from './stages/StageApprovalSa800';
@@ -314,6 +314,8 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
               // SA100 opens the per-page ReturnSectionEditor. Both flow edits via patch.
               renderEditor={ret.returnType === 'ct600'
                 ? () => <Ct600ReturnEditor ret={ret} patch={patch} />
+                : ret.returnType === 'sa800'
+                ? () => <Sa800ReturnEditor ret={ret} patch={patch} />
                 : p => <ReturnSectionEditor page={p} ret={ret} setIncome={u => patch(r => ({ ...r, income: u(r.income) }))} />}
               // Routing to Setup must close the fullscreen preview so the Setup
               // stage (and its highlighted field) is actually visible underneath.

@@ -64,7 +64,21 @@ const FORM_TO_PAGE: Record<string, PageId> = {
   SA102MP: 'parliament', SA102MSP: 'scottishparliament', SA102MS: 'welshassembly', SA102WAM: 'welshassembly',
   SA110: 'taxcalc',
   CT600: 'ct600',
+  // SA800 family — the renderEditor for SA800 ignores the page (it renders the
+  // whole tabbed Sa800ReturnEditor), so the value is a harmless placeholder.
+  SA800: 'core', SA801: 'core', SA802: 'core', SA804: 'core',
 };
+
+// SA800-family computed / auto-derived boxes — never click-to-edit (they'd break
+// the sums; the Review renders them read-only). Everything else on the SA800 core
+// and supplementary pages is an editable input. SA803 disposals are a list editor,
+// not box-mapped, so they aren't wired for click-to-edit.
+const SA800_COMPUTED = new Set([
+  '3.26', '3.49', '3.64', '3.65', '3.73', '3.83', '3.84', // SA800 core
+  '1.24', '1.31', '1.32', '1.35', '1.38', '1.39',         // SA801
+  '7.6', '7.18', '7.23',                                    // SA804
+  '2.6', '2.6A', '2.26', '2.27', '2.8',                    // SA802
+]);
 // CT600 uses an editable *allowlist* (the inverse of the SA blocklist): most of
 // the ~120 CT600 boxes are computed totals, supplementary-page flags or company
 // details, so only these — the boxes with a matching input in the CT600 Review
@@ -102,6 +116,8 @@ function isEditableBox(code: string, num: string, page: string): boolean {
   if (!(code in FORM_TO_PAGE)) return false;
   // CT600 is an allowlist (see CT600_EDITABLE) rather than a computed-box blocklist.
   if (code === 'CT600') return CT600_EDITABLE.has(num);
+  // SA800 family — every input box is editable except the computed ones.
+  if (code.startsWith('SA80')) return !SA800_COMPUTED.has(num);
   // SA100 TR1 (personal details — lives in Setup) and TR2 (the derived "what
   // makes up your return" checklist) aren't editable via the Review core editor.
   if (code === 'SA100' && (page === 'TR 1' || page === 'TR 2')) return false;
