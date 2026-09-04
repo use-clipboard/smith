@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, CapexAddition, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner, Ct600Data, Ct600LossStream, Sa800Data, Sa801Property, Sa804Savings, Sa802Foreign } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, CapexAddition, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner, Ct600Data, Ct600LossStream, Sa800Data, Sa801Property, Sa804Savings, Sa802Foreign, Sa803Disposal } from './types';
 
 /** The taxpayer's ownership share (0–1) of a jointly-owned item. No owners ⇒ 1.
  *  Shared by CGT disposals and joint interest. */
@@ -2251,6 +2251,7 @@ export interface Sa800Computation {
     offshoreFund: number;     // box 21 — share of offshore-fund disposals (SA802 2.9)
     foreignResiFinance: number; // box 27 — share of foreign residential finance (SA802 2.10A)
     foreignTax: number;       // box 28 — share of foreign tax (SA802 2.8)
+    disposalProceeds: number; // box 30 — share of chargeable-asset disposal proceeds (SA803 4.1)
   }[];
   allocatedProfit: number;      // sum of partner profit shares
   unallocated: number;          // profit − allocatedProfit
@@ -2327,6 +2328,7 @@ export function computeSa800(
     offshoreFund: fgn?.offshoreFundDisposals ?? 0,         // box 21
     foreignResiFinance: fgn?.residentialFinance ?? 0,      // box 27
     foreignTax: fgn?.foreignTax ?? 0,                      // box 28
+    disposalProceeds: (data?.disposals ?? []).reduce((a, d) => a + (d.proceeds || 0), 0), // SA803 4.1 → box 30
   };
   const alloc = (override: number | undefined, total: number, pct: number) => override != null ? r0(override) : partnerAllocatedShare(total, pct);
   const partnerShares = partners.map(p => {
@@ -2355,6 +2357,7 @@ export function computeSa800(
       offshoreFund: partnerAllocatedShare(totals.offshoreFund, pct),       // box 21
       foreignResiFinance: partnerAllocatedShare(totals.foreignResiFinance, pct), // box 27
       foreignTax: partnerAllocatedShare(totals.foreignTax, pct),           // box 28
+      disposalProceeds: partnerAllocatedShare(totals.disposalProceeds, pct), // box 30
     };
   });
   const allocatedProfit = partnerShares.reduce((a, p) => a + p.profitShare, 0);

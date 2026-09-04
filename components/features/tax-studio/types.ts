@@ -1860,6 +1860,16 @@ export interface Sa802Foreign {
   offshoreFundDisposals?: number; // 2.9 → box 21
 }
 
+/** One SA803 disposal of a chargeable asset (2026, page PA1). Partners calculate
+ *  their own gains; the partnership return just reports the disposal. */
+export interface Sa803Disposal {
+  id: string;
+  description?: string;  // col 1 — description of asset
+  notListed?: boolean;   // col 2 — tick if NOT listed shares / securities
+  proceeds?: number;     // col 3 — disposal proceeds
+  furtherInfo?: string;  // col 4 — further information
+}
+
 /** The full SA800 Partnership Tax Return data. */
 export interface Sa800Data {
   businessName?: string;
@@ -1886,6 +1896,8 @@ export interface Sa800Data {
   savings?: Sa804Savings;
   /** SA802 foreign income (present when Q2 / hasForeign). */
   foreign?: Sa802Foreign;
+  /** SA803 disposals of chargeable assets (present when Q4 / hasDisposals). */
+  disposals?: Sa803Disposal[];
   statement: Sa800Statement;
 }
 

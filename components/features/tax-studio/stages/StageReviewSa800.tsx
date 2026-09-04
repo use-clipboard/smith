@@ -6,16 +6,16 @@
 // Partnership Statement. Box numbers are the HMRC SA800 (2026) ones.
 
 import { useState } from 'react';
-import { ArrowRight, Building2, Calculator, Users, Plus, Trash2, ListTree, Send, Loader2, CheckCircle2, Home, PiggyBank, Globe } from 'lucide-react';
+import { ArrowRight, Building2, Calculator, Users, Plus, Trash2, ListTree, Send, Loader2, CheckCircle2, Home, PiggyBank, Globe, Coins } from 'lucide-react';
 import { StudioCard } from '../primitives';
 import { computeSa800, computeSa801, computeSa804, computeSa802 } from '../calc';
 import { fmtMoney } from '../data';
 import { findPartnerReturn, pushPartnerShare } from '../sa800PartnerFeed';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import Sa800LinkCard from '../Sa800LinkCard';
-import type { TaxReturn, Sa800Data, Sa800Trading, Sa800Partner, Sa801Property, Sa804Savings, Sa802Foreign } from '../types';
+import type { TaxReturn, Sa800Data, Sa800Trading, Sa800Partner, Sa801Property, Sa804Savings, Sa802Foreign, Sa803Disposal } from '../types';
 
-type Tab = 'details' | 'trading' | 'property' | 'savings' | 'foreign' | 'partners';
+type Tab = 'details' | 'trading' | 'property' | 'savings' | 'foreign' | 'disposals' | 'partners';
 const rid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
 
 export default function StageReviewSa800({ ret, patch, advance }: {
@@ -48,6 +48,10 @@ export default function StageReviewSa800({ ret, patch, advance }: {
     const s = r.sa800 as Sa800Data;
     return { ...r, sa800: { ...s, foreign: { ...s.foreign, ...u } } };
   });
+  const setDisposals = (disposals: Sa803Disposal[]) => patch(r => {
+    const s = r.sa800 as Sa800Data;
+    return { ...r, sa800: { ...s, disposals } };
+  });
 
   const c = computeSa800(sa, ret.taxYear, { periodStart: sa.periodStart, periodEnd: sa.periodEnd });
   const t = sa.trading;
@@ -59,6 +63,7 @@ export default function StageReviewSa800({ ret, patch, advance }: {
     ...(sa.hasUkProperty ? [{ id: 'property' as Tab, label: 'UK property', icon: Home }] : []),
     ...(sa.hasOtherIncome ? [{ id: 'savings' as Tab, label: 'Savings & income', icon: PiggyBank }] : []),
     ...(sa.hasForeign ? [{ id: 'foreign' as Tab, label: 'Foreign', icon: Globe }] : []),
+    ...(sa.hasDisposals ? [{ id: 'disposals' as Tab, label: 'Disposals', icon: Coins }] : []),
     { id: 'partners', label: `Partners${sa.statement.partners.length ? ` (${sa.statement.partners.length})` : ''}`, icon: Users },
   ];
 
@@ -290,6 +295,43 @@ export default function StageReviewSa800({ ret, patch, advance }: {
             );
           })()}
 
+          {tab === 'disposals' && (() => {
+            const list = sa.disposals ?? [];
+            const total = list.reduce((a, d) => a + (d.proceeds || 0), 0);
+            const upd = (id: string, u: Partial<Sa803Disposal>) => setDisposals(list.map(d => d.id === id ? { ...d, ...u } : d));
+            const add = () => setDisposals([...list, { id: rid('dsp') }]);
+            const del = (id: string) => setDisposals(list.filter(d => d.id !== id));
+            return (
+              <StudioCard className="space-y-3 p-5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Disposals of chargeable assets</p>
+                {list.map((d, i) => (
+                  <div key={d.id} className="rounded-xl border border-[var(--border)] p-3">
+                    <div className="mb-2 flex items-center gap-2">
+                      <input value={d.description ?? ''} placeholder={`Asset ${i + 1} — description (e.g. property address)`} onChange={e => upd(d.id, { description: e.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+                      <button onClick={() => del(d.id)} className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-rose-50 hover:text-rose-500"><Trash2 size={13} /></button>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-0.5 block text-[10px] font-medium text-[var(--text-muted)]">Disposal proceeds [box 3]</label>
+                        <input type="number" value={d.proceeds ?? '' as unknown as number} onChange={e => upd(d.id, { proceeds: Number(e.target.value) || 0 })} className="input-base py-1 text-right text-[12px]" />
+                      </div>
+                      <label className="flex cursor-pointer items-center gap-2 self-end rounded-lg border border-[var(--border)] bg-white/60 px-2.5 py-2 text-[11px] font-medium text-[var(--text-muted)]">
+                        <input type="checkbox" checked={!!d.notListed} onChange={e => upd(d.id, { notListed: e.target.checked })} className="h-3.5 w-3.5 accent-[var(--accent)]" />
+                        Not listed shares / securities [box 2]
+                      </label>
+                    </div>
+                    <input value={d.furtherInfo ?? ''} placeholder="Further information (e.g. valuation used) [box 4]" onChange={e => upd(d.id, { furtherInfo: e.target.value })} className="input-base mt-2 py-1 text-[12px]" />
+                  </div>
+                ))}
+                <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add disposal</button>
+                <div className="flex items-center justify-between border-t border-black/5 pt-2 text-[12.5px]">
+                  <span className="font-semibold text-[var(--text-primary)]">Total disposal proceeds (box 4.1 → PS box 30)</span>
+                  <span className="font-bold text-[var(--accent)]">{fmtMoney(total)}</span>
+                </div>
+              </StudioCard>
+            );
+          })()}
+
           {tab === 'partners' && (
             <PartnersTab ret={ret} sa={sa} shares={c.partnerShares} setPartners={setPartners}
               setStatement={u => patch(r => { const s = r.sa800 as Sa800Data; return { ...r, sa800: { ...s, statement: { ...s.statement, ...u } } }; })} />
@@ -331,7 +373,7 @@ function PartnersTab({ ret, sa, shares, setPartners, setStatement }: {
   const upd = (id: string, u: Partial<Sa800Partner>) => setPartners(partners.map(p => p.id === id ? { ...p, ...u } : p));
   const add = () => setPartners([...partners, { id: rid('ptr'), sharePct: 0 }]);
   const del = (id: string) => setPartners(partners.filter(p => p.id !== id));
-  const empty = { profitShare: 0, loss: 0, basisAdj: 0, untaxedSavings: 0, cis: 0, charges: 0, property: 0, taxedInterest: 0, dividends: 0, otherIncome: 0, otherTaxedIncome: 0, taxDeducted: 0, residentialFinance: 0, foreignSavings: 0, foreignDividends: 0, foreignProperty: 0, foreignPropertyLoss: 0, offshoreFund: 0, foreignResiFinance: 0, foreignTax: 0 };
+  const empty = { profitShare: 0, loss: 0, basisAdj: 0, untaxedSavings: 0, cis: 0, charges: 0, property: 0, taxedInterest: 0, dividends: 0, otherIncome: 0, otherTaxedIncome: 0, taxDeducted: 0, residentialFinance: 0, foreignSavings: 0, foreignDividends: 0, foreignProperty: 0, foreignPropertyLoss: 0, offshoreFund: 0, foreignResiFinance: 0, foreignTax: 0, disposalProceeds: 0 };
   const shareRow = (id: string) => shares.find(s => s.id === id) ?? empty;
 
   return (
@@ -378,6 +420,7 @@ function PartnersTab({ ret, sa, shares, setPartners, setStatement }: {
               {full && shareRow(p.id).foreignProperty > 0 && <AllocRow label="Foreign property (box 17)" value={shareRow(p.id).foreignProperty} />}
               {full && shareRow(p.id).offshoreFund > 0 && <AllocRow label="Offshore-fund disposals (box 21)" value={shareRow(p.id).offshoreFund} />}
               {full && shareRow(p.id).foreignTax > 0 && <AllocRow label="Foreign tax (box 28)" value={shareRow(p.id).foreignTax} />}
+              {full && shareRow(p.id).disposalProceeds > 0 && <AllocRow label="Disposal proceeds (box 30)" value={shareRow(p.id).disposalProceeds} />}
             </div>
           </div>
         ))}

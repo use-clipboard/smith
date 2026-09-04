@@ -102,6 +102,18 @@ export function buildSa800Return(ret: TaxReturn): Sa800BuildResult {
     el('ForeignTax', moneyDown(cfgn.foreignTax)),                // box 28
   ]) : '';
 
+  // SA803 disposals of chargeable assets, when present.
+  const disposalsTotal = (sa.disposals ?? []).reduce((a, d) => a + (d.proceeds || 0), 0);
+  const disposals = (sa.disposals ?? []).length ? group('ChargeableAssets', [
+    ...(sa.disposals ?? []).map(d => group('Disposal', [
+      el('Description', clip(d.description, 100) ?? undefined),
+      el('NotListed', d.notListed ? 'yes' : undefined),
+      el('Proceeds', moneyDown(d.proceeds)),
+      el('FurtherInformation', clip(d.furtherInfo, 250) ?? undefined),
+    ])),
+    el('TotalProceeds', moneyDown(disposalsTotal)), // box 4.1 → PS box 30
+  ]) : '';
+
   // Partnership Statement — one <Partner> per member with their allocation.
   const statement = group('PartnershipStatement',
     [el('Full', sa.statement.full ? 'yes' : undefined)].concat(
@@ -130,6 +142,7 @@ export function buildSa800Return(ret: TaxReturn): Sa800BuildResult {
           el('ForeignDividendsShare', moneyDown(s?.foreignDividends)), // box 14A
           el('ForeignPropertyShare', moneyDown(s?.foreignProperty)), // box 17
           el('ForeignTaxShare', moneyDown(s?.foreignTax)),          // box 28
+          el('DisposalProceedsShare', moneyDown(s?.disposalProceeds)), // box 30
         ]);
       }),
     ),
@@ -138,7 +151,7 @@ export function buildSa800Return(ret: TaxReturn): Sa800BuildResult {
   // Agent filing declaration (nominated partner declaration is captured on-screen).
   const declaration = '<Declaration><AgentDeclaration>yes</AgentDeclaration></Declaration>';
 
-  const returnBody = group('PartnershipTaxReturn', [details, trade, property, savings, foreign, statement, declaration]);
+  const returnBody = group('PartnershipTaxReturn', [details, trade, property, savings, foreign, disposals, statement, declaration]);
   const irEnvelope = `<IRenvelope xmlns="${SA800_NS}">${irHeader}${returnBody}</IRenvelope>`;
   return { irEnvelope, periodEnd, utr };
 }

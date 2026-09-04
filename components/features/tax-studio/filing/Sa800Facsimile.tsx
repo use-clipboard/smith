@@ -171,6 +171,7 @@ export default function Sa800Facsimile({ ret }: { ret: TaxReturn }): JSX.Element
                 {sa.statement.full && p.foreignProperty > 0 && <Money n="17" label="Share of foreign property income" value={p.foreignProperty} />}
                 {sa.statement.full && p.offshoreFund > 0 && <Money n="21" label="Share of offshore-fund disposals" value={p.offshoreFund} />}
                 {sa.statement.full && p.foreignTax > 0 && <Money n="28" label="Share of foreign tax" value={p.foreignTax} />}
+                {sa.statement.full && p.disposalProceeds > 0 && <Money n="30" label="Share of disposal proceeds" value={p.disposalProceeds} />}
               </Panel>
             </div>
           );
@@ -295,6 +296,20 @@ export default function Sa800Facsimile({ ret }: { ret: TaxReturn }): JSX.Element
             <Money n="2.9" label="Disposals of holdings in offshore fund" value={n(sa.foreign?.offshoreFundDisposals)} />
             <Money n="2.10A" label="Residential property finance costs" value={n(sa.foreign?.residentialFinance)} />
             <Money n="2.8" label="Total foreign tax" value={cf.foreignTax} />
+          </Panel>
+        </Page>
+      )}
+
+      {/* ── SA803 — Partnership disposal of chargeable assets (supplementary) ── */}
+      {sa.hasDisposals && (
+        <Page tag="PA1" code="SA803" footerLeft="SA803 2026 Page PA 1" footerRight="HMRC 12/25">
+          <h2 className="mb-2 text-[16px] font-bold" style={{ color: TEAL_THEME.panelBorder }}>Partnership disposal of chargeable assets</h2>
+          <Teal>Disposals of chargeable assets made by the partnership</Teal>
+          <Panel>
+            {(sa.disposals ?? []).map((d, i) => (
+              <Line key={d.id} n={String(i + 1)} label={`${d.description || 'Asset'}${d.notListed ? ' (not listed)' : ''}`} value={n(d.proceeds) ? `£${n(d.proceeds).toLocaleString('en-GB')}` : ''} />
+            ))}
+            <Money n="4.1" label="Total disposal proceeds (→ Partnership Statement box 30)" value={(sa.disposals ?? []).reduce((a, d) => a + (d.proceeds || 0), 0)} />
           </Panel>
         </Page>
       )}
