@@ -2146,9 +2146,19 @@ export interface Sa800Computation {
   netProfitForTax: number;      // box 3.73 (or 3.26)
   profit: number;               // box 3.83 — net profit for tax, floored at 0
   loss: number;                 // box 3.84 — allowable loss, floored at 0
-  /** Per-partner allocation of the profit (from share % or a manual override). */
-  partnerShares: { id: string; name: string; sharePct: number; profitShare: number }[];
-  allocatedProfit: number;      // sum of partner shares
+  /** Per-partner allocation (from share % or a manual override). `profitShare` is
+   *  the trade profit (box 11); the rest are the Full Partnership Statement
+   *  streams — allocated when the statement is 'full'. */
+  partnerShares: {
+    id: string; name: string; sharePct: number;
+    profitShare: number;      // box 11 — share of trade profit
+    loss: number;             // box 12 — share of trade loss
+    basisAdj: number;         // box 11A — share of the change-of-basis adjustment
+    untaxedSavings: number;   // box 24 — share of untaxed interest (box 7.9A)
+    cis: number;              // box 24A — share of CIS deductions (box 3.97)
+    charges: number;          // box 29 — share of partnership charges (box 3.117)
+  }[];
+  allocatedProfit: number;      // sum of partner profit shares
   unallocated: number;          // profit − allocatedProfit
   notes: string[];
 }
@@ -2193,14 +2203,31 @@ export function computeSa800(
   const profit = Math.max(0, netProfitForTax); // 3.83
   const loss = Math.max(0, -netProfitForTax);  // 3.84
 
-  // Partnership Statement — allocate the profit to each partner.
+  // Partnership Statement — allocate each income stream to each partner. Every
+  // stream is share% of the partnership total, or a manual per-partner override.
   const partners = data?.statement.partners ?? [];
-  const partnerShares = partners.map(p => ({
-    id: p.id,
-    name: p.name ?? '',
-    sharePct: n(p.sharePct),
-    profitShare: p.profitShare != null ? r0(p.profitShare) : partnerAllocatedShare(profit, n(p.sharePct)),
-  }));
+  const totals = {
+    profit, loss,
+    basisAdj: n(t.basisAdjustment),          // box 3.82 → 11A
+    untaxedSavings: n(data?.untaxedInterest), // box 7.9A → 24
+    cis: n(t.cisDeductions),                  // box 3.97 → 24A
+    charges: n(t.netPartnershipCharges),      // box 3.117 → 29
+  };
+  const alloc = (override: number | undefined, total: number, pct: number) => override != null ? r0(override) : partnerAllocatedShare(total, pct);
+  const partnerShares = partners.map(p => {
+    const pct = n(p.sharePct);
+    return {
+      id: p.id,
+      name: p.name ?? '',
+      sharePct: pct,
+      profitShare: alloc(p.profitShare, totals.profit, pct),
+      loss: alloc(p.lossShare, totals.loss, pct),
+      basisAdj: alloc(p.basisAdjustment, totals.basisAdj, pct),
+      untaxedSavings: alloc(p.untaxedSavings, totals.untaxedSavings, pct),
+      cis: alloc(p.cisDeductions, totals.cis, pct),
+      charges: alloc(p.chargesShare, totals.charges, pct),
+    };
+  });
   const allocatedProfit = partnerShares.reduce((a, p) => a + p.profitShare, 0);
   const unallocated = profit - allocatedProfit;
   const sharesTotal = partners.reduce((a, p) => a + n(p.sharePct), 0);

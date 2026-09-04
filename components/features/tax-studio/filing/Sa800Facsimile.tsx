@@ -136,7 +136,7 @@ export default function Sa800Facsimile({ ret }: { ret: TaxReturn }): JSX.Element
 
       {/* ── Pages 6–7 — Partnership Statement ── */}
       <Page tag="6" {...foot('6')}>
-        <Teal>Partnership Statement</Teal>
+        <Teal>Partnership Statement ({sa.statement.full ? 'full' : 'short'})</Teal>
         <Panel>
           <Line n="Nature" label="Nature of trade" value={sa.statement.natureOfTrade} />
           <Money n="11" label="Profit from a trade or profession (from box 3.83)" value={c.profit} />
@@ -151,6 +151,11 @@ export default function Sa800Facsimile({ ret }: { ret: TaxReturn }): JSX.Element
                 <Line n="6" label="Name of partner" value={p.name} />
                 <Cells n="3" label="Partner's Unique Taxpayer Reference (UTR)" groups={[10]} value={partner?.utr ?? ''} />
                 <Money n="11" label="Share of profit" value={p.profitShare} />
+                {sa.statement.full && p.loss > 0 && <Money n="12" label="Share of loss" value={p.loss} />}
+                {sa.statement.full && p.basisAdj !== 0 && <Money n="11A" label="Share of change-of-basis adjustment" value={p.basisAdj} />}
+                {sa.statement.full && p.untaxedSavings > 0 && <Money n="24" label="Share of untaxed interest" value={p.untaxedSavings} />}
+                {sa.statement.full && p.cis > 0 && <Money n="24A" label="Share of CIS deductions" value={p.cis} />}
+                {sa.statement.full && p.charges > 0 && <Money n="29" label="Share of partnership charges" value={p.charges} />}
               </Panel>
             </div>
           );

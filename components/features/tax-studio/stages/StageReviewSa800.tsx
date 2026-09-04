@@ -192,18 +192,28 @@ const n = (v?: number) => v || 0;
 function PartnersTab({ ret, sa, shares, setPartners, setStatement }: {
   ret: TaxReturn;
   sa: Sa800Data;
-  shares: { id: string; name: string; sharePct: number; profitShare: number }[];
+  shares: ReturnType<typeof computeSa800>['partnerShares'];
   setPartners: (p: Sa800Partner[]) => void;
   setStatement: (u: Partial<Sa800Data['statement']>) => void;
 }): JSX.Element {
   const partners = sa.statement.partners;
+  const full = !!sa.statement.full;
   const upd = (id: string, u: Partial<Sa800Partner>) => setPartners(partners.map(p => p.id === id ? { ...p, ...u } : p));
   const add = () => setPartners([...partners, { id: rid('ptr'), sharePct: 0 }]);
   const del = (id: string) => setPartners(partners.filter(p => p.id !== id));
-  const shareOf = (id: string) => shares.find(s => s.id === id)?.profitShare ?? 0;
+  const empty = { profitShare: 0, loss: 0, basisAdj: 0, untaxedSavings: 0, cis: 0, charges: 0 };
+  const shareRow = (id: string) => shares.find(s => s.id === id) ?? empty;
 
   return (
     <StudioCard className="space-y-4 p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Statement</span>
+        <div className="flex rounded-lg border border-[var(--border)] p-0.5 text-[12px] font-semibold">
+          <button onClick={() => setStatement({ full: false })} className={`rounded-md px-2.5 py-1 ${!sa.statement.full ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)]'}`}>Short</button>
+          <button onClick={() => setStatement({ full: true })} className={`rounded-md px-2.5 py-1 ${sa.statement.full ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)]'}`}>Full</button>
+        </div>
+        <span className="text-[10.5px] text-[var(--text-muted)]">{sa.statement.full ? 'Allocates every income stream to each partner' : 'Trade profit + untaxed interest only'}</span>
+      </div>
       <Section title="Partnership Statement">
         <TextField label="Nature of trade" value={sa.statement.natureOfTrade ?? ''} onChange={v => setStatement({ natureOfTrade: v })} wide />
       </Section>
@@ -219,9 +229,13 @@ function PartnersTab({ ret, sa, shares, setPartners, setStatement }: {
               <MiniField label="NINO" value={p.nino ?? ''} onChange={v => upd(p.id, { nino: v })} />
               <MiniNum label="Profit share %" value={p.sharePct ?? 0} onChange={v => upd(p.id, { sharePct: v })} />
             </div>
-            <div className="mt-2 flex items-center justify-between rounded-lg bg-[var(--accent)]/5 px-3 py-1.5 text-[12px]">
-              <span className="text-[var(--text-muted)]">Allocated profit (box 11)</span>
-              <span className="font-bold text-[var(--accent)]">{fmtMoney(shareOf(p.id))}</span>
+            <div className="mt-2 space-y-0.5 rounded-lg bg-[var(--accent)]/5 px-3 py-1.5 text-[12px]">
+              <AllocRow label="Profit (box 11)" value={shareRow(p.id).profitShare} strong />
+              {full && shareRow(p.id).loss > 0 && <AllocRow label="Loss (box 12)" value={shareRow(p.id).loss} />}
+              {full && shareRow(p.id).basisAdj !== 0 && <AllocRow label="Change-of-basis adjustment (box 11A)" value={shareRow(p.id).basisAdj} />}
+              {full && shareRow(p.id).untaxedSavings > 0 && <AllocRow label="Untaxed interest (box 24)" value={shareRow(p.id).untaxedSavings} />}
+              {full && shareRow(p.id).cis > 0 && <AllocRow label="CIS deductions (box 24A)" value={shareRow(p.id).cis} />}
+              {full && shareRow(p.id).charges > 0 && <AllocRow label="Partnership charges (box 29)" value={shareRow(p.id).charges} />}
             </div>
           </div>
         ))}
@@ -236,7 +250,7 @@ function PartnersTab({ ret, sa, shares, setPartners, setStatement }: {
 function PartnerFeed({ ret, partners, shares }: {
   ret: TaxReturn;
   partners: Sa800Partner[];
-  shares: { id: string; name: string; sharePct: number; profitShare: number }[];
+  shares: ReturnType<typeof computeSa800>['partnerShares'];
 }): JSX.Element | null {
   const [status, setStatus] = useState<Record<string, 'sending' | 'sent' | 'created' | 'error'>>({});
   const linked = partners.filter(p => p.clientId);
@@ -373,6 +387,14 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
     <div className="flex items-center justify-between py-0.5">
       <span className={`text-[12px] ${bold ? 'font-semibold text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>{label}</span>
       <span className={`text-[12.5px] ${bold ? 'font-bold text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{value}</span>
+    </div>
+  );
+}
+function AllocRow({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className={strong ? 'text-[12px] font-semibold text-[var(--text-secondary)]' : 'text-[11px] text-[var(--text-muted)]'}>{label}</span>
+      <span className={strong ? 'text-[12.5px] font-bold text-[var(--accent)]' : 'text-[12px] font-semibold text-[var(--text-primary)]'}>{fmtMoney(value)}</span>
     </div>
   );
 }
