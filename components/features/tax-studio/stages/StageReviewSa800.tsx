@@ -65,6 +65,7 @@ export default function StageReviewSa800({ ret, patch, advance }: {
         existingPartners={sa.statement.partners}
         onImportTrading={u => setTrading(u)}
         onImportPartners={partners => setPartners(partners)}
+        onImportProperty={u => patch(r => { const s = r.sa800 as Sa800Data; return { ...r, sa800: { ...s, hasUkProperty: true, property: { ...s.property, ...u } } }; })}
         onPeriod={(start, end) => { if (!sa.periodStart && !sa.periodEnd) setData({ periodStart: start, periodEnd: end }); }}
       />
 

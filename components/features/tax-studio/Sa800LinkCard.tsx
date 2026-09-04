@@ -6,14 +6,15 @@
 // be auto-filled instead of keyed in by hand.
 
 import { useEffect, useState } from 'react';
-import { Link2, Download, CheckCircle2, Loader2, Users, ListTree } from 'lucide-react';
+import { Link2, Download, CheckCircle2, Loader2, Users, ListTree, Home } from 'lucide-react';
 import { fetchJson } from '@/lib/fetchJson';
 import { fetchTradeBoxMapping } from './integrations';
 import { fmtMoney } from './data';
-import type { Sa800Trading, Sa800Partner } from './types';
+import type { Sa800Trading, Sa800Partner, Sa801Property } from './types';
 
 interface PlLine { label: string; amount: number; section: 'income' | 'expense' }
 interface TradingSummary { found: boolean; source: 'as' | 'bk'; label: string; periodStart?: string; periodEnd?: string; turnover: number; expenses: number; netProfit: number; lines?: PlLine[] }
+interface PropertySummary { found: boolean; rents: number; expenses: number; residentialFinance: number }
 interface PartnerRow { name: string; sharePct: number; clientId: string | null; utr: string | null }
 
 // SA103F box (from the shared box mapper) → the matching SA800 full-P&L field.
@@ -28,19 +29,22 @@ const SA103_TO_SA800: Record<string, keyof Sa800Trading> = {
 
 const rid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
 
-export default function Sa800LinkCard({ clientId, taxYear, existingPartners, onImportTrading, onImportPartners, onPeriod }: {
+export default function Sa800LinkCard({ clientId, taxYear, existingPartners, onImportTrading, onImportPartners, onImportProperty, onPeriod }: {
   clientId: string | null;
   taxYear: string;
   existingPartners: Sa800Partner[];
   onImportTrading: (t: Partial<Sa800Trading>) => void;
   onImportPartners: (partners: Sa800Partner[]) => void;
+  onImportProperty: (p: Partial<Sa801Property>) => void;
   onPeriod: (start: string, end: string) => void;
 }): JSX.Element | null {
   const [trading, setTrading] = useState<TradingSummary | null>(null);
+  const [property, setPropertyState] = useState<PropertySummary | null>(null);
   const [partners, setPartners] = useState<PartnerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [importedT, setImportedT] = useState(false);
   const [importedP, setImportedP] = useState(false);
+  const [importedProp, setImportedProp] = useState(false);
   const [importedFull, setImportedFull] = useState(false);
   const [fullLoading, setFullLoading] = useState(false);
 
@@ -67,7 +71,13 @@ export default function Sa800LinkCard({ clientId, taxYear, existingPartners, onI
         const r = await fetchJson<{ found: boolean; partners: PartnerRow[] }>(`/api/tax-studio/integrations/partnership-partners?clientId=${clientId}`, { cache: 'no-store' });
         ps = r.partners ?? [];
       } catch { /* none */ }
-      if (live) { setTrading(t); setPartners(ps); setLoading(false); }
+      // Landlord tool — the partnership's UK property income computation.
+      let prop: PropertySummary | null = null;
+      try {
+        const l = await fetchJson<{ found: boolean; totalIncome?: number; totalExpenses?: number; financeCosts?: number }>(`/api/tax-studio/integrations/landlord?clientId=${clientId}&taxYear=${encodeURIComponent(taxYear)}`, { cache: 'no-store' });
+        if (l.found) prop = { found: true, rents: l.totalIncome ?? 0, expenses: l.totalExpenses ?? 0, residentialFinance: l.financeCosts ?? 0 };
+      } catch { /* none */ }
+      if (live) { setTrading(t); setPropertyState(prop); setPartners(ps); setLoading(false); }
     })();
     return () => { live = false; };
   }, [clientId, taxYear]);
@@ -78,7 +88,15 @@ export default function Sa800LinkCard({ clientId, taxYear, existingPartners, onI
       <Loader2 size={13} className="animate-spin" /> Checking Accounts Studio &amp; Bookkeeping for linked partnership data…
     </div>
   );
-  if (!trading && !partners.length) return null;
+  if (!trading && !partners.length && !property) return null;
+
+  function importProperty() {
+    if (!property) return;
+    // The landlord route gives totals, not a category breakdown — lump the
+    // non-finance expenses into box 1.30 and the residential finance into 1.40.
+    onImportProperty({ rents: Math.round(property.rents), otherExpenses: Math.round(property.expenses), residentialFinanceCosts: Math.round(property.residentialFinance) });
+    setImportedProp(true);
+  }
 
   function importTrading() {
     if (!trading) return;
@@ -140,6 +158,18 @@ export default function Sa800LinkCard({ clientId, taxYear, existingPartners, onI
                 </button>
               )}
             </div>
+          </div>
+        )}
+        {property && (
+          <div className="flex items-center gap-2.5 rounded-lg border border-[var(--border)] bg-white/70 px-3 py-2">
+            <Home size={16} className="shrink-0 text-[var(--accent)]" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12px] font-semibold text-[var(--text-primary)]">UK property <span className="font-normal text-[var(--text-muted)]">· Landlord</span></p>
+              <p className="text-[11px] text-[var(--text-muted)]">Rents {fmtMoney(property.rents)} · expenses {fmtMoney(property.expenses)}</p>
+            </div>
+            <button onClick={importProperty} disabled={importedProp} className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[var(--accent)] px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-40">
+              {importedProp ? <><CheckCircle2 size={12} /> Filled</> : <><Download size={12} /> Fill property</>}
+            </button>
           </div>
         )}
         {partners.length > 0 && (
