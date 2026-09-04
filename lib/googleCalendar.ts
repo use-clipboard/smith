@@ -57,6 +57,8 @@ export interface CalendarEvent {
   htmlLink?: string;
   meetLink?: string;
   colorId?: string;
+  /** Google visibility: 'default' | 'public' | 'private' | 'confidential'. Used to mask private events from colleagues. */
+  visibility?: string;
   ownerUserId?: string;
   ownerName?: string;
   ownerColor?: string;
@@ -103,6 +105,7 @@ export async function fetchUserEvents(
         htmlLink: e.htmlLink ?? undefined,
         meetLink: videoEntry?.uri ?? undefined,
         colorId: e.colorId ?? undefined,
+        visibility: e.visibility ?? undefined,
       };
     });
 
@@ -124,6 +127,9 @@ export async function createCalendarEvent(
     sendNotifications?: boolean;
     recurrence?: string[];
     addGoogleMeet?: boolean;
+    visibility?: 'default' | 'public' | 'private' | 'confidential';
+    transparency?: 'opaque' | 'transparent';
+    colorId?: string;
   }
 ): Promise<{ eventId: string; htmlLink: string; meetLink?: string; newAccessToken: string }> {
   const { calendar, accessToken } = await getRefreshedCalendarClient(refreshToken);
@@ -142,6 +148,9 @@ export async function createCalendarEvent(
       end: event.isAllDay ? { date: event.end } : { dateTime: event.end, timeZone: tz },
       attendees: (event.attendeeEmails ?? []).map(email => ({ email })),
       recurrence: event.recurrence,
+      visibility: event.visibility,
+      transparency: event.transparency,
+      colorId: event.colorId,
       ...(event.addGoogleMeet && {
         conferenceData: {
           createRequest: {
@@ -177,6 +186,9 @@ export async function updateCalendarEvent(
     location?: string;
     recurrence?: string[];
     addGoogleMeet?: boolean;
+    visibility?: 'default' | 'public' | 'private' | 'confidential';
+    transparency?: 'opaque' | 'transparent';
+    colorId?: string;
   }
 ): Promise<{ newAccessToken: string; meetLink?: string }> {
   const { calendar, accessToken } = await getRefreshedCalendarClient(refreshToken);
@@ -186,6 +198,9 @@ export async function updateCalendarEvent(
   if (patch.title) requestBody.summary = patch.title;
   if (patch.description !== undefined) requestBody.description = patch.description;
   if (patch.location !== undefined) requestBody.location = patch.location;
+  if (patch.visibility !== undefined) requestBody.visibility = patch.visibility;
+  if (patch.transparency !== undefined) requestBody.transparency = patch.transparency;
+  if (patch.colorId !== undefined) requestBody.colorId = patch.colorId;
   if (patch.start) {
     requestBody.start = patch.isAllDay
       ? { date: patch.start }

@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, CalendarClock, MoveRight, RotateCcw, Plus, X, PlayCircle, Clock3, AlertTriangle, PauseCircle, Loader2, GripVertical, Pencil, Link2 } from 'lucide-react';
+import { CheckCircle2, CalendarClock, MoveRight, RotateCcw, Plus, X, PlayCircle, Clock3, AlertTriangle, PauseCircle, Loader2, GripVertical, Pencil, Link2, CalendarPlus, CalendarCheck, Lock, Users } from 'lucide-react';
 import { buildDayPlan, TIER_META, CHASE_COLOR } from '@/lib/tasks/dayPlan';
 import OrganiseMyDayBlockEditor from './OrganiseMyDayBlockEditor';
+import Tooltip from '@/components/ui/Tooltip';
 import { todayIso } from '@/lib/timesheets/format';
 import type { OrganiseSettings } from '@/lib/tasks/organiseSettings';
 import type { Task } from '@/types';
@@ -27,6 +28,8 @@ interface PlanItem { id: string; kind: 'admin' | 'task' | 'chase'; label: string
 /** Persisted block: identifies a queue item (by key) or a custom focus block. */
 interface Block { key: string; kind: 'admin' | 'task' | 'chase' | 'custom' | 'break' | 'wrap'; start: number; dur: number; label?: string; color?: string; taskId?: string | null; taskTitle?: string | null; clientName?: string | null }
 type DragState = { key: string; mode: 'move' | 'resize'; deltaMin: number } | null;
+/** Persisted calendar-sync state: which Google event each block maps to + chosen visibility. */
+interface CalSync { eventIds: Record<string, string>; visibility: 'private' | 'shared'; sig: string }
 
 const minToHHMM = (m: number): string => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(Math.round(m) % 60).padStart(2, '0')}`;
 const parseMin = (hhmm: string): number => { const [h, m] = (hhmm || '').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
@@ -68,6 +71,13 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
   const [blocks, setBlocks] = useState<Block[] | null>(null);   // null = not decided yet
   const [drag, setDrag] = useState<DragState>(null);
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [calConnected, setCalConnected] = useState(false);
+  const [cal, setCal] = useState<CalSync | null>(null);
+  const [visibility, setVisibility] = useState<'private' | 'shared'>('private');
+  const [syncing, setSyncing] = useState(false);
+  const [syncErr, setSyncErr] = useState<string | null>(null);
+  const calRef = useRef<CalSync | null>(null);
+  useEffect(() => { calRef.current = cal; }, [cal]);
   const customSeq = useRef(0);
   const didGenerate = useRef(false);
   const openMin = useMemo(() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); }, []);
@@ -95,11 +105,13 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
     fetch('/api/calendar/status').then(r => (r.ok ? r.json() : { connected: false })).then(d => {
       if (!live) return;
       if (!d?.connected) { setCalLoaded(true); return; }
+      setCalConnected(true);
       fetch(`/api/timesheets/calendar?date=${planDate}`).then(r => (r.ok ? r.json() : { events: [] })).then(cd => { if (live) { setCalEvents((cd.events ?? []) as CalEvent[]); setCalLoaded(true); } }).catch(() => { if (live) setCalLoaded(true); });
     }).catch(() => { if (live) setCalLoaded(true); });
-    fetch(`/api/users/organise-plan?date=${planDate}`).then(r => (r.ok ? r.json() : null)).then((d: { plan?: { blocks?: Block[] } | null } | null) => {
+    fetch(`/api/users/organise-plan?date=${planDate}`).then(r => (r.ok ? r.json() : null)).then((d: { plan?: { blocks?: Block[]; calendar?: CalSync } | null } | null) => {
       if (!live) return;
       if (d?.plan?.blocks) { setBlocks(d.plan.blocks); didGenerate.current = true; }
+      if (d?.plan?.calendar) { setCal(d.plan.calendar); calRef.current = d.plan.calendar; setVisibility(d.plan.calendar.visibility); }
       setPlanLoaded(true);
     }).catch(() => { if (live) setPlanLoaded(true); });
     return () => { live = false; };
@@ -169,9 +181,9 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
     return out;
   };
 
-  function save(next: Block[]) {
+  function save(next: Block[], calState: CalSync | null = calRef.current) {
     setBlocks(next);
-    fetch('/api/users/organise-plan', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: planDate, plan: { v: 1, blocks: next } }) }).catch(() => {});
+    fetch('/api/users/organise-plan', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: planDate, plan: { v: 1, blocks: next, calendar: calState ?? undefined } }) }).catch(() => {});
     // Tell the header a plan now exists for today (drives the "plan ready" dot).
     window.dispatchEvent(new CustomEvent('smith:organise-plan-saved'));
   }
@@ -292,11 +304,61 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
     setEditingKey(null);
   }
 
+  // ── Add the finished plan to the user's Google Calendar (idempotent sync) ────
+  const isoFor = (min: number) => `${planDate}T${minToHHMM(min)}:00`;
+  const summaryFor = (block: Block, item: PlanItem | null): string => {
+    if (block.kind === 'custom') return block.taskTitle ? `${block.label ?? 'Focus'} · ${block.taskTitle}` : (block.label ?? 'Focus time');
+    if (block.kind === 'break') return 'Lunch';
+    if (block.kind === 'wrap') return 'Wrap up · plan tomorrow';
+    if (!item) return labelFor(block);
+    return item.kind === 'task' && item.sub ? `${item.label} · ${item.sub}` : item.label;
+  };
+  function buildCalPayload() {
+    const items = rendered.map(({ block, item }) => ({
+      key: block.key, summary: summaryFor(block, item),
+      startISO: isoFor(block.start), endISO: isoFor(block.start + block.dur),
+    }));
+    const sig = items.map(i => `${i.key}:${i.startISO}:${i.endISO}:${i.summary}`).sort().join('|');
+    return { items, sig };
+  }
+  async function syncToCalendar() {
+    setSyncing(true); setSyncErr(null);
+    const { items, sig } = buildCalPayload();
+    try {
+      const res = await fetch('/api/organise-plan/calendar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: planDate, visibility, blocks: items, existing: cal?.eventIds ?? {} }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'sync-failed'); }
+      const data = await res.json();
+      const next: CalSync = { eventIds: data.eventIds ?? {}, visibility, sig };
+      setCal(next); calRef.current = next;
+      save(blocks ?? [], next);
+    } catch (err) {
+      setSyncErr(err instanceof Error && err.message === 'calendar-not-connected' ? 'Connect Google Calendar first.' : 'Could not sync to calendar.');
+    } finally { setSyncing(false); }
+  }
+  async function removeFromCalendar() {
+    if (!cal) return;
+    setSyncing(true); setSyncErr(null);
+    try {
+      await fetch('/api/organise-plan/calendar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: planDate, visibility, blocks: [], existing: cal.eventIds }),
+      });
+      setCal(null); calRef.current = null;
+      save(blocks ?? [], null);
+    } catch { setSyncErr('Could not update calendar.'); }
+    finally { setSyncing(false); }
+  }
+
   const previewFor = (key: string, start: number, dur: number) => {
     if (!drag || drag.key !== key) return { start, dur };
     const min = blockMin((blocks ?? []).find(b => b.key === key)?.kind ?? 'task');
     return drag.mode === 'move' ? { start: clampStart(start + drag.deltaMin, dur), dur } : { start, dur: clampDur(dur + drag.deltaMin, start, min) };
   };
+
+  const calDirty = cal !== null && (cal.sig !== buildCalPayload().sig || cal.visibility !== visibility);
 
   if (!ready) {
     return (
@@ -336,6 +398,39 @@ export default function OrganiseMyDayTimeline({ tasks, userId, adminItems, setti
         <span className="ml-auto hidden text-gray-400 sm:inline">drag to move · edge to resize · click empty time to add</span>
         <button onClick={rePlan} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 font-semibold text-gray-600 hover:bg-gray-50"><RotateCcw size={12} /> Re-plan</button>
       </div>
+
+      {/* Add to calendar */}
+      {rendered.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-100 bg-gray-50/60 px-3 py-2">
+          {!calConnected ? (
+            <p className="inline-flex items-center gap-1.5 text-[12px] text-gray-500"><CalendarPlus size={13} className="text-gray-400" /> Connect your Google Calendar to add this plan to it.</p>
+          ) : (
+            <>
+              <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-gray-700">
+                {cal ? <CalendarCheck size={14} className="text-emerald-600" /> : <CalendarPlus size={14} className="text-indigo-500" />}
+                {cal ? (calDirty ? 'Plan changed since last sync' : 'On your calendar') : 'Add this plan to your calendar'}
+              </span>
+              <div className="inline-flex items-center rounded-lg border border-gray-200 bg-white p-0.5 text-[11px] font-semibold">
+                <Tooltip label="Only you see the details — colleagues see “Busy”">
+                  <button onClick={() => setVisibility('private')} className={`inline-flex items-center gap-1 rounded-md px-2 py-1 ${visibility === 'private' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-500 hover:bg-gray-50'}`}><Lock size={11} /> Private</button>
+                </Tooltip>
+                <Tooltip label="Colleagues can see these blocks on the team calendar">
+                  <button onClick={() => setVisibility('shared')} className={`inline-flex items-center gap-1 rounded-md px-2 py-1 ${visibility === 'shared' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-500 hover:bg-gray-50'}`}><Users size={11} /> Shared</button>
+                </Tooltip>
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                {syncErr && <span className="text-[11px] font-semibold text-rose-500">{syncErr}</span>}
+                {cal && <button onClick={removeFromCalendar} disabled={syncing} className="text-[11px] font-semibold text-gray-400 hover:text-rose-500 disabled:opacity-50">Remove</button>}
+                <button onClick={syncToCalendar} disabled={syncing || (!!cal && !calDirty)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+                  {syncing ? <Loader2 size={13} className="animate-spin" /> : cal ? (calDirty ? <RotateCcw size={13} /> : <CalendarCheck size={13} />) : <CalendarPlus size={13} />}
+                  {cal ? (calDirty ? 'Update calendar' : 'Synced') : 'Add to calendar'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {rendered.length === 0 ? (
         <p className="rounded-xl bg-gray-50 px-4 py-3 text-[12.5px] text-gray-500">Nothing scheduled into the day. {notScheduled.length > 0 ? 'Press Re-plan to build it.' : "You're all clear."}</p>

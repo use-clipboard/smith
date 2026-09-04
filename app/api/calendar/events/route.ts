@@ -133,11 +133,14 @@ export async function GET(request: NextRequest) {
 
         events.forEach(e => {
           const isHidden = memberHiddenIds?.has(e.id) ?? false;
-          // For other viewers: show hidden events as a masked "Busy" block (strip sensitive data)
-          if (isHidden && member.id !== ctx.userId) {
+          // Google 'private' events (e.g. an Organise-my-day plan the owner chose to
+          // keep private) are masked for everyone but their owner.
+          const isPrivateToOthers = e.visibility === 'private' && member.id !== ctx.userId;
+          // For other viewers: show hidden/private events as a masked block (strip sensitive data)
+          if ((isHidden || isPrivateToOthers) && member.id !== ctx.userId) {
             allEvents.push({
               id: e.id,
-              title: 'Hidden',
+              title: isHidden ? 'Hidden' : 'Busy',
               start: e.start,
               end: e.end,
               ownerUserId: member.id,
